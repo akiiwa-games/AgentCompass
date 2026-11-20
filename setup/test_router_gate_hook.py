@@ -69,26 +69,26 @@ class RouterGateHookTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, {'ROUTER_STATE_DIR': directory}):
             exhaustion = gate.router_module('quota_exhaustion')
             missing = Path(directory) / 'missing.json'
-            exhaustion.record('worker', 'Individual quota reached', windows=['five_hour', 'weekly'])
-            text = gate.check_account_quota_exhausted('worker', missing, T0, windows=['weekly', 'monthly'])
+            exhaustion.record('lab-acct', 'Individual quota reached', windows=['five_hour', 'weekly'])
+            text = gate.check_account_quota_exhausted('lab-acct', missing, T0, windows=['weekly', 'monthly'])
             script = Path(exhaustion.__file__).resolve().as_posix()
-            clear = f'python -X utf8 "{script}" --clear worker'
+            clear = f'python -X utf8 "{script}" --clear lab-acct'
             self.assertIn(clear, text)
             said = text.replace(clear, '')    # the account and windows are named by the refusal itself, not only by the command
-            self.assertIn('worker', said)
+            self.assertIn('lab-acct', said)
             self.assertIn('weekly', said)
             self.assertNotIn('monthly', said)    # recorded windows only, and only those this launch draws
             self.assertNotIn('five_hour', said)
             # What lifts a record is a newer successful reading (quota_exhaustion.py): time alone never does.
             self.assertIn('newer successful usage reading', said)
             self.assertIn('does not lift it', said)
-            exhaustion.clear('worker')
-            exhaustion.record('worker', 'Individual quota reached')
-            text = gate.check_account_quota_exhausted('worker', missing, T0, windows=['weekly'])
-            self.assertIn('every window of worker', text)
+            exhaustion.clear('lab-acct')
+            exhaustion.record('lab-acct', 'Individual quota reached')
+            text = gate.check_account_quota_exhausted('lab-acct', missing, T0, windows=['weekly'])
+            self.assertIn('every window of lab-acct', text)
             with mock.patch.object(gate.sys, 'frozen', True, create=True):
-                self.assertIn(f'agentcompass -X utf8 "{script}" --clear worker',
-                              gate.check_account_quota_exhausted('worker', missing, T0, windows=['weekly']))
+                self.assertIn(f'agentcompass -X utf8 "{script}" --clear lab-acct',
+                              gate.check_account_quota_exhausted('lab-acct', missing, T0, windows=['weekly']))
 
     def run_main(self, raw):
         out, err = io.StringIO(), io.StringIO()
@@ -177,18 +177,23 @@ class RouterGateHookTests(unittest.TestCase):
         gate.evaluate_payload({'tool_name': 'exec', 'tool_input': {'code': 'await tools.exec_command({cmd: "echo \\"x"});'}})
         self.assertEqual(gate.UNEVALUATED, ['reading a shell command for launches (ShellParseError)'])
 
-    DRIVER = """import ext from "./ext.mjs";
-let handler;
-ext({ on: (name, h) => { if (name === "tool_call") handler = h; } });
+    DRIVER = """const handlers = {};
 const written = [];
 process.stderr.write = (text) => { written.push(String(text)); return true; };
 const out = {};
-for (const [name, tool, input, hasUI, worker] of JSON.parse(process.argv[2])) {
+for (const [name, extension, tool, input, hasUI, worker, notifyThrows] of JSON.parse(process.argv[2])) {
+  if (!handlers[extension]) {
+    const loaded = await import(`./${extension}.mjs`);
+    loaded.default({ on: (event, h) => { if (event === "tool_call") handlers[extension] = h; } });
+  }
   const shown = [];
   written.length = 0;
   if (worker) process.env.AGENTCOMPASS_WORKER = "1";
-  const ctx = { hasUI, ui: { notify: (message, level) => shown.push([level, message]) } };
-  const returned = await handler({ toolName: tool, input }, ctx);
+  const ctx = { hasUI, ui: { notify: (message, level) => {
+    if (notifyThrows) throw new Error("notify failed");
+    shown.push([level, message]);
+  } } };
+  const returned = await handlers[extension]({ toolName: tool, input }, ctx);
   out[name] = { returned: returned ?? null, shown: shown, stderr: [...written] };
 }
 process.stdout.write(JSON.stringify(out));
@@ -199,18 +204,30 @@ process.stdout.write(JSON.stringify(out));
         """Contract (pi docs, extensions.md): a `tool_call` handler gets `(event, ctx)` and its return only controls
         blocking; `ctx.hasUI` is true in the TUI and RPC modes, where `ctx.ui.notify(message, "warning")` shows a message,
         and false in print and JSON mode, where UI methods are no-ops. So the stderr word is notified with a UI and
-        written to the process's stderr without one; a block still blocks and a clean allow says nothing."""
+        written to the process's stderr without one; a block still blocks and a clean allow says nothing. The verdict is
+        the gate's alone: showing the word, or text a failed gate left on stderr, never changes it."""
         import re
         import sync_host_globals as sg
         argv = json.dumps(sg.ROUTER_HOOK_ARGV)
         self.assertIn(argv, sg.PI_ROUTER_GATE_TS)
-        source = sg.PI_ROUTER_GATE_TS.replace(argv, json.dumps([sys.executable, "-X", "utf8", str(Path(gate.__file__).resolve())]))
-        scenarios = [["ui", "bash", {"command": self.UNPARSED}, True, False],
-                     ["headless", "bash", {"command": self.UNPARSED}, False, False],
-                     ["clean", "bash", {"command": "ls"}, True, False],
-                     ["block", "request_user_input", {}, True, True]]
+        fakes = {   # gates that answer as told: stdout is the verdict, stderr is what it also wrote
+            "deny": "import sys; sys.stderr.write('[Router Gate] note\\\n'); print('{\"block\": true, \"reason\": \"deny\"}')",
+            "crash": "import sys; sys.stderr.write('Traceback: boom\\\n'); sys.exit(1)",
+        }
+        argvs = {"real": [sys.executable, "-X", "utf8", str(Path(gate.__file__).resolve())],
+                 **{name: [sys.executable, "-c", code] for name, code in fakes.items()}}
+        scenarios = [["ui", "real", "bash", {"command": self.UNPARSED}, True, False, False],
+                     ["headless", "real", "bash", {"command": self.UNPARSED}, False, False, False],
+                     ["clean", "real", "bash", {"command": "ls"}, True, False, False],
+                     ["block", "real", "request_user_input", {}, True, True, False],
+                     ["allow-notify-throws", "real", "bash", {"command": self.UNPARSED}, True, False, True],
+                     ["deny-with-stderr", "deny", "bash", {"command": "ls"}, True, False, False],
+                     ["deny-with-stderr-notify-throws", "deny", "bash", {"command": "ls"}, True, False, True],
+                     ["crash", "crash", "bash", {"command": "ls"}, True, False, False]]
         with tempfile.TemporaryDirectory() as directory:
-            (Path(directory) / "ext.mjs").write_text(re.sub(r"(\w+): any\b", r"\1", source), encoding="utf-8", newline="\n")
+            for name, hook in argvs.items():
+                source = sg.PI_ROUTER_GATE_TS.replace(argv, json.dumps(hook))
+                (Path(directory) / f"{name}.mjs").write_text(re.sub(r"(\w+): any\b", r"\1", source), encoding="utf-8", newline="\n")
             (Path(directory) / "driver.mjs").write_text(self.DRIVER, encoding="utf-8", newline="\n")
             done = subprocess.run(["node", "driver.mjs", json.dumps(scenarios)], cwd=directory, capture_output=True,
                                   text=True, encoding="utf-8", timeout=120)
@@ -227,6 +244,12 @@ process.stdout.write(JSON.stringify(out));
         self.assertEqual(out["clean"], {"returned": None, "shown": [], "stderr": []})
         self.assertTrue(out["block"]["returned"]["block"])
         self.assertEqual((out["block"]["shown"], out["block"]["stderr"]), ([], []))
+        self.assertIsNone(out["allow-notify-throws"]["returned"])
+        # A deny that also wrote stderr stays a deny whether or not showing the word works.
+        for name in ("deny-with-stderr", "deny-with-stderr-notify-throws"):
+            self.assertEqual(out[name]["returned"], {"block": True, "reason": "deny"}, name)
+        # A gate that crashed (exit 1) shows nothing: its stderr is a traceback, not the gate's word.
+        self.assertEqual(out["crash"], {"returned": None, "shown": [], "stderr": []})
 
     def test_unreadable_stdin_is_allowed_with_a_word_in_the_shape_of_an_unknown_host(self):
         for label, raw in (('empty', ''), ('blank', '  \n'), ('not json', '{oops'), ('a list', '[1]')):

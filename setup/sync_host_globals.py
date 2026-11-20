@@ -101,8 +101,12 @@ export default function (pi: any) {
       // methods, so it goes to this process's own stderr (pi docs, extensions.md: tool_call, ctx.hasUI, Mode Behavior).
       const notice = res.status === 0 ? String(res.stderr || "").trim() : "";
       if (notice) {
-        if (ctx?.hasUI) ctx.ui.notify(notice, "warning");
-        else process.stderr.write(notice + "\\n");
+        try {
+          if (ctx?.hasUI) ctx.ui.notify(notice, "warning");
+          else process.stderr.write(notice + "\\n");
+        } catch {
+          // Showing the word never changes the verdict below.
+        }
       }
       if (res.status === 0 && res.stdout) {
         const parsed = JSON.parse(res.stdout.trim());
