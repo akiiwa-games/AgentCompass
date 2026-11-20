@@ -79,7 +79,12 @@ def cannot_run(bundle):
     (host_placement.REMOTE_SURFACES) never goes through Herdr."""
     if bundle.get('provider') in host_placement.REMOTE_SURFACES:
         return None
+    import account_fleet
     family = launch_family(bundle)
+    # provider_definition answers with the provider's own name when nothing defines it, which names no harness.
+    if family not in (*account_fleet.LAUNCH_FAMILIES, *account_fleet.LAUNCH_HARNESSES):
+        return (f"Herdr cannot tell which harness runs provider {bundle.get('provider')!r}: neither a Paseo provider "
+                f"definition nor discovery names a CLI family for it (Herdr launches only {', '.join(PERMISSION_MODES)})")
     if family not in PERMISSION_MODES:
         return f"Herdr cannot run the {family} harness (it launches only {', '.join(PERMISSION_MODES)})"
     mode = bundle.get('modeId')

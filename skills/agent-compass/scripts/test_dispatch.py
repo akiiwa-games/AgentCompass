@@ -3443,15 +3443,19 @@ class RollLifecycleTests(unittest.TestCase):
         self.assertTrue(any(there in note for note in resumed['warnings']))
         self.assertFalse(any(here in note for note in resumed['warnings']))
 
-    def test_a_resumed_worker_of_unknown_directory_is_taken_to_be_in_the_parents(self):
+    def test_a_resumed_worker_of_unknown_directory_is_not_said_to_write_in_the_parents(self):
+        # Rule (host_placement.worker_directory): a resumed worker runs in its own directory; when that cannot be read,
+        # no directory is named for it, the parent's included.
         dir_p = self.ws_dir('work-P2')
         with self.in_cwd(dir_p):
             here = self.go(task_id='writer-here')['worker']['dispatch_id']
             workers, matches, match, record = self.resuming(None)
             with workers, matches, match, record:
                 resumed = self.go(task_id='follow-up')
-        self.assertEqual(registry.inspect(resumed['worker']['dispatch_id'])['operation'], 'resume')
-        self.assertTrue(any(here in note for note in resumed['warnings']))
+        row = registry.inspect(resumed['worker']['dispatch_id'])
+        self.assertEqual(row['operation'], 'resume')
+        self.assertFalse(any(here in note for note in resumed.get('warnings', [])), resumed.get('warnings'))
+        self.assertIsNone(row.get('cwd'))
 
     def test_no_warning_elsewhere_for_a_reader_or_once_the_writer_has_ended(self):
         dir_a = self.ws_dir('warn-A')

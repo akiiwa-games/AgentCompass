@@ -15,17 +15,28 @@ REMOTE_SURFACES = ('dot', 'chatgpt-web', 'grok-bot')
 
 
 def parent_cwd():
-    """The parent's directory: a local worker without `--workspace` starts here (Paseo gives its agents this directory
-    in PASEO_AGENT_CWD), whatever surface launches it."""
-    return os.environ.get('PASEO_AGENT_CWD') or os.getcwd()
+    """The parent's directory: a local worker without `--workspace` starts here, whatever surface launches it. Paseo
+    gives the agent PASEO_AGENT_ID names its directory in PASEO_AGENT_CWD; without that id the variable is no parent's
+    of this roll (a Herdr, native or cli launch run outside the Paseo session inherits it), and the worker starts where
+    the command runs."""
+    if (os.environ.get('PASEO_AGENT_ID') or '').strip() and os.environ.get('PASEO_AGENT_CWD'):
+        return os.environ['PASEO_AGENT_CWD']
+    return os.getcwd()
 
 
-def worker_directory(workspace):
-    """The one answer to where a new local worker runs: the canonical `--workspace` when given, else `parent_cwd()`.
-    roll puts it in the task (`task['cwd']`), so the plan, `record` and a named roll match an account's `cwd_regex`
-    against it, and every launch surface places the worker there (`place`). A worker roll resumes runs in its own
-    directory, which the plan does not match."""
-    return canonical_dir(workspace) or parent_cwd()
+def worker_directory(workspace, resume=None):
+    """The one answer to where a local worker runs: the canonical `--workspace` when given (a resumed worker too: the
+    host resumes a worker only in its own directory); else, for a worker roll resumes (`resume`, its agent id), its own
+    directory from its Paseo record, None when that cannot be read; else `parent_cwd()`. roll puts it in the task
+    (`task['cwd']`), so the plan, its re-plan at the launch, `record` and a named roll match an account's `cwd_regex`
+    against it, and every launch surface places the worker there (`place`)."""
+    if ws := canonical_dir(workspace):
+        return ws
+    if resume:
+        import dispatch_registry    # imports this module
+        own = (dispatch_registry.paseo_agent_record(resume) or {}).get('cwd')
+        return own if isinstance(own, str) and own.strip() else None
+    return parent_cwd()
 
 
 class InvalidWorkspace(ValueError):

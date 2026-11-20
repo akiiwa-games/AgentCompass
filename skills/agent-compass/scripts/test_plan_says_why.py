@@ -430,21 +430,24 @@ class WorkerDirectory(Base):
         # process directory), which the launch gives the worker too.
         there = self.root / 'parent-dir'
         there.mkdir()
-        with patch.dict(os.environ, {'PASEO_AGENT_CWD': str(there)}):
+        with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a', 'PASEO_AGENT_CWD': str(there)}):
             task = self.build()
             self.assertEqual(task['cwd'], host_placement.worker_directory(None))
         self.assertEqual(cwd_policy.normalized(task['cwd']), cwd_policy.normalized(there))
         for name in self.accounts['accounts']:
             self.restrict(name, there)
-        res, _ = self.run_roll(env={'PASEO_AGENT_CWD': str(there)}, task_id='t-parent-dir')
+        with patch.object(account_fleet, 'load_accounts', return_value=self.accounts):
+            res, _ = self.run_roll(env={'PASEO_AGENT_CWD': str(there)}, task_id='t-parent-dir')
         self.assertEqual(res['status'], 'launched', res)
         import dispatch_registry
         row = dispatch_registry.inspect(tra.full(res)['worker']['dispatch_id'])
         self.assertEqual(cwd_policy.normalized(row['cwd']), cwd_policy.normalized(there))   # where the launch placed it
 
-    def test_a_surface_other_than_paseo_places_the_worker_in_the_same_directory(self):
-        # Rule (host_placement.worker_directory): the launch reads the directory the plan matched, on every surface.
-        there = self.root / 'parent-dir'
+    def test_a_launch_run_outside_the_paseo_session_places_the_worker_where_the_command_runs(self):
+        # Rule (host_placement.parent_cwd): PASEO_AGENT_CWD is the directory of the Paseo agent PASEO_AGENT_ID names;
+        # without that id it is no parent's, so a Herdr launch (run outside the Paseo session) starts the worker in the
+        # process directory, the directory the plan matched.
+        there = self.root / 'paseo-agent-dir'
         there.mkdir()
         seen = []
 
@@ -454,7 +457,29 @@ class WorkerDirectory(Base):
         with patch.object(host_herdr, 'launch', launch):
             res, _ = self.run_roll(env={'PASEO_AGENT_ID': '', 'HC_TERMINAL_ID': 'term-1', 'PASEO_AGENT_CWD': str(there)},
                                    parent_host='herdr', task_id='t-herdr-dir')
-        self.assertEqual([cwd_policy.normalized(c) for c in seen], [cwd_policy.normalized(there)], res)
+        self.assertEqual([cwd_policy.normalized(c) for c in seen], [cwd_policy.normalized(os.getcwd())], res)
+
+    def test_paseo_agent_cwd_is_read_only_with_paseo_agent_id(self):
+        there = self.root / 'paseo-agent-dir'
+        there.mkdir()
+        with patch.dict(os.environ, {'PASEO_AGENT_ID': '', 'PASEO_AGENT_CWD': str(there)}):
+            self.assertEqual(host_placement.parent_cwd(), os.getcwd())
+        with patch.dict(os.environ, {'PASEO_AGENT_ID': 'parent-a', 'PASEO_AGENT_CWD': str(there)}):
+            self.assertEqual(host_placement.parent_cwd(), str(there))
+
+    def test_the_cli_launch_starts_the_worker_in_the_directory_the_plan_matched(self):
+        # Rule (host_placement.worker_directory): the cli surface places the worker in the parent's directory too.
+        import roll
+        there = self.root / 'paseo-agent-dir'
+        there.mkdir()
+        started = []
+
+        def popen(argv, cwd=None, **kw):
+            started.append(cwd)
+            raise OSError('test: not started')
+        with patch.object(roll.subprocess, 'Popen', popen), patch.object(roll, 'paseo_choice', lambda *a, **k: (False, 'test')):
+            res, _ = self.run_roll(env={'PASEO_AGENT_CWD': str(there)}, task_id='t-cli-dir')
+        self.assertEqual([cwd_policy.normalized(c) for c in started], [cwd_policy.normalized(there)], res)
 
     def test_a_roll_whose_worker_runs_in_the_process_directory_plans_as_before(self):
         # Refactor equivalence: the process directory matched by name or by default reads the same plan.
@@ -537,6 +562,108 @@ class BatchInterrupted(Base):
         self.assertEqual(answer['results'][0]['worker']['agent_id'], 'agent-first')
         self.assertEqual(answer['interrupted'], str(briefs[1]))
         self.assertEqual(answer['not_started'], [str(briefs[2])])
+
+
+class ResumedWorkerDirectory(Base):
+    """Close-out finding A: a resumed worker runs in its own directory, and that is what its account's cwd_regex is
+    matched against (host_placement.worker_directory); a directory that cannot be read is matched against nothing."""
+    restrict = WorkerDirectory.restrict
+
+    def dirs(self):
+        home, parent = self.root / 'worker-home', self.root / 'parent-x'
+        home.mkdir()
+        parent.mkdir()
+        return home, parent
+
+    def resume(self, parent, **over):
+        with patch.object(account_fleet, 'load_accounts', return_value=self.accounts):
+            return self.run_roll(self.brief_file('r.md'), resume='agent-r', task_id='t-r',
+                                 env={'PASEO_AGENT_CWD': str(parent)}, verbose=True, **over)
+
+    def test_d6_a_turn_inside_the_restriction_is_placed(self):
+        home, parent = self.dirs()
+        self.make_worker('agent-r', doc={'cwd': str(home)})
+        self.restrict('claude-lab', home)
+        res, code = self.resume(parent)
+        self.assertEqual((res['status'], code), ('launched', 0), res.get('next_action'))
+
+    def test_d6_a_turn_outside_the_restriction_is_refused_naming_the_worker_directory(self):
+        home, parent = self.dirs()
+        self.make_worker('agent-r', doc={'cwd': str(home)})
+        self.restrict('claude-lab', parent)
+        res, code = self.resume(parent)
+        self.assertEqual((res['status'], code), ('blocked', 2), res.get('next_action'))
+        self.assertIn(f"the worker's directory {cwd_policy.normalized(home)} does not match", res['next_action'])
+
+    def test_resume_with_workspace_matches_the_workspace(self):
+        # The host resumes a worker only in its own directory (the bridge's worker_workspace_mismatch), so with
+        # --workspace that directory is the workspace.
+        import roll
+        _, parent = self.dirs()
+        ws = self.root / 'ws'
+        ws.mkdir()
+        self.make_worker('agent-r', doc={'cwd': str(ws)})
+        canon = host_placement.canonical_dir(str(ws))
+        task = roll.build_task(self.args(self.brief_file(), resume='agent-r', workspace=str(ws)), '# Task\n', 'parent-a', [])
+        self.assertEqual(task['cwd'], canon)
+        self.restrict('claude-lab', canon)
+        res, code = self.resume(parent, workspace=str(ws), access='write')
+        self.assertEqual((res['status'], code), ('launched', 0), res.get('next_action'))
+
+    def test_an_unread_worker_directory_is_said_and_matched_against_nothing(self):
+        _, parent = self.dirs()
+        self.make_worker('agent-r')            # its Paseo record names no directory
+        self.restrict('claude-lab', 'D:/elsewhere')
+        res, code = self.resume(parent)
+        self.assertEqual((res['status'], code), ('launched', 0), res.get('next_action'))
+        said = [a for a in tra.full(res).get('assumptions', []) if 'agent-r' in a and 'cwd_regex' in a]
+        self.assertTrue(said, tra.full(res).get('assumptions'))
+        for c in (tra.full(res).get('route') or {}).get('ranking', []):
+            self.assertFalse(any('cwd_regex' in r for r in c.get('excluded', [])), c)
+
+    def test_a_caller_task_cannot_claim_an_unread_directory(self):
+        import task_intake
+        with self.assertRaises(ValueError) as refused:
+            task_intake.check_caller_task({'objective': 'x', 'cwd_unread': True})
+        self.assertIn('cwd_unread', str(refused.exception))
+
+    def test_an_automatic_resume_needs_the_worker_directory_inside_the_restriction(self):
+        # An automatic resume is the router's choice: the plan matched the directory a new worker would get, and the
+        # worker it resumes instead runs in its own, which its account's cwd_regex must match too.
+        import dispatch_registry
+        import roll
+        home, parent = self.dirs()
+        self.make_worker('agent-r', doc={'cwd': str(home)})
+        worker = next(w for w in dispatch_registry.reusable_workers('parent-a') if w['agent_id'] == 'agent-r')
+        policy = host_policy.load_policy()
+        self.restrict('claude-lab', parent)
+        with patch.object(account_fleet, 'load_accounts', return_value=self.accounts):
+            self.assertFalse(roll._auto_resumable(worker, policy, accounts=self.accounts))
+            self.restrict('claude-lab', home)
+            self.assertTrue(roll._auto_resumable(worker, policy, accounts=self.accounts))
+
+
+class HerdrUndefinedProvider(Base):
+    """Close-out nit on finding 5: a provider with no definition is not a harness."""
+
+    def test_a_provider_with_no_definition_is_said_as_such(self):
+        why = host_herdr.cannot_run({'provider': 'no-such-provider', 'model': 'm', 'id': 'b'})
+        self.assertIn("cannot tell which harness runs provider 'no-such-provider'", why)
+        self.assertNotIn('no-such-provider harness', why)
+
+
+class CompactWarnings(unittest.TestCase):
+    """Review of the record branch, close-out finding B: no warning is dropped from the short answer silently."""
+
+    def test_the_short_answer_says_how_many_more_warnings_the_details_file_holds(self):
+        import roll
+        warnings = [f'warning {i}' for i in range(7)]
+        out = roll.compact({'route': {'warnings': warnings}}, 'launched', 'D:/work/details.json')
+        self.assertEqual(out['warnings'][:4], warnings[:4])
+        self.assertIn('3 more', out['warnings'][4])
+        self.assertIn('D:/work/details.json', out['warnings'][4])
+        few = roll.compact({'route': {'warnings': warnings[:4]}}, 'launched', 'D:/work/details.json')
+        self.assertEqual(few['warnings'], warnings[:4])
 
 
 if __name__ == '__main__':

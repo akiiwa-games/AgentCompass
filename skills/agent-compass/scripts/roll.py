@@ -98,9 +98,19 @@ def build_task(args, text, parent, said=None):
     if hours is not None and not (isinstance(hours, (int, float)) and not isinstance(hours, bool) and hours > 0 and hours != float('inf')):
         raise ValueError('--hours must be a positive number of expected active hours.')
     task = {'objective': text,  # the classifier and the worker both get the whole text
-            'task_id': args.task_id or 'roll-' + hashlib.sha256(text.encode()).hexdigest()[:16],
-            # Where a new worker runs: an account's cwd_regex is about that directory (host_placement.worker_directory).
-            'cwd': host_placement.worker_directory(getattr(args, 'workspace', None))}
+            'task_id': args.task_id or 'roll-' + hashlib.sha256(text.encode()).hexdigest()[:16]}
+    # Where the worker runs, a resumed one in its own directory: an account's cwd_regex is about that directory
+    # (host_placement.worker_directory). One that cannot be read is matched against nothing (`cwd_unread`).
+    resume = (getattr(args, 'resume', None) or '').strip() or None
+    cwd = host_placement.worker_directory(getattr(args, 'workspace', None), resume)
+    if cwd:
+        task['cwd'] = cwd
+    else:
+        task['cwd_unread'] = True
+        if said is not None:
+            said.append(f"The directory of worker {resume!r} could not be read (its Paseo record on this machine is missing "
+                        "or names none), so no account's cwd_regex was matched for this turn: the worker resumes in its "
+                        'own directory, not in this one.')
     if hours is None:
         # No extra model call: the allocator budgets the classifier's own expected_hours.
         task['hours_source'] = 'classifier_estimate'
@@ -286,13 +296,22 @@ def _auto_resumable(worker, policy, usage_cache_path=None, accounts=None):
     """Whether roll may resume `worker` without being told to. Resuming is then the router's choice, so the two
     preference switches apply as they do to a plan: the account takes part in automatic routing on this host
     (`host_policy.account_allowed`) and the worker's model is not unchecked in model management. The gate must admit
-    the turn too. An explicit `--resume` is the caller's choice and reads only the gate (`_worker_gate_refusal`)."""
+    the turn too. The plan matched the account's `cwd_regex` against the directory a new worker would get, and the
+    worker resumed instead runs in its own (host_placement.worker_directory), which the restriction must admit too: one
+    that cannot be read is not resumed automatically. An explicit `--resume` is the caller's choice and reads only the
+    gate (`_worker_gate_refusal`); its plan is matched against the worker's own directory (build_task)."""
     import account_fleet
+    import accounts_override
     if accounts is None:
         accounts = account_fleet.load_accounts()
     bundle = _resolve_worker_bundle(worker, accounts)
     if bundle is None or not host_policy.account_allowed(policy, bundle.get('account')):
         return False
+    cwd_spec = accounts['accounts'].get(accounts_override.preference_account(bundle, bundle['account'], accounts)) or {}
+    if cwd_spec.get('cwd_regex'):
+        own = host_placement.worker_directory(None, worker.get('agent_id'))
+        if not own or not account_fleet.account_cwd_allowed(cwd_spec, own):
+            return False
     rows = [r for r in account_fleet.bundle_rows(accounts, bundle.get('bundle_id') or bundle.get('id'))
             if r['account'] == bundle.get('account')]
     if host_policy.disabled_cause(bundle['account'], rows, accounts):
@@ -855,8 +874,8 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
                 if not w.get('worn') and not _worker_gate_refusal(w, usage_cache_path=usage_cache_path, accounts=fleet)
             }
             return workspace_blocked(out, workspace, remaining_holders, dispatch_mode='paseo', resumable_ids=resumable_ids)
-    # A resumed worker without --workspace stays where it lives, whatever the parent's directory.
-    default_cwd = (resume_agent_id and (registry.paseo_agent_record(resume_agent_id) or {}).get('cwd')) or host_placement.parent_cwd()
+    # A resumed worker without --workspace stays where it lives, whatever the parent's directory (None: not read).
+    default_cwd = host_placement.worker_directory(None, resume_agent_id)
     placed = host_placement.place('paseo', workspace, default_cwd=default_cwd, paseo_probe=probe)
     if not placed['ok']:
         return placement_refused(out, 'paseo', placed)
@@ -1309,8 +1328,11 @@ def compact(result, status, detail_path):
         cause = result.get('error') or worker.get('cause') or worker.get('error') or worker.get('read_error')
     if cause and status in ('error', 'blocked', 'pending'):
         out['cause'] = str(cause)[:300]
-    if (result.get('route') or {}).get('warnings'):
-        out['warnings'] = result['route']['warnings'][:4]
+    route_warnings = (result.get('route') or {}).get('warnings') or []
+    if route_warnings:
+        # The first four, and how many more the details file holds: none is dropped without a word.
+        out['warnings'] = route_warnings[:4] + ([f'{len(route_warnings) - 4} more warnings are in route.warnings of the '
+                                                 f'details file ({detail_path}).'] if len(route_warnings) > 4 else [])
     if argv and (status == 'pending' or (status == 'launched' and 'next_argv' in (nxt or ''))):
         out['next_argv'] = argv
     if status == 'launched' and result.get('dispatch_mode') == 'cli':

@@ -454,6 +454,11 @@ def check_caller_task(task):
     if by is not None and by not in LOCAL_ONLY_BY:
         raise ValueError(f"invalid_task_input: needs.local_only_by is {by!r}; it is one of {', '.join(LOCAL_ONLY_BY)}, "
                          'set by AgentCompass where it reads the flag (or the classifier); leave it out of a task you write.')
+    if 'cwd_unread' in task:
+        # roll.build_task's mark of a resumed worker whose directory it could not read; it lifts an account's cwd_regex
+        # (candidate_eval). The task AgentCompass stores keeps it, so it is not a router field (earlier_version).
+        raise ValueError('invalid_task_input: cwd_unread is set only by roll for a worker it resumes; leave it out of a '
+                         'task you write and give the directory the worker runs in as cwd.')
     found = router_fields(task)
     if found:
         raise ValueError(
@@ -577,6 +582,6 @@ def normalize_task(raw, policy, capabilities, accounts, route=None):
             'constraint_model': constraint_model, 'constraint_effort': constraint_effort,
             'metered_ok': bool(task.get('metered_ok')),
             'can_wait_hours': float(task.get('can_wait_hours') or 0), 'chain_id': chain.get('id'),
-            'cwd': task.get('cwd'),
+            'cwd': task.get('cwd'), 'cwd_unread': bool(task.get('cwd_unread')),
             # The host the parent runs on (roll): a candidate it cannot launch is excluded (host_herdr.cannot_run).
             'parent_host': task.get('parent_host')}
