@@ -69,6 +69,10 @@ GROUND_TRUTH_ONLY_KEYS = frozenset({
     'lines_changed',
     'git_diff_basis',
     'git_changes_reason',
+    'untracked_files',
+    'untracked_files_reason',
+    'ground_truth_reason',
+    'ground_truth_retry',
     'launch_commit',
     'launch_git_toplevel',
     'launch_commit_reason',
@@ -534,13 +538,15 @@ class GroundTruthRecordingTests(unittest.TestCase):
         )
 
         # Git working-tree diff relative to launch_commit:
-        # app.py (+4/-1), helper.py (+1/-0), icon.bin (binary: +0/-0, 1 file), README.md (+2/-1); scratch.tmp ignored
+        # app.py (+4/-1), helper.py (+1/-0), icon.bin (binary: +0/-0, 1 file), README.md (+2/-1); scratch.tmp is not
+        # in files_changed: it is counted on its own in untracked_files
         self.assertEqual(stored['files_changed'], 4)
         self.assertEqual(stored['lines_added'], 7)
         self.assertEqual(stored['lines_deleted'], 2)
         self.assertEqual(stored['lines_changed'], 9)
         self.assertEqual(stored['git_diff_basis'], 'working_tree_vs_launch_commit')
         self.assertIsNone(stored['git_changes_reason'])
+        self.assertEqual((stored['untracked_files'], stored['untracked_files_reason']), (1, None))
 
     def test_codex_single_turn_and_resumed_dispatch_slice_and_fallback_message_id_lookup(self):
         repo = self.root / 'codex-repo'
@@ -1169,6 +1175,135 @@ class GroundTruthRecordingTests(unittest.TestCase):
                 'raw_input_tokens': 11000,
             },
         )
+
+    # ---- "nothing found" and "could not look" are told apart -----------------------------------------------------
+    def test_a_transcript_that_cannot_be_opened_is_unreadable_not_absent(self):
+        import builtins
+        import dispatch_ground_truth as gt
+        home = self.root / 'gt-home'
+        transcript = home / '.claude' / 'projects' / 'p' / 'sess-1.jsonl'
+        _write_jsonl(transcript, [{'type': 'user', 'timestamp': '2026-11-20T10:00:00Z',
+                                   'message': {'role': 'user', 'content': '<paseo-system message-id="d-1"> hi'}}])
+        row = {'dispatch_id': 'd-1', 'launched_at': '2026-11-20T10:00:00+00:00', 'dispatch_mode': 'paseo', 'cwd': None,
+               'bundle': {'harness': 'claude', 'provider': 'claude', 'account': 'claude'}, 'harness': 'claude'}
+        base = dict(idle_threshold=300, agent_doc={'persistence': {}, 'provider': 'claude'}, home=home,
+                    paseo_home=self.root / 'gt-paseo')
+        real_open = builtins.open
+
+        def refusing(path, *args, **kwargs):
+            if str(path).endswith('sess-1.jsonl'):
+                raise PermissionError(13, 'Permission denied', str(path))
+            return real_open(path, *args, **kwargs)
+        with patch.object(builtins, 'open', refusing):
+            refused = gt.collect_session_telemetry(row, **base)
+        self.assertEqual((refused['worker_session_reason'], refused['active_seconds_reason'], refused['token_usage_reason']),
+                         ('session_transcript_unreadable',) * 3)
+        transcript.rename(transcript.with_suffix('.txt'))
+        absent = gt.collect_session_telemetry(row, **base)
+        self.assertEqual(absent['active_seconds_reason'], 'session_transcript_not_found')
+
+    def test_rev_parse_failing_is_not_a_checkout_only_when_git_says_there_is_no_repository(self):
+        import dispatch_ground_truth as gt
+        plain = self.root / 'plain-dir'
+        plain.mkdir()
+        self.assertEqual(gt.collect_git_changes({'cwd': str(plain), 'launch_commit': 'a' * 40})['git_changes_reason'],
+                         'not_a_git_checkout')   # git's own answer, from a real run
+        repo = self.root / 'rev-parse-repo'
+        head = _init_git_repo(repo)
+        real = gt._git
+        for code, stderr, reason in (
+                (128, "fatal: detected dubious ownership in repository at 'D:/work/repo'\n", 'git_rev_parse_failed:dubious_ownership'),
+                (128, 'fatal: not a git repository (or any of the parent directories): .git\n', 'not_a_git_checkout'),
+                (128, 'fatal: not a git repository (or any parent up to mount point D:/)\n', 'not_a_git_checkout'),
+                (128, 'fatal: unknown repository format\n', 'git_rev_parse_failed:exit_128'),
+                (1, '', 'git_rev_parse_failed:exit_1')):
+            def fake(cwd, *args, **kwargs):
+                if args[:2] == ('rev-parse', '--show-toplevel'):
+                    return subprocess.CompletedProcess(args, code, '', stderr)
+                return real(cwd, *args, **kwargs)
+            with self.subTest(reason=reason, stderr=stderr), patch.object(gt, '_git', fake):
+                changes = gt.collect_git_changes({'cwd': str(repo), 'launch_commit': head})
+                self.assertEqual((changes['git_changes_reason'], changes['files_changed'], changes['untracked_files'],
+                                  changes['untracked_files_reason']), (reason, None, None, reason))
+
+    def test_a_measured_zero_says_what_it_covers_and_untracked_files_are_counted_apart(self):
+        import dispatch_ground_truth as gt
+        repo = self.root / 'new-files-repo'
+        head = _init_git_repo(repo)
+        (repo / '.gitignore').write_text('*.log\n', encoding='utf-8', newline='\n')
+        _git_run(repo, 'add', '.gitignore')
+        _git_run(repo, 'commit', '-m', 'ignore logs')
+        (repo / 'pkg').mkdir()
+        (repo / 'pkg' / 'new1.py').write_text('x = 1\n', encoding='utf-8', newline='\n')
+        (repo / 'new2.py').write_text('y = 2\n', encoding='utf-8', newline='\n')
+        (repo / 'run.log').write_text('ignored\n', encoding='utf-8', newline='\n')
+        changes = gt.collect_git_changes({'cwd': str(repo / 'pkg'), 'launch_commit': head})
+        self.assertEqual((changes['files_changed'], changes['git_changes_reason']), (1, None))   # .gitignore, committed
+        # the whole working tree, as the diff covers it, not only the cwd; ignored files are not counted
+        self.assertEqual((changes['untracked_files'], changes['untracked_files_reason']), (2, None))
+        real = gt._git
+
+        def ls_files_fails(cwd, *args, **kwargs):
+            if 'ls-files' in args:
+                return subprocess.CompletedProcess(args, 128, '', 'fatal: index file corrupt\n')
+            return real(cwd, *args, **kwargs)
+        with patch.object(gt, '_git', ls_files_fails):
+            changes = gt.collect_git_changes({'cwd': str(repo), 'launch_commit': head})
+        self.assertEqual((changes['files_changed'], changes['untracked_files'], changes['untracked_files_reason']),
+                         (1, None, 'git_ls_files_failed'))
+        with patch.object(gt, '_git', lambda cwd, *args, **kwargs: None if 'ls-files' in args else real(cwd, *args, **kwargs)):
+            changes = gt.collect_git_changes({'cwd': str(repo), 'launch_commit': head})
+        self.assertEqual((changes['untracked_files'], changes['untracked_files_reason']), (None, 'git_unavailable'))
+
+    def test_a_collection_that_raises_is_recorded_with_its_class_and_an_os_error_is_retried_once(self):
+        import dispatch_ground_truth as gt
+        bundle = dict(account_fleet.bundles(self.accounts)['lab_sonnet55_high'], bundle_id='lab_sonnet55_high')
+
+        def pending(task_id):
+            task = dict(self.task, task_id=task_id)
+            task['profile'] = profile_for(task)
+            row = self._issue_and_claim(bundle, task=task)
+            with registry.transaction() as connection:
+                stored = registry.get(connection, 'dispatches', row['dispatch_id'])
+                stored.update(state='completed', ground_truth_pending=True)
+                registry.save(connection, stored)
+            return row['dispatch_id']
+
+        def record(raised):
+            with patch.object(gt, 'collect_ground_truth', side_effect=raised):
+                registry._record_pending_ground_truth(None, self.now)
+
+        crashed = pending('gt-crash')
+        record(TypeError("'NoneType' object is not subscriptable"))
+        stored = registry.inspect(crashed)
+        self.assertNotIn('ground_truth_pending', stored)
+        self.assertEqual(stored['ground_truth_recorded_at'], registry.stamp(self.now))
+        reason = 'collection_failed:TypeError'
+        self.assertEqual((stored['ground_truth_reason'], stored['active_seconds_reason'], stored['git_changes_reason'],
+                          stored['untracked_files_reason']), (reason,) * 4)
+        self.assertIsNone(stored['files_changed'])
+        self.assertNotIn('subscriptable', json.dumps(stored))
+        record(TypeError('again'))   # not pending any more: nothing runs again
+        self.assertEqual(registry.inspect(crashed)['ground_truth_reason'], reason)
+
+        locked = pending('gt-locked')
+        record(PermissionError(13, 'locked'))   # an OSError can be a file locked for a moment: one retry is owed
+        stored = registry.inspect(locked)
+        self.assertEqual((stored.get('ground_truth_pending'), stored.get('ground_truth_retry')), (True, 'PermissionError'))
+        self.assertNotIn('ground_truth_recorded_at', stored)
+        record(PermissionError(13, 'locked'))
+        stored = registry.inspect(locked)
+        self.assertNotIn('ground_truth_pending', stored)
+        self.assertNotIn('ground_truth_retry', stored)
+        self.assertEqual(stored['ground_truth_reason'], 'collection_failed:PermissionError')
+
+        recovered = pending('gt-recovered')
+        record(PermissionError(13, 'locked'))
+        registry._record_pending_ground_truth(None, self.now)   # the real collection on the retry
+        stored = registry.inspect(recovered)
+        self.assertNotIn('ground_truth_retry', stored)
+        self.assertNotIn('ground_truth_reason', stored)
+        self.assertIn('ground_truth_recorded_at', stored)
 
     def test_read_only_paseo_roll_captures_cwd_and_launch_commit_without_same_cwd_warning(self):
         repo = self.root / 'shared-repo'

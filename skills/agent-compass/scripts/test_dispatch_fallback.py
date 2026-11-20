@@ -651,7 +651,7 @@ class FallbackTests(unittest.TestCase):
         root = self.first()
         self.host.end(root['dispatch_id'], 'error', terminal={'reason': 'error'})
         with patch.dict(os.environ, {'AGENTCOMPASS_ROLL_FALLBACK': 'off'}):
-            self.assertEqual(self.handle(root['dispatch_id']), {'action': 'disabled'})
+            self.assertEqual(self.handle(root['dispatch_id'])['action'], 'disabled')
             flow.reconcile(root['dispatch_id'], host=self.host)
             self.assertIn('before rolling again', flow.public(registry.inspect(root['dispatch_id']))['next_action'])
             self.assertNotIn('AGENTCOMPASS_FALLBACK_ARGV', flow.bridge_env())

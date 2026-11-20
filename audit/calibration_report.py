@@ -255,6 +255,7 @@ def normalize(rows, decisions, ledger, pricing, since, until, away):
             "chained": bool(row.get("attempt_of")),
             "followups": row.get("followup_turns"),
             "recorded": "ground_truth_recorded_at" in row,
+            "ground_truth_reason": row.get("ground_truth_reason"),
             "expected_hours": number(profile.get("expected_hours")),
             "active_hours": active_hours,
             "active_reason": row.get("active_seconds_reason"),
@@ -377,6 +378,9 @@ def coverage(records, ledger_lines, all_rows, since, until, skipped, ledger_skip
         "dispatches": len(records),
         "completed": len(done),
         "completed_without_ground_truth": sum(1 for r in done if not r["recorded"]),
+        # A collection that raised is recorded with `ground_truth_reason` collection_failed:<class> (dispatch_registry).
+        "ground_truth_failed_reasons": dict(collections.Counter(r["ground_truth_reason"] for r in done
+                                                                if r["ground_truth_reason"])),
         "completed_without_active_time": sum(1 for r in done if r["active_hours"] is None),
         "completed_without_tokens": sum(1 for r in done if r["fresh_tokens"] is None),
         "completed_by_path": dict(sorted(by_path.items())),
@@ -520,7 +524,8 @@ def render(report):
            "## Coverage", "",
            f"- dispatches in range: {cov['dispatches']}; completed: {cov['completed']}; groups: "
            + ", ".join(f"{k} {v}" for k, v in report["groups"].items()),
-           f"- completed without ground truth: {cov['completed_without_ground_truth']}; without active time: "
+           f"- completed without ground truth: {cov['completed_without_ground_truth']}; ground truth collection failed: "
+           + (", ".join(f"{k} {v}" for k, v in cov["ground_truth_failed_reasons"].items()) or "none") + "; without active time: "
            f"{cov['completed_without_active_time']}; without tokens: {cov['completed_without_tokens']}; with tokens but no "
            f"window share: {cov['completed_without_window_share']}",
            f"- failed, relaunched or canceled: {cov['failed_or_canceled']}, of which with any measurement: "

@@ -950,7 +950,13 @@ def _finish_pending_side_effects(path, now):
 
 
 def _record_pending_ground_truth(path, now):
-    """Record ground truth only for rows this process just flagged. Never scan historical completions."""
+    """Record ground truth only for rows this process just flagged. Never scan historical completions.
+
+    A collection that raises is recorded too, with its class as the reason (dispatch_ground_truth.failed_ground_truth),
+    so the next read does not run it again in silence. Of what can escape the collection (its own reads already turn a
+    missing or unreadable transcript, config or git answer into a reason), only an OSError can be transient: a stat of a
+    file or directory refused for a moment. It gets one retry at the next read, marked `ground_truth_retry`; any other
+    class is a defect that fails the same way on the same row and files, so it is recorded at once."""
     target = Path(path or db_path())
     if not target.exists():
         return
@@ -964,21 +970,28 @@ def _record_pending_ground_truth(path, now):
         return
     import dispatch_ground_truth
     for row in pending:
+        retry = None
         try:
             truth = dispatch_ground_truth.collect_ground_truth(
                 row, idle_threshold=RUN_LEASE, recorded_at=stamp(now),
                 agent_doc=paseo_agent_record(row.get('agent_id')),
                 other_dispatch_ids=set(row.get('ground_truth_other_ids') or ()))
-        except Exception:
-            continue
+        except Exception as exc:
+            if isinstance(exc, OSError) and not row.get('ground_truth_retry'):
+                retry, truth = type(exc).__name__, None
+            else:
+                truth = dispatch_ground_truth.failed_ground_truth(recorded_at=stamp(now), exc=exc)
         try:
             with transaction(path, upkeep=True) as writing:
                 latest = get(writing, 'dispatches', row['dispatch_id'])
                 if not latest.get('ground_truth_pending'):
                     continue
-                latest.update(truth)
-                latest.pop('ground_truth_pending', None)
-                latest.pop('ground_truth_other_ids', None)
+                if retry:
+                    latest['ground_truth_retry'] = retry
+                else:
+                    latest.update(truth)
+                    for key in ('ground_truth_pending', 'ground_truth_other_ids', 'ground_truth_retry'):
+                        latest.pop(key, None)
                 save(writing, latest)
         except (OSError, sqlite3.Error, ValueError):
             continue
