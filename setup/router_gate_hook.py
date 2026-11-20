@@ -39,6 +39,32 @@ def router_command() -> str:
 
 
 ROUTER_CMD = router_command()
+
+# What this run could not check, one "what (detail)" each, in the order it happened. The gate allows when a check cannot
+# be made (its documented degrade: it guards against accidental launches and is not a security boundary); the answer
+# carries this list (`format_response`) so that allow is not silent. The detail is an error's type, never its text,
+# which may hold a path, a credential or the task.
+UNEVALUATED: list[str] = []
+
+
+def note_unevaluated(what: str, detail: object) -> None:
+    entry = f"{what} ({detail if isinstance(detail, str) else type(detail).__name__})"
+    if entry not in UNEVALUATED:
+        UNEVALUATED.append(entry)
+
+
+def attempt(check: str, call, default):
+    """The one place a failing check is caught: `default` stands in for its answer and the check is noted."""
+    try:
+        return call()
+    except Exception as exc:
+        note_unevaluated(check, exc)
+        return default
+
+
+def unevaluated_notice() -> str:
+    return ("[Router Gate] Allowed without checking: " + "; ".join(UNEVALUATED)
+            + ". The call was not judged on these; nothing was blocked because of them.") if UNEVALUATED else ""
 DEFAULT_PASEO_AGENTS = HOME / ".paseo" / "agents"
 DEFAULT_WINDOW_SECONDS = 900  # 15 minutes
 
@@ -174,17 +200,24 @@ def normalize_input(raw_input: object) -> dict:
     return {}
 
 
+def harness_kind_of(payload: dict) -> str:
+    if "toolCall" in payload or "workspaceRoots" in payload:
+        return "antigravity"
+    return "pi" if "toolName" in payload and "tool_name" not in payload else "claude_or_codex"
+
+
 def extract_tool_call(payload: dict) -> tuple[str, dict, str]:
     """Return (tool_name, tool_input, harness_kind) from a hook stdin payload."""
-    if "toolCall" in payload or "workspaceRoots" in payload:
+    kind = harness_kind_of(payload)
+    if kind == "antigravity":
         tc = payload.get("toolCall") or {}
         name = str(tc.get("name") or "")
         args = normalize_input(tc.get("args"))
-        return name, args, "antigravity"
-    if "toolName" in payload and "tool_name" not in payload:
+        return name, args, kind
+    if kind == "pi":
         name = str(payload.get("toolName") or "")
         args = normalize_input(payload.get("input"))
-        return name, args, "pi"
+        return name, args, kind
     name = str(payload.get("tool_name") or "")
     args = normalize_input(payload.get("tool_input"))
     return name, args, "claude_or_codex"
@@ -885,14 +918,20 @@ def cli_turn_calls(tool_name: str, tool_input: dict) -> list[tuple[str, dict]]:
         # Also accepts a Python script supplied directly as a wrapper's code.
         python(command, depth)
         commands = None
+        failure = None
         for reading in (dialect, FALLBACK_DIALECT.get(dialect)):
             try:
                 commands = simple_commands(command, reading) if reading else None
-            except ShellParseError:
+            except ShellParseError as exc:
+                failure = exc
                 continue    # read it in the other dialect before it counts as undecidable
             break
+        if commands is None:
+            # Undecidable in both readings: not a launch (see the docstring), and the answer says it was not read.
+            note_unevaluated("reading a shell command for launches", failure)
+            return
         if not commands:
-            return   # undecidable in both readings: not a launch (see the docstring)
+            return
         for words, stdin in commands:
             argv(words, depth, stdin)
 
@@ -1279,21 +1318,17 @@ def check_route_authority(row: dict, trigger: str) -> str | None:
 def load_dispatch_accounts() -> dict | None:
     """The fleet, read from the reference set in effect (read_reference); configuration unreadable also from the
     shipped set degrades to None (no account or bundle resolves, nothing is refused)."""
-    try:
-        return read_reference(router_module("account_fleet").load_accounts)
-    except Exception:
-        return None
+    return attempt("the account fleet", lambda: read_reference(router_module("account_fleet").load_accounts), None)
 
 
 def target_windows(candidates: list[dict], accounts: dict | None) -> list[str] | None:
     """Quota windows the resolved target bundles draw; None when unknown."""
     if not candidates or not accounts:
         return None
-    try:
+    def windows() -> list[str]:
         pools = router_module("quota_pools").bundle_pools
         return sorted({wid for bundle in candidates for wid in pools(dict(bundle, id=bundle["bundle_id"]), accounts)})
-    except Exception:
-        return None
+    return attempt("the quota windows of the target", windows, None)
 
 
 def check_account_quota_exhausted(
@@ -1321,36 +1356,36 @@ def check_account_quota_exhausted(
     if not account:
         return None
     now = now or dt.datetime.now(dt.timezone.utc)
-    latched, without_own, window_refusal = router_owner("turn_refusal", "latched", "without_own", "window_refusal")
+    latched_windows, without_own, window_refusal = router_owner(
+        "turn_refusal", "latched_windows", "without_own", "window_refusal")
     # Confirmed upstream exhaustion is durable even with no/stale usage cache.
     # This applies to new launches and resumed turns, never to read-only investigation.
-    if latched(account, windows, usage_cache_path, HOME):
+    held = latched_windows(account, windows, usage_cache_path, HOME)
+    if held:
+        every, script = router_owner("quota_exhaustion", "ALL", "__file__")
+        drawn = f"every window of {account}" if every in held else f"window {', '.join(sorted(held))} of {account}"
+        clear = (f'{"agentcompass" if getattr(sys, "frozen", False) else "python"} -X utf8 '
+                 f'"{Path(script).resolve().as_posix()}" --clear {account}')
         return (
-            '[Router Gate] Account quota was confirmed exhausted; refresh quota after recovery or explicitly clear '
-            'the exhaustion record. While the owned worker is running, send a control message with completion '
+            f'[Router Gate] A confirmed quota failure is recorded for {drawn}, which this launch draws. The record '
+            'lifts when a newer usage reading shows the window under 100% or its reset time passes; to clear it by '
+            f'hand run: {clear}. While the owned worker is running, send a control message with completion '
             f'notifications enabled; otherwise collect existing output, cancel_agent if needed, and run {ROUTER_CMD} roll --brief <task.md>.'
         )
-    try:
-        if records is None:
-            try:
-                registry = router_module("dispatch_registry")
-                records = registry.reservations(now=now, read_only=True)
-            except Exception:
-                records = ()
-            # A watcher that died without sending still owes the parent one end notice. A failure here
-            # must not become a launch denial, and a second read does not send it again.
-            try:
-                router_module("dispatch_flow").deliver_end_notices(now=now)
-            except Exception:
-                pass
-        records = without_own(records, exclude_dispatch_id, exclude_agent_id)
-        # The reference read (accounts, the window verdict on them) falls back to the shipped set as a whole; the
-        # end notices above are an effect and stay outside it.
-        found = read_reference(lambda: window_refusal(
-            account, accounts if accounts is not None else router_module("account_fleet").load_accounts(), now,
-            usage_cache_path, records, bundles, model))
-    except Exception:
-        return None
+    if records is None:
+        records = attempt("the in-flight quota reservations",
+                          lambda: router_module("dispatch_registry").reservations(now=now, read_only=True), ())
+        # A watcher that died without sending still owes the parent one end notice. A failure here
+        # must not become a launch denial, and a second read does not send it again.
+        try:
+            router_module("dispatch_flow").deliver_end_notices(now=now)
+        except Exception:
+            pass
+    # The reference read (accounts, the window verdict on them) falls back to the shipped set as a whole; the
+    # end notices above are an effect and stay outside it.
+    found = attempt("quota window verdict", lambda: read_reference(lambda: window_refusal(
+        account, accounts if accounts is not None else router_module("account_fleet").load_accounts(), now,
+        usage_cache_path, without_own(records, exclude_dispatch_id, exclude_agent_id), bundles, model)), None)
     if not found:
         return None
     what, wid, why = found
@@ -1609,12 +1644,19 @@ def check_schedule_plan(rows: list[dict], args: dict, context: dict, trigger: st
 
 
 def format_response(allowed: bool, harness_kind: str, reason: str = "") -> dict:
+    """The answer in the shape of the host. An allow carries what this run could not check (`UNEVALUATED`) where the host
+    reads a message beside an allow: `systemMessage`, the field both Claude Code's and Codex's hook output has for every
+    hook, shown to the user and no decision. Antigravity (`decision`/`reason`) and Pi (the generated extension reads
+    only `block`/`reason`) have no such field: the notice goes to stderr, where a host that captures it shows it."""
+    notice = unevaluated_notice() if allowed else ""
+    if notice and harness_kind in ("antigravity", "pi"):
+        print(notice, file=sys.stderr)
     if harness_kind == "antigravity":
         return {"decision": "allow"} if allowed else {"decision": "deny", "reason": reason}
     if harness_kind == "pi":
         return {"block": False} if allowed else {"block": True, "reason": reason}
     if allowed:
-        return {}
+        return {"systemMessage": notice} if notice else {}
     return {
         "decision": "block",
         "reason": reason,
@@ -1634,8 +1676,28 @@ def evaluate_payload(
     usage_cache_path: Path | None = None,
     paseo_agents_dir: Path | None = None,
 ) -> dict:
+    """The hook's answer to one payload (`decide`). The one place a failure inside the decision is caught: the call is
+    allowed, as every unmade check is, and the answer names the failure's type (`format_response`)."""
+    UNEVALUATED.clear()
+    try:
+        return decide(payload, ledger_path, now, window_seconds, usage_cache_path, paseo_agents_dir)
+    except Exception as exc:
+        note_unevaluated("the gate's decision", exc)
+        return format_response(True, harness_kind_of(payload))
+
+
+def decide(
+    payload: dict,
+    ledger_path: Path | None,
+    now: dt.datetime | None,
+    window_seconds: int | None,
+    usage_cache_path: Path | None,
+    paseo_agents_dir: Path | None,
+) -> dict:
     tool_name, tool_input, harness_kind = extract_tool_call(payload)
     tool_name = base_tool_name(tool_name)
+    if os.environ.get("ROUTER_GATE_BYPASS") == "1":
+        return format_response(True, harness_kind)
     caller_id = str(payload.get("parent_agent_id") or payload.get("callerAgentId")
                     or os.environ.get("PASEO_AGENT_ID") or "").strip() or None
     # Who the caller is, for ownership: its Paseo agent ID and the host session ID its hook payload carries.
@@ -1644,8 +1706,6 @@ def evaluate_payload(
     calls = wrapped_agent_calls(tool_name, tool_input) or [(tool_name, tool_input)]
     calls.extend(cli_turn_calls(tool_name, tool_input))
 
-    if os.environ.get("ROUTER_GATE_BYPASS") == "1":
-        return format_response(True, harness_kind)
     if any(re.split(r'__|\.', name)[-1] in WORKER_QUESTION_TOOLS for name, _ in calls):
         worker = os.environ.get('AGENTCOMPASS_WORKER') == '1' or (
             caller_id and is_delegated_worker(caller_id, paseo_agents_dir))
@@ -1819,20 +1879,28 @@ def evaluate_payload(
     return format_response(True, harness_kind)
 
 
-def main() -> int:
-    raw = sys.stdin.read()
-    if not raw or not raw.strip():
-        print("{}")
-        return 0
+def read_payload(raw: str) -> tuple[dict | None, str]:
+    """(payload, "") for a JSON object, else (None, what was wrong with the input)."""
+    if not raw.strip():
+        return None, "empty"
     try:
         payload = json.loads(raw)
-    except ValueError:
-        print("{}")
-        return 0
-    if not isinstance(payload, dict):
-        print("{}")
-        return 0
-    result = evaluate_payload(payload)
+    except ValueError as exc:
+        return None, type(exc).__name__
+    return (payload, "") if isinstance(payload, dict) else (None, f"JSON {type(payload).__name__}, not an object")
+
+
+def main() -> int:
+    UNEVALUATED.clear()
+    payload, unreadable = read_payload(sys.stdin.read())
+    if payload is None:
+        # No payload names a host and nothing to judge: allowed, as the gate always did, but the answer says the gate
+        # got nothing it could read (a host whose payload changed would otherwise switch the gate off silently), in the
+        # shape every host's allow defaults to.
+        note_unevaluated("reading the hook's stdin", unreadable)
+        result = format_response(True, "claude_or_codex")
+    else:
+        result = evaluate_payload(payload)
     print(json.dumps(result, ensure_ascii=False))
     return 0
 

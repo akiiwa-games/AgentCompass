@@ -1,4 +1,5 @@
 import datetime as dt
+import io
 import json
 import os
 import subprocess
@@ -60,6 +61,106 @@ class RouterGateHookTests(unittest.TestCase):
             self.assertIsNotNone(gate.check_account_quota_exhausted('worker', missing, T0))
             exhaustion.clear('worker')
             self.assertIsNone(gate.check_account_quota_exhausted('worker', missing, T0))
+
+    def test_the_latched_quota_deny_names_the_account_the_windows_and_the_way_to_clear_the_record(self):
+        """Contract (parent-address-gate.md): a recorded confirmed failure refuses a launch drawing a latched window,
+        and the deny says which account and windows are recorded and the command that clears the record."""
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, {'ROUTER_STATE_DIR': directory}):
+            exhaustion = gate.router_module('quota_exhaustion')
+            missing = Path(directory) / 'missing.json'
+            exhaustion.record('worker', 'Individual quota reached', windows=['five_hour', 'weekly'])
+            text = gate.check_account_quota_exhausted('worker', missing, T0, windows=['weekly', 'monthly'])
+            self.assertIn('worker', text)
+            self.assertIn('weekly', text)
+            self.assertNotIn('monthly', text)    # recorded windows only, and only those this launch draws
+            self.assertNotIn('five_hour', text)
+            script = Path(exhaustion.__file__).resolve().as_posix()
+            self.assertIn(f'python -X utf8 "{script}" --clear worker', text)
+            exhaustion.clear('worker')
+            exhaustion.record('worker', 'Individual quota reached')
+            text = gate.check_account_quota_exhausted('worker', missing, T0, windows=['weekly'])
+            self.assertIn('every window of worker', text)
+            with mock.patch.object(gate.sys, 'frozen', True, create=True):
+                self.assertIn(f'agentcompass -X utf8 "{script}" --clear worker',
+                              gate.check_account_quota_exhausted('worker', missing, T0, windows=['weekly']))
+
+    def run_main(self, raw):
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(sys, 'stdin', io.StringIO(raw)), mock.patch.object(sys, 'stdout', out), \
+                mock.patch.object(sys, 'stderr', err):
+            try:
+                code = gate.main()
+            except Exception as exc:    # the caller of a hook sees a traceback and exit 1
+                code = exc
+        return code, out.getvalue().strip(), err.getvalue().strip()
+
+    UNPARSED = 'echo "secret-token-xyz'    # an unterminated quote parses in neither dialect
+    SHELL_PAYLOADS = {
+        'claude': {'tool_name': 'Bash', 'tool_input': {'command': UNPARSED}},
+        'antigravity': {'toolCall': {'name': 'run_command', 'args': {'command': UNPARSED}}, 'workspaceRoots': []},
+        'pi': {'toolName': 'bash', 'input': {'command': UNPARSED}},
+    }
+
+    def assert_allow_with_word(self, host, raw, word, secrets=()):
+        """Each host reads its own allow shape; the word reaches it without becoming a deny: a `systemMessage` where the
+        host's hook protocol has one (Claude Code, Codex), stderr where it has none (Antigravity, Pi)."""
+        code, out, err = self.run_main(raw)
+        self.assertEqual(code, 0)
+        doc = json.loads(out)
+        if host == 'claude':
+            self.assertEqual(list(doc), ['systemMessage'])
+            said, other = doc['systemMessage'], err
+        else:
+            self.assertEqual(doc, {'decision': 'allow'} if host == 'antigravity' else {'block': False})
+            said, other = err, ''
+        self.assertTrue(said.startswith('[Router Gate]'), said)
+        self.assertIn(word, said)
+        self.assertEqual(other, '')
+        for secret in secrets:
+            self.assertNotIn(secret, said)
+
+    def test_a_shell_command_read_in_neither_dialect_is_allowed_and_the_answer_says_it_was_not_read(self):
+        for host, payload in self.SHELL_PAYLOADS.items():
+            with self.subTest(host=host):
+                self.assert_allow_with_word(host, json.dumps(payload), 'ShellParseError', secrets=('secret-token-xyz',))
+
+    def test_an_exception_while_deciding_is_allowed_and_the_answer_says_which_type_not_its_text(self):
+        payload = {'tool_name': 'Agent', 'tool_input': {'subagent_type': 'general-purpose', 'prompt': 'task text'},
+                   'cwd': 'E:/x'}
+        with mock.patch.object(gate, 'recent_routes', side_effect=OSError('C:/secret/ledger path')):
+            self.assert_allow_with_word('claude', json.dumps(payload), 'OSError', secrets=('secret', 'task text'))
+
+    def test_a_check_that_throws_is_allowed_and_the_answer_names_the_check_and_the_error_type(self):
+        turn = {'tool_name': 'send_agent_prompt', 'tool_input': {'agentId': 'someone-else', 'prompt': 'hello'}}
+        with mock.patch.object(gate.router_module('account_fleet'), 'load_accounts',
+                               side_effect=RuntimeError('token=abc')):
+            self.assert_allow_with_word('claude', json.dumps(turn), 'account fleet (RuntimeError)', secrets=('abc',))
+        gate.UNEVALUATED.clear()
+        cache = self.quota_cache({'claude': {'windows': [self.window('five_hour', 10)]}})
+        self.assertIsNone(gate.check_account_quota_exhausted('claude', cache, T0, records=[], model='claude-opus-5-5'))
+        self.assertEqual(gate.UNEVALUATED, [])    # a check that ran says nothing
+        with mock.patch.object(gate.router_module('usage_reading'), 'usage_snapshot', side_effect=KeyError('k')):
+            self.assertIsNone(gate.check_account_quota_exhausted(
+                'claude', cache, T0, records=[], model='claude-opus-5-5'))
+        self.assertEqual(gate.UNEVALUATED, ['quota window verdict (KeyError)'])
+
+    def test_unreadable_stdin_is_allowed_with_a_word_in_the_shape_of_an_unknown_host(self):
+        for label, raw in (('empty', ''), ('blank', '  \n'), ('not json', '{oops'), ('a list', '[1]')):
+            with self.subTest(stdin=label):
+                self.assert_allow_with_word('claude', raw, 'stdin')
+
+    def test_an_answer_with_nothing_unevaluated_carries_no_word(self):
+        payloads = {'claude': ({}, {'tool_name': 'Bash', 'tool_input': {'command': 'ls'}}),
+                    'antigravity': ({'decision': 'allow'},
+                                    {'toolCall': {'name': 'run_command', 'args': {'command': 'ls'}}}),
+                    'pi': ({'block': False}, {'toolName': 'bash', 'input': {'command': 'ls'}})}
+        for host, (shape, payload) in payloads.items():
+            with self.subTest(host=host):
+                self.assertEqual(self.run_main(json.dumps(payload)), (0, json.dumps(shape), ''))
+
+    def test_a_bypassed_gate_does_not_report_what_it_did_not_read(self):
+        with mock.patch.dict(os.environ, {'ROUTER_GATE_BYPASS': '1'}):
+            self.assertEqual(self.run_main(json.dumps(self.SHELL_PAYLOADS['claude'])), (0, '{}', ''))
 
     def setUp(self):
         state = tempfile.TemporaryDirectory()
@@ -2410,7 +2511,7 @@ def test_the_gate_reads_its_configuration_from_the_shipped_set_when_the_fetched_
 
 def test_the_quota_verdict_is_decided_on_the_shipped_set_when_the_fetched_one_fails(monkeypatch):
     public_data = hold_broken_fetched_set(monkeypatch)
-    latched, without_own, window_refusal = gate.router_owner('turn_refusal', 'latched', 'without_own', 'window_refusal')
+    latched_windows, without_own, window_refusal = gate.router_owner('turn_refusal', 'latched_windows', 'without_own', 'window_refusal')
     decided = []
 
     def refusal(account, accounts, *args):
@@ -2418,7 +2519,7 @@ def test_the_quota_verdict_is_decided_on_the_shipped_set_when_the_fetched_one_fa
         return ('model', 'codex:weekly', 'used up')
     real_owner = gate.router_owner
     monkeypatch.setattr(gate, 'router_owner', lambda module, *names: (
-        (lambda *a: False), without_own, refusal) if module == 'turn_refusal' else real_owner(module, *names))
+        (lambda *a: set()), without_own, refusal) if module == 'turn_refusal' else real_owner(module, *names))
     reason = gate.check_account_quota_exhausted('codex', records=[])
     assert decided == [('bundled', True)]
     assert reason and 'codex:weekly' in reason
