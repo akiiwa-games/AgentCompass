@@ -1323,6 +1323,9 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
     accounts = account_fleet.load_accounts()
     if account not in accounts["accounts"]:
         raise ValueError(_tr("未知账号"))
+    if model not in (None, ""):
+        import model_resolution
+        model_resolution.check_model_pin(model, "model")
     stored = account_fleet.stored_form(model, accounts, account) if model else None
     model = account_fleet.stored_model(model, accounts, account) if model else None
     path = quota_overrides.overrides_path()

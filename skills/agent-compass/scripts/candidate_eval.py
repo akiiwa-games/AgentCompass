@@ -16,7 +16,7 @@ import quota_economy
 import quota_overrides
 import quota_pools
 import worker_sessions
-from model_resolution import split_model_effort
+from model_resolution import model_pin_problem, split_model_effort
 
 
 METERED_LAST_RESORT = 'metered access is a last resort'
@@ -409,12 +409,18 @@ def evaluate_bundle(bundle, task, ctx):
     acct_pool = (account_fleet.pin_pool(accounts, account=bundle['account'],
                                         source=(ctx.get('bundles') or {}).values(), extra=(bundle,))
                  if acct_overrides else None)
+    def _override_matches(o):
+        if not o.get('model'):
+            return True
+        if model_pin_problem(o['model']) is not None:
+            return False
+        return account_fleet.pin_names_bundle(o['model'], bundle, accounts, pool=acct_pool)
+
     boost = sum(float(o.get('boost') or 0) for o in acct_overrides
-                if (not o.get('model') or account_fleet.pin_names_bundle(o['model'], bundle, accounts, pool=acct_pool))
+                if _override_matches(o)
                 and (quota_overrides.expected_reset_time(o) is None or quota_overrides.expected_reset_time(o) <= now))
     for intent in acct_overrides:
-        if (intent.get('expected_reset_at')
-                and (not intent.get('model') or account_fleet.pin_names_bundle(intent['model'], bundle, accounts, pool=acct_pool))):
+        if intent.get('expected_reset_at') and _override_matches(intent):
             result['notes'].append(f"expected reset {intent['expected_reset_at']}: {intent['reset_expectation_status']}; capacity requires a fresh observation")
     if boost:
         result['components']['boost'] = round(boost, 3)

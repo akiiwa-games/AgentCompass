@@ -1095,6 +1095,51 @@ class PinIdentityMatchesBundle(unittest.TestCase):
             by_id_bare = {c['id']: c['components'].get('boost', 0) for c in p_bare_ov['ranking']}
             self.assertEqual((by_id_bare['b_va'], by_id_bare['b_vb']), (0.25, 0.25))
 
+            # Reset expectations (`window_reset_expectation` via `allocator.plan`): a prefixed target's reset expectation
+            # reads only the bundles its prefix names, while a bare target's reads every bundle of the row (M26):
+            reset_soon = (self.at + timedelta(hours=2)).isoformat()
+            until_later = (self.at + timedelta(hours=24)).isoformat()
+            cal_pairs = [
+                ('b_vb', {'provider': 'codex', 'harness': 'codex', 'model': 'gpt-5.5',
+                          'launch_model': 'vendor-b/gpt-5.5', 'effort': 'high', 'draws': ['usage']}),
+                ('b_va', {'provider': 'codex', 'harness': 'codex', 'model': 'gpt-5.5',
+                          'launch_model': 'vendor-a/gpt-5.5', 'effort': 'high', 'draws': ['usage']}),
+            ]
+            if reversed_order:
+                cal_pairs.reverse()
+            cal_fleet = self.subscription_fleet({'codex': ('codex', dict(cal_pairs), 'usage')})
+            p_pref_reset = allocator.plan(
+                {'objective': 'x', 'profile': self.prof, 'expected_hours': 0.5, 'constraints': {'model': 'gpt-5.5'}},
+                copy.deepcopy(usage_both), self.at, accounts=copy.deepcopy(cal_fleet),
+                overrides=[{'id': 'or1', 'account': 'codex', 'model': 'vendor-a/gpt-5.5',
+                            'expected_reset_at': reset_soon, 'until': until_later}],
+                read_local_state=False,
+            )
+            reset_by_id = {c['id']: c['components'].get('earliest_reset_hours') for c in p_pref_reset['ranking']}
+            self.assertEqual(reset_by_id['b_va'], 2.0)
+            self.assertGreater(reset_by_id['b_vb'], 24.0)
+            p_bare_reset = allocator.plan(
+                {'objective': 'x', 'profile': self.prof, 'expected_hours': 0.5, 'constraints': {'model': 'gpt-5.5'}},
+                copy.deepcopy(usage_both), self.at, accounts=copy.deepcopy(cal_fleet),
+                overrides=[{'id': 'or2', 'account': 'codex', 'model': 'gpt-5.5',
+                            'expected_reset_at': reset_soon, 'until': until_later}],
+                read_local_state=False,
+            )
+            reset_bare_by_id = {c['id']: c['components'].get('earliest_reset_hours') for c in p_bare_reset['ranking']}
+            self.assertEqual((reset_bare_by_id['b_va'], reset_bare_by_id['b_vb']), (2.0, 2.0))
+            unm_pool = account_fleet.pin_pool(unm_fleet, account='codex')
+            unm_by_id = {b['id']: b for b in unm_pool}
+            for bid in ('b_va', 'b_vb'):
+                self.assertEqual(
+                    quota_overrides.window_reset_expectation(
+                        [{'id': 'ou1', 'account': 'codex', 'model': 'novel-unmeasured',
+                          'expected_reset_at': reset_soon, 'until': until_later}],
+                        'codex', unm_by_id[bid]['model'], 'usage', unm_fleet['accounts']['codex'], unm_fleet, self.at,
+                        bundle=unm_by_id[bid], pool=unm_pool,
+                    ),
+                    self.at + timedelta(hours=2),
+                )
+
             # Same-account `record_constraint` + `prepare`: bare `gpt-5.5` skips unchecked `openai/gpt-5.5` to enabled `gpt-5.5`,
             # while prefixed `openai/gpt-5.5` refuses on `hard_constraint`:
             same_acct_pairs = [
@@ -1128,20 +1173,51 @@ class PinIdentityMatchesBundle(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'unchecked in model management'):
                     route_judge.record_constraint(mk('openai/gpt-5.5', 'hard_constraint'), dict(t_bare, task_id=f'tp-{reversed_order}'))
 
-        # Malformed model pins (leading `/`, trailing `/`, empty `/` segment, bare `:effort`) are refused at every caller
-        # boundary (`task_intake.named_pin` / `allocator.plan`, `route_judge.record_constraint` / `match_bundle`,
-        # `roll.named_route_conflict` / `roll._run`, `quota_overrides`, `state_upgrade.check_router_overrides`, and
-        # `account_fleet.pin_matching_bundles`), and `_same_provider` never matches an empty provider id:
+        # Malformed model pins (leading `/`, trailing `/`, empty `/` or `:` segment, incomplete `auto:` id) are refused at
+        # every caller write/dispatch boundary, while `model_pin_problem` never raises on any string (0..4 `:` x 0..4 `/`,
+        # with and without `auto:`), and a stored `router-overrides.json` entry with a malformed model is kept inert until
+        # its own `until` expiry without asking to delete the file:
         import quota_overrides
         import state_upgrade
         import task_intake
         self.assertFalse(account_fleet._same_provider('codex', ''))
         self.assertFalse(account_fleet._same_provider('codex', None))
+        odd_strings = {'auto:acct:harness'}
+        for n_colons in range(5):
+            for n_slashes in range(5):
+                for seps in (
+                    (':' * n_colons) + ('/' * n_slashes),
+                    ('/' * n_slashes) + (':' * n_colons),
+                    ''.join(':/'[k % 2] for k in range(n_colons + n_slashes)
+                            if (k % 2 == 0 and k // 2 < n_colons) or (k % 2 == 1 and k // 2 < n_slashes))
+                    + ':' * max(0, n_colons - (n_colons + n_slashes + 1) // 2)
+                    + '/' * max(0, n_slashes - (n_colons + n_slashes) // 2),
+                ):
+                    slots = len(seps) + 1
+                    for fill in (
+                        [''] * slots,
+                        ['seg'] * slots,
+                        [''] + ['seg'] * (slots - 1),
+                        ['seg'] * (slots - 1) + [''],
+                        ['seg'] * (slots - 1) + ['high'],
+                        [''] + ['seg'] * max(0, slots - 2) + (['high'] if slots >= 2 else []),
+                        ['seg' if idx != slots // 2 else '' for idx in range(slots)],
+                    ):
+                        built = ''.join(fill[idx] + (seps[idx] if idx < len(seps) else '') for idx in range(slots))
+                        odd_strings.add(built)
+                        odd_strings.add('auto:' + built)
+        for candidate in sorted(odd_strings):
+            verdict = model_resolution.model_pin_problem(candidate, 'model')
+            self.assertTrue(verdict is None or (isinstance(verdict, str) and verdict.startswith('invalid_model_pin:')),
+                            (candidate, verdict))
+        self.assertTrue((model_resolution.model_pin_problem('auto:acct:harness') or '').startswith('invalid_model_pin:'))
+
         malformed_fleet = self.subscription_fleet({'codex': ('codex', {
             'b_cx': {'provider': 'codex', 'harness': 'codex', 'model': 'gpt-5.5', 'launch_model': 'gpt-5.5',
                      'effort': 'high', 'draws': ['usage']},
         }, 'usage')})
-        for bad_pin in ('/gpt-5.5', '/gpt-5.5:high', '/', 'openai/', 'openai//gpt-5.5', ':high', 'gpt-5.5:', '   '):
+        for bad_pin in ('/gpt-5.5', '/gpt-5.5:high', '/', 'openai/', 'openai//gpt-5.5', ':high', 'gpt-5.5:', '   ',
+                        'auto:acct:harness', 'auto:acct:harness:', 'auto::harness:gpt-5.5'):
             with self.subTest(bad_pin=bad_pin):
                 with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
                     task_intake.named_pin({'model': bad_pin}, {}, SHIPPED)
@@ -1168,18 +1244,52 @@ class PinIdentityMatchesBundle(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
                     roll._run(argparse.Namespace(task='do work', brief=None, model=bad_pin), route_judge)
                 with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
-                    quota_overrides.apply_overrides(
-                        [{'id': 'o1', 'account': 'codex', 'model': bad_pin, 'boost': 0.1,
-                          'until': '2026-11-21T00:00:00+00:00'}],
-                        copy.deepcopy(usage_both), copy.deepcopy(malformed_fleet), self.at,
-                    )
-                with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
                     account_fleet.pin_matching_bundles(bad_pin, account_fleet.pin_pool(malformed_fleet), malformed_fleet)
+
+        # Stored `router-overrides.json` with a malformed entry + a well-formed entry: kept, never asks to delete,
+        # plans with only the well-formed entry applied, expires at its own `until`, and refuses new malformed writes:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
-            ov_path = Path(td) / 'router-overrides.json'
-            ov_path.write_text(json.dumps({'v': 1, 'overrides': [{'id': 'o1', 'account': 'codex', 'model': '/gpt-5.5'}]}),
-                               encoding='utf-8')
-            self.assertIn('invalid_model_pin', state_upgrade.check_router_overrides(ov_path) or '')
+            home_dir = Path(td)
+            sdir = home_dir / '.agent-compass'
+            sdir.mkdir(parents=True, exist_ok=True)
+            ov_path = sdir / 'router-overrides.json'
+            for stored_bad in ('/gpt-5.5', 'openai/', '/', ':high', '/unknown-model', 'auto:acct:harness'):
+                ov_doc = {'v': 1, 'overrides': [
+                    {'id': 'o_bad', 'account': 'codex', 'model': stored_bad, 'boost': 0.35,
+                     'until': (self.at + timedelta(hours=6)).isoformat()},
+                    {'id': 'o_good', 'account': 'codex', 'model': 'gpt-5.5', 'boost': 0.20,
+                     'until': (self.at + timedelta(hours=12)).isoformat()},
+                ]}
+                ov_path.write_text(json.dumps(ov_doc), encoding='utf-8')
+                self.assertIsNone(state_upgrade.check_router_overrides(ov_path), stored_bad)
+                self.assertEqual(state_upgrade.collect_issues(home_dir, {'ROUTER_STATE_DIR': str(sdir)}), [])
+                with patch.dict(os.environ, {'ROUTER_OVERRIDES': str(ov_path)}), \
+                        patch.object(account_fleet, 'load_accounts', return_value=copy.deepcopy(malformed_fleet)), \
+                        patch.object(usage_reading, 'usage_snapshot', return_value=copy.deepcopy(usage_both)):
+                    loaded_now = quota_overrides.load_overrides(self.at, ov_path, usage=usage_both, accounts=malformed_fleet)
+                    self.assertEqual([o['id'] for o in loaded_now], ['o_bad', 'o_good'])
+                    planned_ov = allocator.plan(
+                        {'objective': 'x', 'profile': self.prof, 'expected_hours': 0.5},
+                        copy.deepcopy(usage_both), self.at, accounts=copy.deepcopy(malformed_fleet),
+                        overrides=loaded_now, read_local_state=False,
+                    )
+                    self.assertEqual(planned_ov['choice'], 'b_cx')
+                    self.assertEqual(planned_ov['ranking'][0]['components'].get('boost'), 0.20)
+                    self.assertEqual([o['id'] for o in planned_ov['decision'].get('overrides', [])], ['o_good'])
+                    # Ends at its own `until` expiry while the well-formed entry continues:
+                    loaded_after = quota_overrides.load_overrides(
+                        self.at + timedelta(hours=7), ov_path, usage=usage_both, accounts=malformed_fleet)
+                    self.assertEqual([o['id'] for o in loaded_after], ['o_good'])
+                    # New writes stay refused without corrupting the stored file:
+                    before_bytes = ov_path.read_bytes()
+                    with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
+                        quota_overrides.manage_overrides(argparse.Namespace(
+                            list=False, clear=None, account='codex', model=stored_bad, window=None, boost=0.1,
+                            resets_at=None, resets_in=None, expires_at=None, expires_in=None, until=None,
+                            stop_on_reset=False, reset_confirmation=None, rebaseline=False,
+                            basis='user asked', intent='test', usage_cache=None,
+                        ), now=self.at)
+                    self.assertEqual(ov_path.read_bytes(), before_bytes)
 
     def test_slash_suffixes_apply_uniformly_across_declaration_default_exact_and_alias(self):
         """Rule (model_resolution.slash_suffixes): declaration, default, exact row and alias all try the full id, then

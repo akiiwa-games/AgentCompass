@@ -172,15 +172,24 @@ def split_model_effort(raw):
 
 
 def model_pin_problem(raw, field='model'):
-    """Why a model pin is malformed (blank, empty model name, or an empty prefix/model segment around `/`), else None."""
+    """Why a model pin is malformed (blank, incomplete `auto:` id, or an empty segment around `/` or `:`), else None."""
     if not isinstance(raw, str) or not raw.strip():
         return f'invalid_model_pin: {field} {raw!r} must be a non-empty model name.'
     text = raw.strip()
-    if text.startswith('auto:') and text.count(':') >= 2:
-        spelled = text[len('auto:'):].split(':', 2)[2].partition('#')[0].partition('@')[0]
+    if text.startswith('auto:'):
+        account, sep1, after_account = text.removeprefix('auto:').partition(':')
+        harness, sep2, rest = after_account.partition(':')
+        if (not sep1 or not sep2 or not account.strip() or not harness.strip()
+                or '/' in account or '/' in harness):
+            return (f"invalid_model_pin: {field} {raw!r} is a malformed auto bundle id; "
+                    "expected 'auto:<account>:<harness>:<model>'.")
+        base, _, _ = rest.partition('#')
+        base, _, _ = base.partition('@')
+        spelled, _ = split_model_effort(base)
     else:
-        spelled = split_model_effort(text)[0]
-    if not spelled or spelled.startswith(':') or spelled.endswith(':') or any(not part.strip() for part in spelled.split('/')):
+        spelled, _ = split_model_effort(text)
+    if (not spelled
+            or any(not seg.strip() or any(not c.strip() for c in seg.split(':')) for seg in spelled.split('/'))):
         return (f"invalid_model_pin: {field} {raw!r} is malformed (empty prefix or model segment around '/'); "
                 'write a bare model name (<model>) or <provider>/<model>.')
     return None

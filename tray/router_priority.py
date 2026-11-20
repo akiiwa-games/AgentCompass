@@ -120,10 +120,16 @@ def overlaps(row, account, model, now, accounts):
     # An account-wide or same-model priority already applies. Do not double its
     # boost by opening another window or by adopting an existing CLI-created rule.
     import account_fleet
+    import model_resolution
     import quota_overrides
-    return (active(row, now) and not quota_overrides.override_reset_landed(row, None, accounts, now)
-            and row.get('account') == account
-            and (not row.get('model') or account_fleet.stored_model(row['model'], accounts, account) == model))
+    if not (active(row, now) and not quota_overrides.override_reset_landed(row, None, accounts, now)
+            and row.get('account') == account):
+        return False
+    if not row.get('model'):
+        return True
+    if model_resolution.model_pin_problem(row['model']) is not None:
+        return False
+    return account_fleet.stored_model(row['model'], accounts, account) == model
 
 
 def _is_launchable(bundle, accounts, policy):
@@ -277,6 +283,7 @@ def enable(account, model, window, hours, now=None):
                            for t in targets(accounts)}
         doc['overrides'] = [r for r in doc['overrides'] if not (
             r.get('stop_on_reset') and not r.get('expires_at') and r.get('model')
+            and model_resolution.model_pin_problem(r.get('model')) is None
             and (r.get('account'), account_fleet.stored_model(r['model'], accounts, r.get('account'))) in selected_models)]
         doc.pop('last_reset', None)
         doc['overrides'].append(row)

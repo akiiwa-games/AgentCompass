@@ -387,14 +387,25 @@ class PriorityTests(unittest.TestCase):
                     unavailable_flag,
                 )
 
-            # Malformed `/` model pins in `priority_targets` or `enable` are refused at the boundary:
-            for bad_target in ('/gpt-6-astra', 'openai/', 'openai//gpt-6-astra', ':high'):
+            # Malformed `/` model pins in `priority_targets`, `enable`, or `router_data.add_boost` are refused on new
+            # writes, while an already-stored malformed entry in `router-overrides.json` stays inert without failing `snapshot`:
+            for bad_target in ('/gpt-6-astra', 'openai/', 'openai//gpt-6-astra', ':high', 'auto:codex:codex'):
                 bad_accounts = json.loads(json.dumps(accounts))
                 bad_accounts['priority_targets'] = [{'account': 'codex', 'model': bad_target, 'label': 'Bad'}]
                 with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
                     priority.targets(bad_accounts)
                 with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
                     priority.enable('codex', bad_target, 'usage', 24, self.now)
+                with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
+                    router_data.add_boost('codex', bad_target, 0.2, 6, False, now=self.now)
+            self.path.write_text(json.dumps({'v': 1, 'overrides': [
+                {'id': 'legacy_bad', 'account': 'codex', 'model': '/gpt-6-astra', 'boost': 0.35,
+                 'until': (self.now + timedelta(hours=6)).isoformat(), 'stop_on_reset': True},
+            ]}), encoding='utf-8')
+            snap_with_bad = priority.snapshot(self.now)
+            self.assertFalse(any(t['selected'] for t in snap_with_bad['targets']))
+            self.assertIn('已开启', priority.enable('codex', 'gpt-6-astra', 'usage', 12, self.now))
+            self.assertEqual({r['id'] for r in self.rows()}, {'legacy_bad'} | {r['id'] for r in self.rows() if r['model'] == 'gpt-6-astra'})
 
 
 if __name__ == '__main__':
