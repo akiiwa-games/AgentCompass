@@ -35,6 +35,12 @@ OUT_OF_AUTOMATIC_ROUTING = 'excluded by host policy'
 UNCHECKED = 'unchecked in model management'
 
 
+def binding_wait(available_at, waiting_on, hours, window):
+    """`(available_at, waiting_on)` once `window` also holds the candidate back for `hours`: a candidate held by several
+    windows can start when the last of them returns, so the later reset sets the wait and its window is the one named."""
+    return (hours, window) if hours >= (available_at or 0) else (available_at, waiting_on)
+
+
 def pin_matched_ids(task, ctx):
     """Bundle ids in `ctx['bundles']` named by `task`'s model/bundle constraint over `account_fleet.pin_pool` (every bundle
     existing on the addressed accounts, before any filter of preference, availability, discovery state, modality or effort,
@@ -498,7 +504,7 @@ def evaluate_bundle(bundle, task, ctx):
                         short_exclude(f'{wid} full capacity (100%) is short of the ~{post_period:.1f}% the work needs plus {margin_pct}% margin')
                     elif (not small_short and not state['stale'] and 0 < wait <= policy['defer_if_reset_within_hours']
                           and wait >= state.get('natural_reset_hours', wait)):
-                        available_at, waiting_on = (wait, wid) if wait >= (available_at or 0) else (available_at, waiting_on)
+                        available_at, waiting_on = binding_wait(available_at, waiting_on, wait, wid)
                         result['notes'].append(f'{wid} {what} for {wait:.1f}h; start after its reset')
                         renewed = quota_pools.after_reset(state, w_len)
                         if renewed is not None:
@@ -526,8 +532,7 @@ def evaluate_bundle(bundle, task, ctx):
                     renewed = None
                 if renewed is not None and 100.0 - min(req_hours, float(w_len)) * unit * context_burn >= policy['safety_margin_pct']:
                     state = renewed
-                    available_at, waiting_on = ((renewed['deferred_hours'], wid) if renewed['deferred_hours'] >= (available_at or 0)
-                                                else (available_at, waiting_on))
+                    available_at, waiting_on = binding_wait(available_at, waiting_on, renewed['deferred_hours'], wid)
                     result['_five_long_wait'] = True        # a long window must renew first: no absorber of other work now
                     need = min(req_hours, float(w_len)) * unit * context_burn
                     result['notes'].append(f'{wid} renews in {renewed["deferred_hours"]:.1f}h; start then (assumes a full renewal)')
@@ -603,8 +608,7 @@ def evaluate_bundle(bundle, task, ctx):
                     renewed = quota_pools.after_reset(state, wspec['hours'])
                     if renewed is not None:
                         state = renewed
-                        available_at, waiting_on = ((renewed['deferred_hours'], 'cadence') if renewed['deferred_hours'] >= (available_at or 0)
-                                                    else (available_at, waiting_on))
+                        available_at, waiting_on = binding_wait(available_at, waiting_on, renewed['deferred_hours'], 'cadence')
                         result['_five_long_wait'] = True
                         result['notes'].append(
                             f'cadence renews in {renewed["deferred_hours"]:.1f}h; start then (assumes a full renewal)'

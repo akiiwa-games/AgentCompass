@@ -32,6 +32,24 @@ def with_profile(task):
     return task
 
 
+# What the bridge really answers (setup/paseo_dispatch_bridge.mjs: `main`, `hostFailure`, `execute`; dispatch_flow.host_call for
+# the two it makes itself): its `sent`, and the `condition` tokens it merges under a code. A create or a resume that failed
+# after the daemon was connected is `sent: true`; one that never reached the daemon is `sent: false`.
+CONNECT_CONDITIONS = ('refused', 'timeout', 'unreachable', 'authentication', 'credential_unreadable')
+REQUEST_CONDITIONS = ('timeout', 'connection_lost', 'daemon_error', 'invalid_response', 'authentication', 'bridge_error')
+SENT_CODES = ('host_request_failed', 'host_timeout', 'invalid_host_response', 'create_outcome_uncertain_reconcile_by_label',
+              'resume_outcome_uncertain_reconcile_by_agent')
+
+
+def bridge_answer(error, condition=None, **fields):
+    """The bridge's answer for `error`, with the `sent` its source gives that code."""
+    return {'ok': False, 'sent': error in SENT_CODES, 'error': error, **({'condition': condition} if condition else {}), **fields}
+
+
+def starts_the_daemon(text):
+    return 'start the daemon' in text.lower()
+
+
 def full(res):
     return json.loads(Path(res['details']).read_text(encoding='utf-8')) if res.get('details') else res
 
@@ -100,22 +118,22 @@ class BlockedAnswers(Plain):
     """Finding 1: `none`, `ask_user` and `defer` say the fact that decided them, first, and a way out that works for it."""
 
     def test_none_held_by_quota_names_the_candidate_the_window_and_the_hours_before_the_cut(self):
-        # Rule (allocator.plan, quota_pools.quota_wait): a candidate excluded only by its own quota windows returns when the
-        # last of them resets; the answer names that candidate, window and wait, and says wait.
-        for label, five, seven, window, hours in (('five-hour-empty', 1, 100, 'five_hour', 3.0), ('both-empty', 1, 1, 'seven_day', 100.0)):
+        # Rule (allocator.plan, quota_pools.quota_wait): an account whose windows are exhausted returns when the last of the
+        # exhausted windows resets; the answer names that account, that window and that wait (the fixture sets all three),
+        # and says to wait, before the cut that `reason` gets.
+        for label, five, seven in (('five-hour-empty', 1, 100), ('both-empty', 1, 1)):
             with self.subTest(label):
-                self.set_remaining(five, seven)
+                five_hours, seven_hours = 3.0, 100.0
+                self.set_remaining(five, seven, five_hours=five_hours, seven_hours=seven_hours)
                 res, code = self.run_roll(task_id='t-' + label)
                 self.assertEqual((code, res['status']), (2, 'blocked'))
-                self.assertIn(window, res['reason'][:160])
-                self.assertIn(f'{hours:.1f}h', res['reason'][:160])
-                for text in (res['next_action'],):
-                    self.assertIn(window, text)
-                    self.assertIn(f'{hours:.1f}h', text)
-                    self.assertIn('claude-lab', text)
-                    self.assertIn('Wait', text)
+                exhausted = {'five_hour': five_hours} | ({'seven_day': seven_hours} if seven < 5 else {})
+                window = max(exhausted, key=exhausted.get)
+                for text in (res['reason'][:160], res['next_action']):
+                    for fact in ('claude-lab', window, f'{exhausted[window]:.1f}h'):
+                        self.assertIn(fact, text)
+                self.assertIn('wait', res['next_action'].lower())
                 self.setUp()
-
 
 
 class BlockedHandBuilt(HandBuilt):
@@ -158,12 +176,6 @@ class BlockedHandBuilt(HandBuilt):
 class FlagsAreNeverDropped(Plain):
     """Finding 3."""
 
-    def test_account_names_a_route_and_needs_the_basis(self):
-        with self.assertRaisesRegex(ValueError, '--account.*--basis'):
-            self.run_roll(account='codex')
-        with self.assertRaisesRegex(ValueError, '--provider'):       # the named route needs its provider and model too
-            self.run_roll(account='codex', basis='the user said so', task_id='t-account')
-
     def test_basis_alone_is_said_to_name_nothing(self):
         res, _ = self.run_roll(basis='because', task_id='t-basis')
         self.assertTrue(any('--basis' in w and 'ignored' in w for w in res.get('warnings', [])), res)
@@ -177,14 +189,64 @@ class FlagsAreNeverDropped(Plain):
             self.assertFalse(any('--fast was not applied' in w for w in res.get('warnings', [])), res)
 
     def test_files_given_to_a_route_that_is_not_dot_are_said_not_to_be_sent(self):
+        # Rule (roll.files_not_sent): only Dot receives --file; any other route's answer says the files were not sent and
+        # names the route that did not get them.
         (self.root / 'x.txt').write_text('x', encoding='utf-8')
         res, _ = self.run_roll(file=[self.root / 'x.txt'], task_id='t-file')
-        self.assertEqual(full(res)['route']['bundle']['provider'], 'claude-lab')
-        self.assertTrue(any('files were not sent' in w and 'claude-lab' in w for w in res.get('warnings', [])), res)
+        provider = full(res)['route']['bundle']['provider']
+        self.assertNotEqual(provider, 'dot')
+        self.assertTrue(any('not sent' in w and provider in w for w in res.get('warnings', [])), res)
+
+    def test_a_named_route_that_is_not_dot_is_not_told_it_runs_on_this_machine(self):
+        import roll
+        out = roll.files_not_sent({}, argparse.Namespace(file=['x'], apply_to=None), 'chatgpt-web')
+        self.assertIn('chatgpt-web', out['warnings'][0])
+        self.assertNotIn('this machine', out['warnings'][0])
+
+
+class NamedRouteRefusals(Plain):
+    """Finding 4: flags that name a route without the rest are refused in one answer, in `roll`'s words."""
+    REQUIRED = ('provider', 'account', 'model')
+
+    def test_each_refusal_names_what_was_given_what_is_missing_and_the_other_way_out(self):
+        values = dict(provider='claude-lab', account='claude-lab', model='sonnet', effort='high')
+        for given in (('account',), ('provider',), ('model',), ('effort',), ('provider', 'account'), ('account', 'model'),
+                      ('provider', 'model'), ('provider', 'account', 'effort')):
+            for basis in (None, 'the user said so'):
+                with self.subTest(given=given, basis=bool(basis)):
+                    with self.assertRaises(ValueError) as caught:
+                        self.run_roll(basis=basis, task_id='t-named', **{flag: values[flag] for flag in given})
+                    text = str(caught.exception)
+                    missing = [flag for flag in self.REQUIRED if flag not in given] + ([] if basis else ['basis'])
+                    self.assertTrue(missing)
+                    gave_part, missing_part = text.split('This roll gave ', 1)[1].split(' and is missing ', 1)
+                    for flag in given:
+                        self.assertIn(f'--{flag}', gave_part)
+                    self.assertEqual('--basis' in gave_part, bool(basis))
+                    for flag in missing:
+                        self.assertIn(f'--{flag}', missing_part.split('.', 1)[0])
+                    self.assertNotIn('--effort', missing_part.split('.', 1)[0])        # optional: never asked for
+                    self.assertIn('drop', text)                                        # the other way out: no named route
+                    self.assertNotIn('record', text)                                   # `record` is a stage the caller never ran
+                    self.setUp()
+
+    def test_a_complete_named_route_is_not_refused_for_its_flags(self):
+        import roll
+        args = argparse.Namespace(provider='p', account='a', model='m', effort=None, basis='the user said so')
+        self.assertIsNone(roll.named_route_refusal(args))
+        self.assertIsNone(roll.named_route_refusal(argparse.Namespace(provider=None, account=None, model=None, effort=None, basis=None)))
+
+    def test_an_input_error_is_not_sent_to_files_or_the_installation(self):
+        text = route_judge.failure_answer(ValueError('A named route needs --provider'), 'roll')['next_action']
+        system = route_judge.failure_answer(OSError(13, 'Permission denied', 'D:/x'), 'roll')['next_action']
+        self.assertNotEqual(text, system)
+        self.assertNotIn('installation', text)
+        self.assertNotIn('unreadable', text)
+        self.assertIn('installation', system)
 
 
 class PaseoReplacedByCli(Plain):
-    """Finding 4."""
+    """Finding 4 (CLI): the condition that ended Paseo is said."""
 
     def test_the_condition_that_ended_paseo_is_named(self):
         import roll
@@ -212,11 +274,12 @@ class PaseoReplacedByCli(Plain):
 
 class LaunchRefusedBeforeAnyWorker(Plain):
     """Finding 2: no worker exists, so nothing is collected; each failure says what failed and what to do."""
-    CODES = ('sdk_setup_failed', 'host_connection_failed', 'host_request_failed', 'bridge_unavailable',
-             'create_send_window_elapsed', 'parent_agent_not_found')
-    NAMES = {'sdk_setup_failed': 'SDK', 'host_connection_failed': 'daemon could not be reached',
-             'host_request_failed': 'answered the request with an error', 'bridge_unavailable': 'Node.js',
-             'create_send_window_elapsed': 'send window', 'parent_agent_not_found': 'parent agent'}
+    CODES = ('sdk_setup_failed', 'host_connection_failed', 'bridge_unavailable', 'create_send_window_elapsed',
+             'parent_agent_not_found')
+    STEPS = {   # a step the caller can take for that failure (commands and variables that exist)
+        'sdk_setup_failed': ('agentcompass setup',), 'host_connection_failed': ('paseo ls',),
+        'bridge_unavailable': ('agentcompass setup', 'Node.js'), 'create_send_window_elapsed': ('Roll the brief again',),
+        'parent_agent_not_found': ('PASEO_AGENT_ID', '--parent-id')}
 
     def host_answering(self, response):
         def host(request):
@@ -228,29 +291,104 @@ class LaunchRefusedBeforeAnyWorker(Plain):
         return host
 
     def test_each_code_says_what_failed_and_never_sends_the_caller_to_collect(self):
+        texts = {}
         for fallback in ('on', 'off'):
             for code in self.CODES:
                 with self.subTest(code=code, fallback=fallback):
-                    res, _ = self.run_roll(host=self.host_answering({'ok': False, 'sent': False, 'error': code}),
-                                           env={'AGENTCOMPASS_ROLL_FALLBACK': fallback}, task_id=f't-{code}-{fallback}')
+                    answer = bridge_answer(code, 'refused' if code == 'host_connection_failed' else None)
+                    res, _ = self.run_roll(host=self.host_answering(answer), env={'AGENTCOMPASS_ROLL_FALLBACK': fallback},
+                                           task_id=f't-{code}-{fallback}')
                     self.assertEqual((res['status'], res['cause']), ('error', code))
                     self.assertNotIn('continuation_argv', res['next_action'])
                     self.assertNotIn('collect the result', res['next_action'])
-                    self.assertIn('roll', res['next_action'].lower())
-                    self.assertIn(self.NAMES[code], res['next_action'])       # what failed, in this code's own words
+                    self.assertTrue(any(step in res['next_action'] for step in self.STEPS[code]), res['next_action'])
+                    texts.setdefault(fallback, {})[code] = res['next_action']
                     self.setUp()
+        for by_code in texts.values():       # a code-specific fact, not one text for every failure
+            self.assertEqual(len(set(by_code.values())), len(by_code))
 
-    def test_setup_hint_and_condition_of_the_bridge_reach_the_caller(self):
-        hint = 'Paseo bridge dependencies are missing. Run: agentcompass setup, or set ROUTER_PASEO_SDK_ROOT.'
-        res, _ = self.run_roll(host=self.host_answering({'ok': False, 'sent': False, 'error': 'sdk_setup_failed', 'setupHint': hint}),
-                               task_id='t-hint')
-        self.assertIn(hint, res['next_action'])
-        res, _ = self.run_roll(host=self.host_answering({'ok': False, 'sent': False, 'error': 'host_connection_failed',
-                                                         'condition': 'connection_refused'}), task_id='t-cond')
-        self.assertIn('connection_refused', res['next_action'])
-        res, _ = self.run_roll(host=self.host_answering({'ok': False, 'sent': False, 'error': 'host_connection_failed',
-                                                         'condition': 'Free text, with a secret=abc'}), task_id='t-cond2')
+    def test_the_setup_hint_of_the_bridge_reaches_the_caller_as_a_sentence(self):
+        for hint in ('Paseo bridge dependencies are missing. Run: agentcompass setup, or set ROUTER_PASEO_SDK_ROOT.',
+                     'Paseo bridge dependencies are missing. Run: agentcompass setup'):
+            with self.subTest(hint):
+                res, _ = self.run_roll(host=self.host_answering(bridge_answer('sdk_setup_failed', setupHint=hint)), task_id='t-hint')
+                self.assertIn(hint.rstrip('.') + '.', res['next_action'])
+                self.setUp()
+
+
+class ConditionAdvice(Plain):
+    """Finding 2 of round 2: the advice follows the bridge's `condition`, from one table that create and resume both read."""
+
+    def resume_refused_by(self, answer):
+        self.make_worker('agent-n')
+
+        def host(request):
+            if request['operation'] == 'workspace_agents':
+                return {'ok': True, 'placeable': True, 'agents': []}
+            if request['operation'] == 'resume':
+                return dict(answer)
+            return {'ok': False, 'error': 'agent_not_observed'}
+        return self.run_roll(self.brief_file('n.md'), host=host, resume='agent-n', task_id='t-n')[0]
+
+    def test_every_token_of_the_bridges_vocabulary_has_its_facts(self):
+        tokens = {*CONNECT_CONDITIONS, *REQUEST_CONDITIONS, *registry.WORKER_STATES}
+        facts = {token: flow.condition_facts(token) for token in tokens}
+        for token, (what, fix) in facts.items():
+            with self.subTest(token):
+                self.assertTrue(what.strip() and fix.strip())
+        self.assertEqual(len({what for what, _ in facts.values()}), len(tokens))       # each token its own cause
+
+    def test_a_create_that_never_connected_follows_its_condition(self):
+        # Rule: starting the daemon is advised where nothing listens (`refused`) and nowhere else; a daemon that is up and
+        # refuses the credential, or does not answer, is not helped by being started again.
+        for token in CONNECT_CONDITIONS:
+            with self.subTest(token):
+                res, _ = self.run_roll(host=LaunchRefusedBeforeAnyWorker.host_answering(
+                    self, bridge_answer('host_connection_failed', token)), task_id='t-' + token)
+                self.assertEqual((res['status'], res['cause']), ('error', 'host_connection_failed'))
+                what, fix = flow.HOST_CONDITIONS[token]
+                self.assertIn(what.lower(), res['next_action'].lower())
+                self.assertIn(fix.lower(), res['next_action'].lower())
+                self.assertEqual(starts_the_daemon(res['next_action']), token == 'refused')
+                self.setUp()
+
+    def test_a_named_resume_that_never_connected_reads_the_same_table(self):
+        for token in CONNECT_CONDITIONS:
+            with self.subTest(token):
+                res = self.resume_refused_by(bridge_answer('host_connection_failed', token))
+                self.assertEqual(res['cause'], 'resume_worker_unavailable')
+                what, fix = flow.HOST_CONDITIONS[token]
+                self.assertIn(what.lower(), res['next_action'].lower())
+                self.assertIn(fix.lower(), res['next_action'].lower())
+                self.assertEqual(starts_the_daemon(res['next_action']), token == 'refused')
+                self.setUp()
+
+    def test_a_named_resume_that_failed_before_it_was_sent_reads_the_request_classes(self):
+        for token in REQUEST_CONDITIONS:
+            with self.subTest(token):
+                res = self.resume_refused_by(bridge_answer('host_resume_failed', token))
+                what, fix = flow.HOST_CONDITIONS[token]
+                self.assertIn(what.lower(), res['next_action'].lower())
+                self.assertIn(fix.lower(), res['next_action'].lower())
+                self.assertIn('host_resume_failed', res['next_action'])
+                self.setUp()
+
+    def test_a_token_the_table_does_not_hold_is_printed_and_presumes_no_cause(self):
+        for answer in (bridge_answer('host_connection_failed', 'some_new_class'),):
+            res, _ = self.run_roll(host=LaunchRefusedBeforeAnyWorker.host_answering(self, answer), task_id='t-new')
+            self.assertIn('some_new_class', res['next_action'])
+            self.assertFalse(starts_the_daemon(res['next_action']))
+            self.setUp()
+            res = self.resume_refused_by(answer)
+            self.assertIn('some_new_class', res['next_action'])
+            self.assertFalse(starts_the_daemon(res['next_action']))
+            self.setUp()
+
+    def test_a_condition_that_is_free_text_is_never_printed(self):
+        res, _ = self.run_roll(host=LaunchRefusedBeforeAnyWorker.host_answering(
+            self, bridge_answer('host_connection_failed', 'Free text, with a secret=abc')), task_id='t-free')
         self.assertNotIn('secret=abc', json.dumps(res))
+        self.assertFalse(starts_the_daemon(res['next_action']))
 
 
 class PendingNamesWhatIsKnown(Plain):
@@ -262,12 +400,49 @@ class PendingNamesWhatIsKnown(Plain):
     def test_unconfirmed_creates_name_the_error_and_do_not_say_still_creating(self):
         for code in ('host_timeout', 'invalid_host_response', 'create_outcome_uncertain_reconcile_by_label'):
             with self.subTest(code):
-                res, code_ = self.run_roll(host=self.host_answering({'ok': False, 'sent': True, 'error': code}), task_id='t-' + code)
+                res, code_ = self.run_roll(host=self.host_answering(bridge_answer(code)), task_id='t-' + code)
                 self.assertEqual((res['status'], res['cause'], code_), ('pending', code, 0))
                 self.assertNotIn('still creating', res['next_action'])
                 self.assertIn('Do not roll again', res['next_action'])
                 self.assertIn('next_argv', res['next_action'])
                 self.assertIn('next_argv', res)
+                self.setUp()
+
+    def test_a_request_that_failed_after_it_reached_the_daemon_is_pending_with_its_condition(self):
+        # The bridge answers host_request_failed with `sent: true` on a create: a worker may exist.
+        for token in REQUEST_CONDITIONS:
+            with self.subTest(token):
+                answer = bridge_answer('host_request_failed', token)
+                self.assertTrue(answer['sent'])
+                res, code = self.run_roll(host=self.host_answering(answer), task_id='t-req-' + token)
+                self.assertEqual((res['status'], res['cause'], code), ('pending', f'host_request_failed:{token}', 0))
+                self.assertIn(flow.HOST_CONDITIONS[token][0].lower(), res['next_action'].lower())
+                self.assertNotIn('still creating', res['next_action'])
+                self.assertIn('Do not roll again', res['next_action'])
+                self.assertIn('next_argv', res)
+                self.setUp()
+
+    def test_a_resume_the_daemon_may_have_received_is_pending_with_a_cause_and_its_own_text(self):
+        generic = 'Run next_argv to observe the same operation; do not roll again.'
+        for answer in (bridge_answer('host_request_failed', 'connection_lost'),
+                       bridge_answer('resume_outcome_uncertain_reconcile_by_agent')):
+            with self.subTest(answer['error']):
+                self.make_worker('agent-n')
+
+                def host(request, answer=answer):
+                    if request['operation'] == 'workspace_agents':
+                        return {'ok': True, 'placeable': True, 'agents': []}
+                    if request['operation'] == 'resume':
+                        return dict(answer)
+                    return {'ok': False, 'error': 'agent_not_observed'}
+                res, _ = self.run_roll(self.brief_file('n.md'), host=host, resume='agent-n', task_id='t-n')
+                self.assertEqual(res['status'], 'pending')
+                self.assertTrue(res['cause'].startswith(answer['error']), res)
+                self.assertNotEqual(res['next_action'], generic)
+                self.assertIn('Do not roll again', res['next_action'])
+                self.assertIn('next_argv', res)
+                if answer.get('condition'):
+                    self.assertIn(flow.HOST_CONDITIONS[answer['condition']][0].lower(), res['next_action'].lower())
                 self.setUp()
 
     def test_a_create_the_host_is_carrying_out_is_still_creating(self):
@@ -281,8 +456,7 @@ class FallbackKeepsClass(Plain):
     """Finding 12."""
 
     def test_a_request_scoped_refusal_keeps_its_class_with_the_fallback_on_and_off(self):
-        host = LaunchRefusedBeforeAnyWorker.host_answering(self, {'ok': False, 'sent': False, 'error': 'host_creation_failed',
-                                                                  'failure_class': 'request_invalid'})
+        host = LaunchRefusedBeforeAnyWorker.host_answering(self, bridge_answer('host_creation_failed', failure_class='request_invalid'))
         causes = {}
         for fallback in ('on', 'off'):
             res, _ = self.run_roll(host=host, env={'AGENTCOMPASS_ROLL_FALLBACK': fallback}, task_id='t-' + fallback)
@@ -300,7 +474,7 @@ class RefusedBeforeLaunchDetail(Plain):
         with patch.object(registry, 'check_launch_quota', side_effect=ValueError(text)):
             res, _ = self.run_roll(task_id='t-cap')
         self.assertEqual(res['status'], 'blocked')
-        self.assertIn('5% remaining floor', res['next_action'])
+        self.assertIn(text, res['next_action'])
 
     def test_line_prints_the_detail_of_any_attempt_that_has_one(self):
         import dispatch_fallback
@@ -315,21 +489,34 @@ class ResumeRefusals(Plain):
         return self.run_roll(self.brief_file(f'{name}.md'), resume='agent-' + name, task_id='t-' + name, **over)
 
     def test_the_way_out_follows_the_reason(self):
-        cases = {   # label: (worker options, what the way out says, what it must not say)
-            'permission': (dict(doc={'attentionReason': 'permission'}), 'respond_to_permission'),
-            'running': (dict(final_status='running'), 'Wait until its turn ends'),
-            'status-error': (dict(final_status='error'), 'get_agent_activity'),
-            'provider-unavailable': (dict(doc={'providerUnavailable': True}), 'provider answers again'),
+        # Rule (dispatch_registry.WORKER_STATES): the text carries the state's own fix, and offers a fresh worker only for
+        # a state where one helps.
+        cases = {
+            'permission': (dict(doc={'attentionReason': 'permission'}), 'permission_pending'),
+            'running': (dict(final_status='running'), 'running'),
+            'status-error': (dict(final_status='error'), 'error'),
+            'provider-unavailable': (dict(doc={'providerUnavailable': True}), 'provider_unavailable'),
+            'provider-and-permission': (dict(doc={'providerUnavailable': True, 'attentionReason': 'permission'}), 'provider_unavailable'),
         }
-        for label, (options, says) in cases.items():
+        for label, (options, state) in cases.items():
             with self.subTest(label):
                 self.make_worker('agent-' + label, **options)
                 res, _ = self.resume(label)
+                known = registry.WORKER_STATES[state]
                 self.assertEqual(res.get('cause'), 'resume_worker_unavailable', res)
-                self.assertIn(says, res['next_action'])
-                if label in ('permission', 'running', 'provider-unavailable'):
-                    self.assertNotIn('start a fresh worker', res['next_action'])      # a fresh worker answers none of these
+                self.assertIn(known.fix.lower(), res['next_action'].lower())
+                self.assertEqual('fresh worker' in res['next_action'], known.fresh)
                 self.setUp()
+
+    def test_a_fresh_worker_is_offered_only_where_it_helps(self):
+        # Rule (the worker's context is not carried): a fresh worker answers no permission, ends no running turn and does
+        # not make a provider answer, so none of those offers one; a worker that is gone, closed or in error can be replaced.
+        for state in ('permission_pending', 'running', 'initializing', 'provider_unavailable'):
+            self.assertFalse(registry.WORKER_STATES[state].fresh, state)
+            self.assertNotIn('fresh worker', registry.resume_way_out(state))
+        for state in ('error', 'closed', 'archived'):
+            self.assertTrue(registry.WORKER_STATES[state].fresh, state)
+            self.assertIn('fresh worker', registry.resume_way_out(state))
 
     def test_the_registry_gives_the_remedy_with_the_reason(self):
         refusal = registry.reuse_refusal('parent-a', 'agent-nobody')
@@ -337,20 +524,26 @@ class ResumeRefusals(Plain):
         self.make_worker('agent-open', finish=False, final_status='running')       # a dispatch to it is still open: its way out is to wait, not a fresh worker
         refusal = registry.reuse_refusal('parent-a', 'agent-open')
         self.assertIn('still open', refusal.reason)
-        self.assertIn('Wait for that dispatch', refusal.remedy)
+        self.assertIn('next_argv', refusal.remedy)
         self.assertNotIn('fresh worker', refusal.remedy)
 
-    def test_a_named_worker_the_host_refuses_says_the_condition(self):
-        for code, condition, says in (('worker_not_idle', 'permission_pending', 'respond_to_permission'),
-                                      ('worker_not_idle', 'running', 'wait until it ends'),
-                                      ('worker_not_found', 'archived', 'unarchive'),
-                                      ('host_connection_failed', None, 'daemon'),
-                                      ('host_resume_failed', 'resume_failed', 'once')):
-            with self.subTest(code=code, condition=condition):
-                self.make_worker('agent-n')
-                host_answer = {'ok': False, 'sent': False, 'error': code, **({'condition': condition} if condition else {})}
+    def test_the_registry_and_the_host_say_the_same_thing_about_a_state(self):
+        # One owner (dispatch_registry.WORKER_STATES): the host's condition and the registry's reading give one remedy.
+        for state in registry.WORKER_STATES:
+            with self.subTest(state):
+                self.assertEqual(flow.resume_refusal_next('worker_not_idle', state), registry.resume_way_out(state))
+                self.assertEqual(registry.worker_state_refusal(state).remedy, registry.resume_way_out(state))
 
-                def host(request, answer=host_answer):
+    def test_a_named_worker_the_host_refuses_says_the_condition(self):
+        cases = (bridge_answer('worker_not_idle', 'permission_pending'), bridge_answer('worker_not_idle', 'running'),
+                 bridge_answer('worker_not_idle', 'provider_unavailable'), bridge_answer('worker_not_found', 'archived'),
+                 bridge_answer('worker_not_found', 'absent'), bridge_answer('host_connection_failed', 'refused'),
+                 bridge_answer('worker_not_idle'))
+        for answer in cases:
+            with self.subTest(answer['error'], condition=answer.get('condition')):
+                self.make_worker('agent-n')
+
+                def host(request, answer=answer):
                     if request['operation'] == 'workspace_agents':
                         return {'ok': True, 'placeable': True, 'agents': []}
                     if request['operation'] == 'resume':
@@ -358,12 +551,13 @@ class ResumeRefusals(Plain):
                     return {'ok': False, 'error': 'agent_not_observed'}
                 res, _ = self.run_roll(self.brief_file('n.md'), host=host, resume='agent-n', task_id='t-n')
                 self.assertEqual(res['cause'], 'resume_worker_unavailable')
-                self.assertIn(code, res['next_action'])
-                self.assertIn(says, res['next_action'])
+                self.assertIn(answer['error'], res['next_action'])
+                condition = answer.get('condition')
                 if condition:
                     self.assertIn(condition, res['next_action'])
-                if code == 'host_connection_failed':
-                    self.assertNotIn('without --resume to let the router choose', res['next_action'])
+                if condition in registry.WORKER_STATES:
+                    self.assertIn(registry.resume_way_out(condition), res['next_action'])
+                self.assertNotIn('without --resume to let the router choose', res['next_action'])
                 self.setUp()
 
     def test_a_fault_of_the_input_or_the_data_is_not_said_to_be_the_workers(self):
@@ -382,6 +576,18 @@ class ResumeRefusals(Plain):
         self.assertIn('data row for X is malformed', text)
         self.assertNotIn('cannot take a new turn', text)
         self.assertIn('cannot take a new turn', roll.gate_refusal_text('a', 'account claude-lab is disabled'))
+
+    def test_a_flag_naming_another_account_is_an_error_not_a_silent_launch(self):
+        # Documented rule (roll-reference.md, `--resume`): flags naming another route are an error; the worker's own route is
+        # its own. `--account` is one of them (named_route_conflict).
+        self.make_worker('agent-r')
+        with self.assertRaises(ValueError) as caught:
+            self.run_roll(self.brief_file('r.md'), resume='agent-r', account='another-account', task_id='t-r')
+        self.assertIn('--account', str(caught.exception))
+        self.assertIn('--resume', str(caught.exception))
+        text = (Path(__file__).resolve().parents[1] / 'references' / 'roll-reference.md').read_text(encoding='utf-8')
+        sentence = text[text.index('`--resume` names the worker'):].split('\n', 1)[0]
+        self.assertIn('`--account`', sentence.split('are an error', 1)[0])
 
 
 class FailureOutsideTheResultPath(unittest.TestCase):
@@ -420,7 +626,13 @@ class FailureOutsideTheResultPath(unittest.TestCase):
 
 
 class DotFailures(HandBuilt):
-    """Finding 9."""
+    """Finding 9: the runner's exit code and its documented meaning are in the answer; its output is not."""
+    OUTPUT = ('Invalid API key: sk-live-0123456789abcdef\n'
+              'POST https://alice:hunter2pass@dot.example.net/v1/tasks failed\n'
+              'Cookie: sid=Fe26.2**abc123def456**zz\n'
+              'signed in as alice.smith@example.com\n'
+              '{"error":{"message":"Your organization org-AbCdEf0123 must be verified"}}\n')
+    PLANTED = ('sk-live-0123456789abcdef', 'hunter2pass', 'Fe26.2', 'alice.smith@example.com', 'org-AbCdEf0123', 'Invalid API key')
 
     def roll_dot(self, returncode, stderr):
         import roll
@@ -433,21 +645,36 @@ class DotFailures(HandBuilt):
             (result, code), _ = HandBuilt.roll(self, decision, task='x')
         return result, code
 
-    def test_a_runner_that_launched_nothing_says_why_and_never_exits_zero(self):
-        for returncode in (1, 2, 3):
+    def test_a_runner_that_launched_nothing_says_its_exit_code_and_what_it_means_and_never_exits_zero(self):
+        import roll
+        for returncode in (1, 2, 3, 9):
             with self.subTest(returncode):
                 result, code = self.roll_dot(returncode, 'dot2api is unreachable\n')
                 self.assertEqual(code, 1)
                 self.assertEqual(result['status'], 'error')
                 self.assertEqual(result['cause'], f'dot_runner_exit_{returncode}')
                 self.assertIn(f'exited {returncode}', result['next_action'])
-                self.assertIn('dot2api is unreachable', result['next_action'])
+                self.assertIn(roll.DOT_EXIT_MEANING.get(returncode, 'ended abnormally'), result['next_action'])
+                self.assertIn('details', result['next_action'])
 
-    def test_what_looks_like_a_credential_is_withheld(self):
-        result, _ = self.roll_dot(1, 'Authorization: Bearer ' + 'a' * 40 + '\nplain failure\nDOT2API_API_KEY=abc\n')
-        self.assertIn('plain failure', result['next_action'])
-        self.assertNotIn('a' * 40, json.dumps(result))
-        self.assertNotIn('DOT2API_API_KEY', result['next_action'])
+    def test_the_meanings_are_the_runners_own(self):
+        # Rule: roll states what the runner documents (SKILL.md, Outcomes), by the runner's EXIT_* constants.
+        import roll
+        runner = (Path(__file__).resolve().parents[2] / 'dot-subagent' / 'scripts' / 'run_dot_task.py').read_text(encoding='utf-8')
+        for name, value in (('EXIT_FAILED', 1), ('EXIT_USAGE', 2), ('EXIT_PENDING', 3)):
+            self.assertIn(f'{name} = {value}', runner)
+            self.assertIn(value, roll.DOT_EXIT_MEANING)
+
+    def test_nothing_of_the_runners_output_is_in_the_answer_but_it_is_kept_in_the_details_file(self):
+        for returncode in (1, 2, 3):
+            with self.subTest(returncode):
+                result, _ = self.roll_dot(returncode, self.OUTPUT)
+                for planted in self.PLANTED:
+                    self.assertNotIn(planted, json.dumps(result))
+                    self.assertNotIn(planted, result['next_action'])
+                details = Path(result['details'])
+                self.assertTrue(details.exists())
+                self.assertIn('hunter2pass', details.read_text(encoding='utf-8'))      # kept there, as the answer says
 
     def test_a_launched_task_keeps_its_exit_code(self):
         result, code = self.roll_dot(3, 'task_id=dot-task-9\n')

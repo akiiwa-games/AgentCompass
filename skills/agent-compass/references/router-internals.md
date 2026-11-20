@@ -233,7 +233,7 @@ A ledger row with no saved snapshot and no split answer cannot be replayed: its 
 
 ### No eligible bundle
 
-When nothing clears the gate, `plan` returns `choice: none` with `decision.action: none`, `needs_user_decision: true` and a `reason`. If a bundle is held back only by its own account's quota windows (`quota_pools.quota_wait_hours`), `decision.next_reset` gives that bundle, the hours until its last blocking window resets, and the time. The parent can wait or decide otherwise.
+When nothing clears the gate, `plan` returns `choice: none` with `decision.action: none`, `needs_user_decision: true` and a `reason`. If a bundle is held back only by its own account's quota windows (`quota_pools.quota_wait`), `decision.next_reset` gives that bundle, its account, the window that returns last and the hours until then (rounded up to a tenth, `allocator.advised_hours`), and the time. The parent can wait or decide otherwise.
 
 ### Calibration data
 

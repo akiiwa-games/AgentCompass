@@ -708,6 +708,51 @@ class AllocatorTests(unittest.TestCase):
             self.assertIn(exclusion, decision['reason'])
         self.assertIn(f"{decision['wait_hours']:.1f}h", decision['reason'])
 
+    def waiting_fixture(self, five_hours, seven_hours, can_wait, seven_left=3):
+        usage = self.usage(claude=[('five_hour', 3, five_hours), ('seven_day', seven_left, seven_hours), ('weekly_fable', 100, 100)],
+                           codex=[('usage', 1, 121)])
+        task = {'work_kind': 'visual_analysis', 'difficulty': 'routine', 'expected_hours': 1, 'needs': {'visual': True},
+                'can_wait_hours': can_wait}
+        no_argon = ['argon_high'] + [b for b in account_fleet.bundles(account_fleet.load_accounts()) if b.startswith(('agy_opus', 'agy_sonnet'))]
+        return self.plan(task, usage, unavailable=['flash_high'] + no_argon)
+
+    def test_two_windows_that_both_defer_name_the_one_that_sets_the_wait(self):
+        """Rule (`candidate_eval.evaluate_bundle`): a candidate held by two windows can start when the last of them returns,
+        and `waiting_on` / `wait_for` name that window, whichever of the two is listed first."""
+        for label, five_hours, seven_hours, later in (('five-later', 2.0, 1.0, 'five_hour'), ('seven-later', 1.0, 2.0, 'seven_day')):
+            with self.subTest(label):
+                decision = self.waiting_fixture(five_hours, seven_hours, can_wait=5)['decision']
+                self.assertEqual(decision['action'], 'defer')
+                self.assertEqual(decision['wait_for']['window'], later)
+                self.assertEqual(decision['start_after_hours'], max(five_hours, seven_hours))
+
+    def test_a_candidate_held_by_several_windows_waits_for_the_last_to_return(self):
+        """Rule (`candidate_eval.binding_wait`): each window that holds a candidate back moves its wait to the later reset,
+        and the window named is the one that sets it, in whatever order the windows are met."""
+        import candidate_eval
+        for windows in ((('five_hour', 1.0), ('gemini-5h', 2.0), ('3p-5h', 1.5)), (('a', 3.0), ('b', 2.0), ('c', 1.0)),
+                        (('x', 2.0), ('y', 2.0))):
+            with self.subTest(windows=windows):
+                waiting = (None, None)
+                for window, hours in windows:
+                    waiting = candidate_eval.binding_wait(*waiting, hours, window)
+                latest = max(hours for _, hours in windows)
+                self.assertEqual(waiting[0], latest)
+                self.assertEqual(dict(windows)[waiting[1]], latest)
+
+    def test_the_wait_the_answer_advises_allowing_is_accepted_when_it_is_rolled_again(self):
+        """Rule (`allocator.advised_hours`, `plan` check `available_in_hours > can_wait`): rolling again with the
+        `--can-wait-hours` the answer advised does not end in the same answer, whatever the second decimal of the wait is."""
+        for reset in (4.04, 4.06, 0.31, 2.0, 4.99, 0.05):
+            with self.subTest(reset=reset):
+                first = self.waiting_fixture(reset, 100, can_wait=0.01, seven_left=60)['decision']
+                self.assertTrue(first['needs_user_decision'])
+                advised = first['wait_hours']
+                self.assertGreaterEqual(advised, reset)                  # waiting that long finds the window reset
+                again = self.waiting_fixture(reset, 100, can_wait=advised, seven_left=60)['decision']
+                self.assertFalse(again['needs_user_decision'])
+                self.assertIn(f'{advised}h', first['reason'])            # the text carries the advised value, not another rounding
+
     def test_quota_wait_is_the_last_window_to_return_and_none_for_any_other_exclusion(self):
         """Rule (`quota_pools.quota_wait`): a candidate excluded only by its account's quota windows returns when the last of
         them resets, and the window that sets that is named; one excluded for anything else has no quota wait."""

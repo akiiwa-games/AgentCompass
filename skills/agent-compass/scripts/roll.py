@@ -402,13 +402,39 @@ def summary(decision):
     return out
 
 
+NAMED_ROUTE_FLAGS = ('provider', 'account', 'model', 'effort')     # the flags that name a route (`--effort` is optional)
+
+
+def named_route_given(args):
+    """The flags the caller gave that name a route. A named route is a user override: `record_constraint` needs
+    `--provider`, `--account`, `--model` and `--basis` (the user's own words) for it."""
+    return [flag for flag in NAMED_ROUTE_FLAGS if getattr(args, flag, None)]
+
+
+def named_route_refusal(args):
+    """Why the flags the caller gave do not make a named route, in one answer: what it needs, which of those were given and
+    which are missing, and the other way out; None when they do make one (or none names a route)."""
+    given = named_route_given(args)
+    if not given:
+        return None
+    basis = bool((getattr(args, 'basis', None) or '').strip())
+    missing = [f'--{flag}' for flag in ('provider', 'account', 'model') if flag not in given]
+    if not basis:
+        missing.append('--basis')
+    if not missing:
+        return None
+    gave = [f'--{flag}' for flag in given] + (['--basis'] if basis else [])
+    return ('A named route needs --provider, --account, --model and --basis (the user\'s own words); --effort is optional. '
+            f'This roll gave {", ".join(gave)} and is missing {", ".join(missing)}. Add the missing flags, or drop '
+            f'{", ".join(f"--{flag}" for flag in given)}{" and --basis" if basis else ""} and let the router choose.')
+
+
 def ignored_flag_notes(args, decision, explicit_id):
     """What the caller gave that did not take effect, each in a sentence (never dropped in silence). Files are handled at
     the launch (`files_not_sent`), where the provider is known."""
     notes = []
     bundle = decision.get('selected_bundle') or {}
-    named = args.provider or args.model or args.effort or getattr(args, 'account', None)
-    if getattr(args, 'basis', None) and not named and not explicit_id:
+    if getattr(args, 'basis', None) and not named_route_given(args) and not explicit_id:
         notes.append('--basis names no route by itself and was ignored: it only quotes the user for --provider, --account, '
                      '--model or --effort.')
     if getattr(args, 'fast', False) and bundle and not bundle.get('fast'):
@@ -418,13 +444,13 @@ def ignored_flag_notes(args, decision, explicit_id):
 
 
 def files_not_sent(out, args, provider):
-    """--file / --apply-to name files for a remote runner; only Dot receives them. A worker on this machine gets neither a
-    copy nor a mention of them."""
+    """--file / --apply-to name files for a remote runner; only Dot receives them. Any other route gets neither a copy nor
+    a mention of them."""
     if provider == 'dot' or not (getattr(args, 'file', None) or getattr(args, 'apply_to', None)):
         return out
     return dict(out, warnings=[*out.get('warnings', []),
-                               f'--file/--apply-to files were not sent: only Dot receives them, and {provider} runs on this '
-                               'machine without a copy or a mention of them. Name their paths in the brief if the worker needs them.'])
+                               f'--file/--apply-to files were not sent: only Dot receives them, and the {provider} route gets neither '
+                               'a copy nor a mention of them. Put what the worker needs from them in the brief.'])
 
 
 def none_next(decision):
@@ -584,7 +610,7 @@ def dot(args, out, prompt_file, *, task=None, decision=None):
                   worker={'provider': 'dot', 'task_id': found.group(1) if found else None, 'exit': proc.returncode,
                           'reply': None, 'stderr': proc.stderr[-1500:] or None})
     if not launched:
-        result.update(error=f'dot_runner_exit_{proc.returncode}', next=dot_failure_next(proc.returncode, proc.stderr))
+        result.update(error=f'dot_runner_exit_{proc.returncode}', next=dot_failure_next(proc.returncode))
     if launched:
         result['next'] = ('Worker is ALREADY launched on Dot by roll. Do NOT call create_agent, Agent, '
                           'spawn_agent, or invoke_subagent; use continuation_argv or read worker.reply.')
@@ -593,27 +619,24 @@ def dot(args, out, prompt_file, *, task=None, decision=None):
     return result, 0 if launched and proc.returncode in (0, 3) else 1
 
 
-_SECRETISH = re.compile(r'[A-Za-z0-9_\-+/=]{32,}|api[_-]?key|authorization|bearer|token|secret|password', re.IGNORECASE)
+# What the Dot runner's exit codes mean, by the runner's own documentation (skills/dot-subagent/SKILL.md, Outcomes; its
+# EXIT_* constants): 0 completed or submitted, 1 failed, 2 usage or configuration, 3 still open.
+DOT_EXIT_MEANING = {
+    1: 'the runner reports the task, or its call to dot2api, as failed',
+    2: 'the runner refused its arguments or could not read its configuration',
+    3: 'the runner reports the task as still open but printed no task id',
+}
 
 
-def safe_stderr_tail(stderr, lines=3, width=200):
-    """The last lines of a runner's stderr that are safe to show: a line that looks like it carries a credential (a long
-    token-like run, or a word naming one) is withheld, and each line is cut. The runner promises never to print a
-    credential and prints no transcript; this is the second guard."""
-    tail = [line.strip() for line in (stderr or '').splitlines() if line.strip()][-lines:]
-    return ' | '.join('[line withheld]' if _SECRETISH.search(line) else line[:width] for line in tail)
-
-
-def dot_failure_next(code, stderr):
-    """What a caller reads when the Dot runner started nothing: its exit code, what that code means, the tail of its
-    stderr as far as it is safe, and the way out."""
-    meaning = {1: 'it failed', 2: 'it refused its arguments or could not read its configuration', 3: 'it reported the task as still open but printed no task id'}.get(
-        code, 'it ended abnormally')
-    tail = safe_stderr_tail(stderr)
+def dot_failure_next(code):
+    """What a caller reads when the Dot runner started nothing: its exit code, what the runner means by it and where its
+    output is. The runner's own output is not repeated here: it can carry what the service answered, and a filter cannot
+    tell which lines are safe to show."""
+    meaning = DOT_EXIT_MEANING.get(code, 'the runner ended abnormally')
     return (f'Nothing was launched on Dot: the runner exited {code} ({meaning}) without a task id, so there is no task to '
-            f'observe.{" Its stderr ends: " + tail + "." if tail else ""} Run the doctor command of the dot-subagent skill '
-            '(scripts/dot-subagent.cmd doctor) to check that dot2api is deployed and the credential is accepted, then roll '
-            'the brief again.')
+            'observe. Its output is kept in the file `details` names (worker.stderr). Run the doctor command of the '
+            'dot-subagent skill (scripts/dot-subagent.cmd doctor) to check that dot2api is deployed and the credential is '
+            'accepted, then roll the brief again.')
 
 
 def consult(args, out, prompt_file):
@@ -1448,7 +1471,7 @@ def _run(args, judge):
                 # `worker_workspace_mismatch`), and a new worker in --workspace would not hold its context.
                 return _resume_refusal(base_out, explicit_id, 'resume_workspace_mismatch', workspace_mismatch_text(
                     explicit_id, own_dir, canonical_ws))
-            if args.provider or args.model or args.effort or getattr(args, 'account', None) or getattr(args, 'fast', False):
+            if named_route_given(args) or getattr(args, 'fast', False):
                 conflict = named_route_conflict(args, _resolve_worker_bundle(explicit_worker) or {})
                 if conflict:
                     raise ValueError(conflict)
@@ -1479,9 +1502,9 @@ def _run(args, judge):
             classified = judge.classify_pinned(task, args)
             decision = (classified['result'] if 'result' in classified else
                         judge.record_resume(args, task, classified, _resolve_worker_bundle(matched_worker), explicit_id))
-        elif args.provider or args.model or args.effort or getattr(args, 'account', None):
-            if not args.basis:
-                raise ValueError('Naming --provider/--account/--model/--effort is a user override; quote the user with --basis.')
+        elif named_route_given(args):
+            if refusal := named_route_refusal(args):
+                raise ValueError(refusal)
             args.constraint = 'user_override'
             # Only the model is pinned: the task is classified exactly as an automatic roll's, and the pinned bundle
             # is priced and reserved from that profile.

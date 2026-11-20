@@ -1039,11 +1039,15 @@ def failure_answer(exc, stage):
         failure['detail'] = failure['cause']        # the text of a rule written in this repository, as it always was
     elif public_data.is_data_error(exc):
         failure['error'] = 'Reference or local data could not be read'
+    if isinstance(exc, (ValueError, scorer_client.ScorerError)):
+        # A rule of this repository refused the request as given: what to change is in the flags or the brief.
+        fix = 'The request was refused as given. Change what cause names (a flag, the brief or a value in it), then'
+    else:
+        fix = 'Fix the cause named in cause (a missing or unreadable file, the local state, the installation), then'
     failure['next_action'] = (
-        'Fix the cause named in cause (a missing or unreadable file, the local state, the installation), then roll '
-        'again. A task that already has a Paseo dispatch comes back as that worker (pending), not as a second launch.'
+        f'{fix} roll again. A task that already has a Paseo dispatch comes back as that worker (pending), not as a second launch.'
         if stage == 'roll' else
-        'Fix the cause named in cause, check the reviewed input and the usage cache, and continue feasible parent work.')
+        f'{fix} check the reviewed input and the usage cache, and continue feasible parent work.')
     return failure
 
 

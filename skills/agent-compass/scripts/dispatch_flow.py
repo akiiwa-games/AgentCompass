@@ -119,19 +119,51 @@ REMOVED_NEXT = ('Paseo created this worker and it was removed before this dispat
 UNCONFIRMED_NEXT = ('Paseo did not confirm this create ({what}), so it is not known whether the worker exists or will '
                     'appear. Run next_argv: it finds the worker by its labels if it was created, and settles the dispatch '
                     'if it was not. Do not roll again before that: a second roll can start a duplicate.')
+RESUME_UNCONFIRMED_NEXT = ('Paseo did not confirm this resume ({what}), so it is not known whether the worker took the turn. '
+                           'Run next_argv: it observes the worker and settles the dispatch. Do not roll again before that: a '
+                           'second roll can send the turn twice.')
 UNCONFIRMED_WHAT = {
     'host_timeout': 'the host did not answer in time',
     'invalid_host_response': 'the bridge printed an answer that could not be read',
     'create_outcome_uncertain_reconcile_by_label': 'the bridge reports that the outcome of the create is uncertain',
+    'resume_outcome_uncertain_reconcile_by_agent': 'the bridge reports that the outcome of the resume is uncertain',
+    'host_request_failed': 'the request reached the daemon and then failed',
 }
-# A launch Paseo never received or refused before any worker existed: what failed and the step that fixes it. Nothing
-# exists to collect from, and nothing was started in its place.
+# What the bridge's `condition` tokens mean: what failed, and what the caller does about that cause. The bridge sends a
+# token of a fixed vocabulary beside the error code it merges several states under; create and resume read this one
+# table, and what follows from it (roll again, run next_argv) is said by the answer that reads it.
+#   host_connection_failed (the daemon was never connected): refused | timeout | unreachable | authentication |
+#                          credential_unreadable
+#   host_request_failed (sent) and host_resume_failed (not sent), connected and then failed: timeout | connection_lost |
+#                          daemon_error | invalid_response | authentication | bridge_error
+#   worker_not_idle, worker_not_found: the states of dispatch_registry.WORKER_STATES.
+HOST_CONDITIONS = {
+    'refused': ('the daemon refused the connection (nothing listens on its port)',
+                'start the daemon (check it with `paseo ls`)'),
+    'timeout': ('the daemon did not answer in time',
+                'check that the daemon is running and answering (`paseo ls`)'),
+    'unreachable': ('the daemon could not be reached at its address',
+                    "check that it is running and that `daemon.listen` in config.json under PASEO_HOME (default ~/.paseo) "
+                    'is its address (`paseo ls`)'),
+    'authentication': ("the daemon is running but did not accept the bridge's local credential",
+                       'check that PASEO_HOME is the home of the daemon that is running (its `local-credential` file '
+                       'is the credential)'),
+    'credential_unreadable': ("the bridge could not read Paseo's local credential file",
+                              'check that `local-credential` exists and is readable under PASEO_HOME (default ~/.paseo); '
+                              'it is written when the daemon first starts'),
+    'connection_lost': ('the connection to the daemon dropped during the request',
+                        'check that the daemon is still running (`paseo ls`)'),
+    'daemon_error': ('the daemon answered the request with an error',
+                     'check that the daemon is current and read its log'),
+    'invalid_response': ("the daemon's answer could not be read",
+                         'the daemon and the bridge SDK may be of different versions: update Paseo'),
+    'bridge_error': ('the bridge could not build the request',
+                     'run `agentcompass doctor`; if it repeats, tell the user'),
+}
+# A launch Paseo never received, whose cause is not a condition: what failed and the step that fixes it. Nothing exists to
+# collect from, and nothing was started in its place.
 NOT_SENT_NEXT = {
     'sdk_setup_failed': 'The Paseo bridge could not load its SDK, so nothing was sent. {fix} Then roll the brief again.',
-    'host_connection_failed': ('The Paseo daemon could not be reached, so nothing was sent. Start the daemon (check it with '
-                               '`paseo ls`), then roll the brief again.'),
-    'host_request_failed': ('Paseo answered the request with an error before it created a worker. Check that the daemon is '
-                            'running and current (`paseo ls`), then roll the brief again; if it repeats, tell the user.'),
     'bridge_unavailable': ('The bridge process could not be started (Node.js is missing from PATH or the bridge file is '
                            'gone), so nothing was sent. Install Node.js or run `agentcompass setup`, then roll the brief again.'),
     'create_send_window_elapsed': ('The create request was not sent within its send window (the host was too slow), so '
@@ -139,32 +171,7 @@ NOT_SENT_NEXT = {
     'parent_agent_not_found': ('Paseo does not know the parent agent this roll names, so nothing was launched. Check '
                                'PASEO_AGENT_ID or --parent-id against `paseo ls`, then roll the brief again.'),
 }
-NOT_SENT_OTHER = 'Paseo refused the launch before it created a worker ({code}); nothing was sent. Fix that cause, then roll the brief again.'
-# A named worker the host would not resume (`--resume <id>`): what the condition asks of the caller. Nothing was started
-# in its place; the same --resume is retried once the condition is gone.
-RESUME_CONDITION_NEXT = {
-    'running': 'its turn is still running; wait until it ends, then roll --resume again',
-    'initializing': 'it is still starting; wait until it is idle, then roll --resume again',
-    'error': 'it ended in an error; read it (get_agent_activity on the worker), then roll --resume again or start a fresh worker',
-    'provider_unavailable': 'its provider is unavailable; wait until it answers again, then roll --resume again',
-    'permission_pending': ('it waits for a permission; answer it (list_pending_permissions, respond_to_permission or the '
-                           'Paseo app), then roll --resume again'),
-    'absent': 'Paseo has no worker with this id; check the id with `paseo ls`',
-    'archived': 'it is archived; unarchive it in Paseo and roll --resume again, or roll without --resume for a fresh worker',
-}
-RESUME_REFUSAL_NEXT = {
-    'worker_not_idle': ('it is not idle (running, starting, in error, waiting for a permission, or its provider is '
-                        'unavailable); read its state with get_agent_status, deal with that, then roll --resume again'),
-    'worker_not_found': 'Paseo does not have it (absent or archived); check the id with `paseo ls`',
-    'host_connection_failed': ('the Paseo daemon could not be reached; start it, then roll --resume again with the same '
-                               'id (nothing was started)'),
-    'host_request_failed': ('Paseo answered the resume with an error; check that the daemon is running and current, then '
-                            'roll --resume again once'),
-    'host_resume_failed': 'Paseo could not resume it; read its state with get_agent_status, then roll --resume again once',
-    **{code: ('the worker is not the one this turn describes; roll without --resume to let the router choose, or name a '
-              'route that matches the worker')
-       for code in ('worker_settings_mismatch', 'worker_model_mismatch', 'worker_parent_mismatch')},
-}
+NOT_SENT_OTHER = 'Paseo refused the launch before it created a worker ({code}), so nothing was sent.'
 _TOKEN = re.compile(r'[a-z_]{1,48}')
 
 
@@ -178,25 +185,82 @@ def failure_cause(row, error=None):
     return None
 
 
+def failure_label(code, condition=None):
+    """The `cause` of an unconfirmed launch: the code, then the bridge's condition token, bounded."""
+    return (str(code)[:120] + (f':{condition}' if condition else ''))[:160]
+
+
 def host_condition(response):
     """The bridge's `condition` for the code it answered, as a short token; None for anything else (never free text)."""
     condition = response.get('condition') if isinstance(response, dict) else None
     return condition if isinstance(condition, str) and _TOKEN.fullmatch(condition) else None
 
 
+def condition_facts(condition):
+    """`(what failed, what to do)` for a condition token of the bridge; None for no condition. A token this table does not
+    hold is printed as the token, with advice that presumes no cause."""
+    if not condition:
+        return None
+    if condition in HOST_CONDITIONS:
+        return HOST_CONDITIONS[condition]
+    if condition in registry.WORKER_STATES:
+        known = registry.WORKER_STATES[condition]
+        return known.reason, known.fix
+    return f'the bridge reported the condition {condition}', 'check the daemon with `paseo ls` and read its log'
+
+
+def _sentence(text):
+    return text[:1].upper() + text[1:]
+
+
 def not_sent_next(code, condition=None, setup_hint=None):
     """What a caller reads when the host refused a launch before any worker existed."""
-    hint = setup_hint.strip()[:300] if isinstance(setup_hint, str) and setup_hint.strip() else 'Run `agentcompass setup`.'
-    text = NOT_SENT_NEXT.get(code, NOT_SENT_OTHER).format(code=code, fix=hint)
-    return text + (f' (condition: {condition}.)' if condition else '')
+    if code in NOT_SENT_NEXT:
+        hint = setup_hint.strip()[:300] if isinstance(setup_hint, str) and setup_hint.strip() else 'Run `agentcompass setup`.'
+        if not hint.endswith(('.', '!', '?')):
+            hint += '.'
+        return NOT_SENT_NEXT[code].format(fix=hint)
+    facts = condition_facts(condition)
+    if facts is None:
+        head = {'host_connection_failed': 'The Paseo daemon could not be reached, so nothing was sent.'
+                }.get(code) or NOT_SENT_OTHER.format(code=code)
+        return f'{head} Check the daemon with `paseo ls`, then roll the brief again.'
+    what, fix = facts
+    return f'{_sentence(what)}, so nothing was sent. {_sentence(fix)}, then roll the brief again.'
 
 
 def resume_refusal_next(code, condition=None):
-    """The way out of a refusal of `--resume <id>` by the host: the condition decides when there is one."""
-    named = RESUME_CONDITION_NEXT.get(condition)
-    if named:
-        return f'{named}.'
-    return (RESUME_REFUSAL_NEXT.get(code) or f'the host refused it ({code}); read its state with get_agent_status') + '.'
+    """The way out of a refusal of `--resume <id>` by the host, from the condition when it sent one."""
+    if condition in registry.WORKER_STATES:
+        return registry.resume_way_out(condition)
+    facts = condition_facts(condition)
+    if facts is not None:
+        what, fix = facts
+        return f'{_sentence(what)}, so the worker was not asked. {_sentence(fix)}, then roll --resume again with the same id.'
+    return RESUME_CODE_NEXT.get(code) or (f'The host refused it ({code}): read its state with get_agent_status, then roll '
+                                          '--resume again with the same id, or roll without --resume.')
+
+
+# What a refusal of `--resume <id>` means by its code alone, for a bridge that sent no condition (the states a code merges
+# are named by dispatch_registry.WORKER_STATES, which owns what to do about each).
+RESUME_CODE_NEXT = {
+    'worker_not_idle': ('The worker is not idle (running, starting, in error, waiting for a permission, or its provider is '
+                        'unavailable): read its state with get_agent_status, deal with that, then roll --resume again.'),
+    'worker_not_found': ('Paseo does not have the worker (absent or archived): check the id with `paseo ls`, unarchive it in '
+                         'Paseo if it is archived, then roll --resume again.'),
+    'host_connection_failed': ('The Paseo daemon could not be reached, so the worker was not asked: check it with `paseo ls`, '
+                               'then roll --resume again with the same id.'),
+    **{code: ('The worker is not the one this turn describes: roll without --resume to let the router choose, or name a '
+              'route that matches the worker.')
+       for code in ('worker_settings_mismatch', 'worker_model_mismatch', 'worker_parent_mismatch')},
+}
+
+
+def unconfirmed_what(code, condition=None):
+    """What a caller reads in the parentheses of an unconfirmed create or resume: the code, and the condition's facts."""
+    head = UNCONFIRMED_WHAT.get(code) or f'it answered {str(code)[:160]}'
+    facts = condition_facts(condition)
+    return head + (f': {facts[0]}' if facts else '')
 
 
 LAUNCH_OPERATIONS = ('create', 'resume')     # bridge operations that start or continue a worker (effects)
@@ -538,7 +602,8 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
     launch_error = None
     launch_condition = None     # the bridge's condition for launch_error (host_condition), when it sent one
     setup_hint = None
-    create_unconfirmed = None   # the error of a create the host may still have received
+    create_unconfirmed = None   # the error of a create or resume the host may still have received
+    unconfirmed_condition = None  # the bridge's condition for it, when it sent one
     resume_refused = False      # the host refused to resume the worker the caller named
     refusal_detail = None   # what the host found different on a named worker it would not resume
     # watch_seconds is a hard limit on waiting: a bridge call is cut at what is left of it. Sending a create is not
@@ -622,6 +687,7 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
                                        'host_rejected_before_create' + (':' + cause if cause else ''), failed=True, path=path)
         elif response.get('sent') and not response.get('ok') and isinstance(response.get('error'), str):
             create_unconfirmed = response['error']
+            unconfirmed_condition = host_condition(response)
         # Ambiguous errors retain the single-use claim; reconcile locates any created agent by labels.
     elif row['state'] == 'expired' and row.get('launched_at'):
         observations = reconcile(dispatch_id, host=host, path=path, timeout=budget())
@@ -671,13 +737,16 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
             # The host could not be read; says nothing about the worker. A create the host has not finished is `creating`.
             result['observe_error'] = observe_error
         unconfirmed = create_unconfirmed or (observe_error if observe_error != 'agent_not_observed' else None)
-        if (unconfirmed and result.get('creation_phase') == 'unknown'
+        if unconfirmed and row.get('operation') == 'resume' and not result.get('next_action'):
+            # A resume the host may have received: the worker exists, and what is unknown is whether it took the turn.
+            result['cause'] = failure_label(unconfirmed, unconfirmed_condition)
+            result['next_action'] = RESUME_UNCONFIRMED_NEXT.format(what=unconfirmed_what(unconfirmed, unconfirmed_condition))
+        elif (unconfirmed and result.get('creation_phase') == 'unknown'
                 and result.get('next_action') in (CREATING_NEXT, STALLED_NEXT)):
             # The host has not said it carries out this create (a phase it reports, `accepted` for one, makes it the creating
             # state and keeps the text above): what is known is the error, so say that.
-            result['cause'] = str(unconfirmed)[:160]
-            result['next_action'] = UNCONFIRMED_NEXT.format(
-                what=UNCONFIRMED_WHAT.get(unconfirmed) or f'it answered {str(unconfirmed)[:160]}')
+            result['cause'] = failure_label(unconfirmed, unconfirmed_condition)
+            result['next_action'] = UNCONFIRMED_NEXT.format(what=unconfirmed_what(unconfirmed, unconfirmed_condition))
         result['continuation'] = 'Run dispatch --dispatch-action reconcile or launch with this dispatch_id; it will observe, not create again.'
         result['continuation_argv'] = entry.argv('launch', '--dispatch-id', dispatch_id, '--parent-id', parent_id, '--watch-seconds', '120')
     return result
