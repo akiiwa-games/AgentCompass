@@ -117,7 +117,8 @@ REMOVED_NEXT = ('Paseo created this worker and it was removed before this dispat
                 'holds nothing. The worker may have done part of the work: check that before rolling this brief again.')
 
 # Why `reconcile` did not observe a dispatch it was asked about, one entry per branch that skips it. `NOTHING_OPEN` is
-# the answer of a `reconcile` that had no open dispatch to look at.
+# the answer of a `reconcile` that had no open Paseo dispatch to look at (`registry.pending` lists Paseo rows only);
+# `OPEN_ELSEWHERE` then names the open claims of other hosts (`registry.open_host_claims`), which it does not observe.
 NOT_OBSERVED = {
     'not_paseo': 'not a Paseo dispatch ({mode})',
     'terminal': 'already {state}',
@@ -125,13 +126,18 @@ NOT_OBSERVED = {
     'not_applied': 'observation not applied',
     'unanswered': 'could not be observed',
 }
-NOTHING_OPEN = 'No dispatch is open, so there was nothing to observe.'
-# What `settle` found when the receipt carries no ending, so the state did not change: no receipt, a receipt that could
-# not be read, or one that records no ending yet.
+NOTHING_OPEN = 'No Paseo dispatch is open, so reconcile observed nothing.'
+OPEN_ELSEWHERE = 'Open on other hosts, which reconcile does not observe: {claims}.'
+# What `settle` found when the receipt proves no ending for this row, so the state did not change: no receipt, one that
+# could not be read, a file that was read and is not a receipt, one with no ending yet, or one whose ending does not
+# count for this row (dated before this launch, or a reason registry.state_from_receipt does not read).
 SETTLE_NO_RECEIPT = {
     'missing': 'No receipt of the watcher was found for this dispatch, so its state did not change.',
     'unreadable': 'The receipt of the watcher for this dispatch could not be read, so its state did not change.',
+    'not_a_receipt': 'The file of the watcher for this dispatch was read and is not a receipt, so its state did not change.',
     'no_ending': 'The receipt of the watcher for this dispatch records no ending, so its state did not change.',
+    'ending_not_counted': ('The receipt of the watcher for this dispatch records an ending that does not count for it '
+                           '(dated before this launch, or a reason AgentCompass does not read), so its state did not change.'),
 }
 RELEASED_NOTHING = 'Dispatch is already {state}; nothing was released.'
 OBSERVED_OVER = 'Observing it settled the dispatch as {state}; nothing was left to release.'
@@ -805,11 +811,14 @@ def notification_file(dispatch_id):
 
 
 def read_notification(dispatch_id):
+    """(the receipt, None), or (None, why there is none: `missing`, `unreadable` or `not_a_receipt`)."""
     try:
         document = json.loads(notification_file(dispatch_id).read_text(encoding='utf-8'))
+    except FileNotFoundError:
+        return None, 'missing'
     except (OSError, ValueError):
-        return None
-    return document if isinstance(document, dict) else None
+        return None, 'unreadable'
+    return (document, None) if isinstance(document, dict) else (None, 'not_a_receipt')
 
 
 def settle(dispatch_id, path=None, now=None):
@@ -820,10 +829,10 @@ def settle(dispatch_id, path=None, now=None):
     answer's `note` says which of `SETTLE_NO_RECEIPT` it was. `creation failed` with no agent settles through
     resolve_creation. A row that already has a terminal state keeps it; side effects the first writer skipped still
     run."""
-    receipt_file = notification_file(dispatch_id)
+    notification_file(dispatch_id)
     now = now or registry.utcnow()
     row = registry.inspect(dispatch_id, path)
-    document = read_notification(dispatch_id)
+    document, absent = read_notification(dispatch_id)
     receipt = document or {}
     terminal = receipt.get('terminal') if isinstance(receipt.get('terminal'), dict) else None
     reason = terminal.get('reason') if terminal else None
@@ -836,7 +845,7 @@ def settle(dispatch_id, path=None, now=None):
         return end_notices(public(settled, now), now, path)
     # registry.state_from_receipt owns whether the receipt proves an ending for this row; without one nothing changes.
     no_ending = None if creating_failed or registry.state_from_receipt(row, receipt)[0] else (
-        'no_ending' if document is not None else 'unreadable' if receipt_file.exists() else 'missing')
+        absent or ('ending_not_counted' if reason else 'no_ending'))
     if row['state'] in registry.TERMINAL and row['state'] != 'expired' and not row.get('side_effects_due'):
         # Still let a stored receipt finish effects the state writer skipped. finalize keeps the terminal.
         if reason is None:
@@ -903,7 +912,8 @@ def cli(args):
         observations = reconcile(args.dispatch_id, not_observed=not_observed)
         answer = {'observations': observations, 'not_observed': not_observed, 'active_reservations': registry.reservations()}
         if not args.dispatch_id and not observations and not not_observed:
-            answer['note'] = NOTHING_OPEN
+            elsewhere = ', '.join(f"{r['dispatch_id']} ({r['dispatch_mode']})" for r in registry.open_host_claims())
+            answer['note'] = NOTHING_OPEN + (' ' + OPEN_ELSEWHERE.format(claims=elsewhere) if elsewhere else '')
         return end_notices(answer)
     if not args.dispatch_id:
         raise ValueError('status/release requires --dispatch-id')

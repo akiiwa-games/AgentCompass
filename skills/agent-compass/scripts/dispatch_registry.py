@@ -949,49 +949,74 @@ def _finish_pending_side_effects(path, now):
             continue
 
 
-def _record_pending_ground_truth(path, now):
-    """Record ground truth only for rows this process just flagged. Never scan historical completions.
+# A ground-truth collection that raised an OSError is tried once more, at a read at least this long after it failed:
+# one within the same command (a reconcile reads the registry twice within milliseconds) would not outlast a lock.
+GROUND_TRUTH_RETRY_SECONDS = 60
 
-    A collection that raises is recorded too, with its class as the reason (dispatch_ground_truth.failed_ground_truth),
-    so the next read does not run it again in silence. Of what can escape the collection (its own reads already turn a
-    missing or unreadable transcript, config or git answer into a reason), only an OSError can be transient: a stat of a
-    file or directory refused for a moment. It gets one retry at the next read, marked `ground_truth_retry`; any other
-    class is a defect that fails the same way on the same row and files, so it is recorded at once."""
+
+def measure_completion(row, now, *, agent_doc, other_dispatch_ids=()):
+    """The fields a completed row saves: its ground truth, or what stands for it when the collection raised. Measuring
+    a completion is not the completion, so every caller completes the row and runs what follows either way.
+
+    Of what can escape the collection (its own reads already turn a missing or unreadable transcript, config or git
+    answer into a reason), only an OSError can be transient: a stat of a file or directory refused for a moment. The
+    first one leaves the row pending with `ground_truth_retry` (`error`, the class, and `at`, when it failed), and
+    `_record_pending_ground_truth` tries once more `GROUND_TRUTH_RETRY_SECONDS` later. Any other class, and an OSError
+    on that retry, is a defect that fails the same way again: it is recorded at once, every field `null` with
+    `collection_failed:<class>` (dispatch_ground_truth.failed_ground_truth). The exception's text is never kept."""
+    import dispatch_ground_truth
+    try:
+        return dispatch_ground_truth.collect_ground_truth(
+            row, idle_threshold=RUN_LEASE, recorded_at=stamp(now), agent_doc=agent_doc,
+            other_dispatch_ids=set(other_dispatch_ids or ()))
+    except Exception as exc:
+        if isinstance(exc, OSError) and not row.get('ground_truth_retry'):
+            return {'ground_truth_pending': True, 'ground_truth_other_ids': sorted(other_dispatch_ids or ()),
+                    'ground_truth_retry': {'error': type(exc).__name__, 'at': stamp(now)}}
+        return dispatch_ground_truth.failed_ground_truth(recorded_at=stamp(now), exc=exc)
+
+
+def _save_measurement(row, fields):
+    """Apply `measure_completion`'s fields: a record ends the pending state, a retry keeps it."""
+    row.update(fields)
+    if 'ground_truth_recorded_at' in fields:
+        for key in ('ground_truth_pending', 'ground_truth_other_ids', 'ground_truth_retry'):
+            row.pop(key, None)
+
+
+def _retry_due(row, now):
+    retry = row.get('ground_truth_retry')
+    if not isinstance(retry, dict):
+        return True
+    try:
+        return now >= parse(retry.get('at')) + timedelta(seconds=GROUND_TRUTH_RETRY_SECONDS)
+    except (TypeError, ValueError):
+        return True
+
+
+def _record_pending_ground_truth(path, now):
+    """Record ground truth only for rows this process just flagged. Never scan historical completions. A row waiting
+    for its one retry (`measure_completion`) is left until the retry is due."""
     target = Path(path or db_path())
     if not target.exists():
         return
     connection = _read_only(target)
     try:
         pending = [row for row in rows(connection, 'dispatches')
-                   if row.get('ground_truth_pending') and row.get('state') == 'completed']
+                   if row.get('ground_truth_pending') and row.get('state') == 'completed' and _retry_due(row, now)]
     finally:
         connection.close()
     if not pending:
         return
-    import dispatch_ground_truth
     for row in pending:
-        retry = None
-        try:
-            truth = dispatch_ground_truth.collect_ground_truth(
-                row, idle_threshold=RUN_LEASE, recorded_at=stamp(now),
-                agent_doc=paseo_agent_record(row.get('agent_id')),
-                other_dispatch_ids=set(row.get('ground_truth_other_ids') or ()))
-        except Exception as exc:
-            if isinstance(exc, OSError) and not row.get('ground_truth_retry'):
-                retry, truth = type(exc).__name__, None
-            else:
-                truth = dispatch_ground_truth.failed_ground_truth(recorded_at=stamp(now), exc=exc)
+        fields = measure_completion(row, now, agent_doc=paseo_agent_record(row.get('agent_id')),
+                                    other_dispatch_ids=row.get('ground_truth_other_ids') or ())
         try:
             with transaction(path, upkeep=True) as writing:
                 latest = get(writing, 'dispatches', row['dispatch_id'])
                 if not latest.get('ground_truth_pending'):
                     continue
-                if retry:
-                    latest['ground_truth_retry'] = retry
-                else:
-                    latest.update(truth)
-                    for key in ('ground_truth_pending', 'ground_truth_other_ids', 'ground_truth_retry'):
-                        latest.pop(key, None)
+                _save_measurement(latest, fields)
                 save(writing, latest)
         except (OSError, sqlite3.Error, ValueError):
             continue
@@ -1879,17 +1904,11 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
                 save(connection, latest)
                 row = latest
     if target == 'completed' and (prev_state != 'completed' or 'ground_truth_recorded_at' not in row):
-        import dispatch_ground_truth
-        gt = dispatch_ground_truth.collect_ground_truth(
-            row,
-            idle_threshold=RUN_LEASE,
-            recorded_at=stamp(now),
-            agent_doc=paseo_agent_record(agent_id),
-            other_dispatch_ids=later_dispatch_ids,
-        )
+        fields = measure_completion(row, now, agent_doc=paseo_agent_record(agent_id),
+                                    other_dispatch_ids=later_dispatch_ids)
         with transaction(path, upkeep=True) as connection:
             latest = get(connection, 'dispatches', dispatch_id)
-            latest.update(gt)
+            _save_measurement(latest, fields)
             save(connection, latest)
             row = latest
     # Only a turn positively seen ending on the model's reply lifts a hold: a cancelled probe reads as finished too.
@@ -1974,6 +1993,16 @@ def pending(path=None):
         # Include expired started/uncertain Paseo launches so a later observation can repair them.
         return [r for r in rows(connection, 'dispatches')
                 if r.get('dispatch_mode', 'paseo') == 'paseo' and unresolved(r, utcnow())]
+
+
+def open_host_claims(now=None, path=None):
+    """Open claims of hosts other than Paseo (`unresolved`), which `pending` leaves out and reconcile does not observe."""
+    if not Path(path or db_path()).exists():
+        return []
+    now = now or utcnow()
+    with transaction(path, upkeep=True) as connection:
+        return [r for r in rows(connection, 'dispatches')
+                if r.get('dispatch_mode', 'paseo') != 'paseo' and unresolved(r, now)]
 
 
 def record_host_claim(surface, decision, task, bundle, *, label=None, usage=None, access='write',
@@ -2104,20 +2133,14 @@ def complete_external(dispatch_mode, external_id, *, now=None, path=None):
         if not found:
             return None
         row = json.loads(found[0])
-    if row.get('state') == 'completed' and 'ground_truth_recorded_at' in row:
+    if row.get('state') == 'completed' and ('ground_truth_recorded_at' in row or row.get('ground_truth_retry')):
         return row
-    import dispatch_ground_truth
     now = now or utcnow()
-    gt = dispatch_ground_truth.collect_ground_truth(
-        row,
-        idle_threshold=RUN_LEASE,
-        recorded_at=stamp(now),
-        agent_doc=None,
-    )
+    fields = measure_completion(row, now, agent_doc=None)
     with transaction(target_db) as connection:
         latest = get(connection, 'dispatches', dispatch_id)
         if latest.get('state') != 'completed':
             event(latest, 'completed', now)
-        latest.update(gt)
+        _save_measurement(latest, fields)
         save(connection, latest)
         return latest

@@ -1,6 +1,7 @@
 """What the `dispatch` actions answer when they did nothing: each says which fact decided it, so "nothing to do",
 "nothing found" and "could not look" never share one shape. No state, reservation or lease moves for these answers."""
 import json
+from datetime import timedelta
 import os
 import unittest
 from types import SimpleNamespace
@@ -56,6 +57,84 @@ class DispatchAnswerTests(unittest.TestCase):
             row = registry.get(connection, 'dispatches', dispatch_id)
             row.update(changes)
             registry.save(connection, row)
+
+    def started(self, task_id):
+        row = self.claim_row(self.fresh(task_id))
+        registry.observe(row['dispatch_id'], self.snapshot(row, 'running'), now=self.now)
+        return row
+
+    def clears(self):
+        """The four clears that follow a completion, recorded instead of run."""
+        import account_state
+        import launch_failures
+        import model_latch
+        import provider_retry
+        called = []
+        for owner, name in ((provider_retry, 'clear'), (launch_failures, 'clear'), (account_state, 'clear_latch'),
+                            (model_latch, 'clear')):
+            label = f'{owner.__name__}.{name}'
+            self.enterContext(patch.object(owner, name, side_effect=lambda *a, _label=label, **k: called.append(_label)))
+        return called
+
+    def test_a_collection_that_raises_on_observe_still_completes_records_and_clears(self):
+        import dispatch_ground_truth as gt
+        for raised, recorded in ((TypeError('host free text'), True), (PermissionError(13, 'locked free text'), False),
+                                 (None, True)):
+            with self.subTest(raised=type(raised).__name__):
+                row = self.started(f'observe-{type(raised).__name__}')
+                called = self.clears()
+                at = (registry.parse(registry.inspect(row['dispatch_id'])['launched_at']) + timedelta(minutes=1)).isoformat()
+
+                def host(request):
+                    return {'ok': True, 'agent': self.snapshot(row, 'idle', attentionReason='finished'),
+                            'completion_notification': {'terminal': {'reason': 'finished', 'replied': True, 'at': at}}}
+                collect = patch.object(gt, 'collect_ground_truth', side_effect=raised) if raised else patch.object(
+                    gt, 'collect_ground_truth', wraps=gt.collect_ground_truth)
+                with collect:
+                    answer = self.run_action(action('start', row['dispatch_id']), host)
+                self.assertEqual([o['state'] for o in answer['observations']], ['completed'])
+                self.assertNotIn('free text', json.dumps(answer))
+                self.assertEqual(sorted(called), ['account_state.clear_latch', 'launch_failures.clear',
+                                                  'model_latch.clear', 'provider_retry.clear'])
+                stored = registry.inspect(row['dispatch_id'])
+                self.assertEqual(stored['state'], 'completed')
+                if raised is None:
+                    self.assertNotIn('ground_truth_reason', stored)
+                    self.assertIn('ground_truth_recorded_at', stored)
+                elif recorded:
+                    self.assertEqual(stored['ground_truth_reason'], 'collection_failed:TypeError')
+                    self.assertNotIn('ground_truth_pending', stored)
+                else:   # an OSError: pending, retried once by a later read
+                    self.assertEqual((stored['ground_truth_pending'], stored['ground_truth_retry']['error']),
+                                     (True, 'PermissionError'))
+                    self.assertNotIn('ground_truth_recorded_at', stored)
+
+    def test_a_collection_that_raises_on_an_external_runner_still_completes(self):
+        import dispatch_ground_truth as gt
+        for raised in (TypeError('free text'), PermissionError(13, 'locked')):
+            with self.subTest(raised=type(raised).__name__):
+                external = f'ext-{type(raised).__name__}'
+                row = registry.record_external_launch('grok-bot', external, f'decision-{external}', dict(self.bundle),
+                                                      parent_id='parent-a', task_id=external, cwd=str(self.root))
+                with patch.object(gt, 'collect_ground_truth', side_effect=raised) as collect:
+                    done = registry.complete_external('grok-bot', external)
+                    again = registry.complete_external('grok-bot', external)   # the retry is a later read's, not this
+                self.assertEqual(collect.call_count, 1)
+                self.assertEqual((done['state'], again['state']), ('completed', 'completed'))
+                if isinstance(raised, OSError):
+                    self.assertEqual(done['ground_truth_retry']['error'], 'PermissionError')
+                else:
+                    self.assertEqual(done['ground_truth_reason'], 'collection_failed:TypeError')
+                self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'completed')
+
+    def test_nothing_open_names_what_reconcile_looked_at_and_the_open_claims_it_does_not_observe(self):
+        task = dict(self.task, task_id='herdr-claim')
+        claim = registry.record_host_claim('herdr', {'decision_id': 'd-herdr'}, task, dict(self.bundle),
+                                           cwd=str(self.root), launched=True, now=registry.utcnow())
+        answer = self.run_action(action('reconcile'))
+        self.assertEqual((answer['observations'], answer['not_observed']), ([], []))
+        self.assertEqual(answer['note'], flow.NOTHING_OPEN + ' ' + flow.OPEN_ELSEWHERE.format(
+            claims=f"{claim['dispatch_id']} (herdr)"))
 
     def test_reconcile_and_start_name_each_dispatch_they_did_not_observe_and_why(self):
         never = self.prepare()
@@ -144,7 +223,18 @@ class DispatchAnswerTests(unittest.TestCase):
         self.assertEqual(self.run_action(action('settle', never['dispatch_id']))['note'], flow.SETTLE_NO_RECEIPT['no_ending'])
         receipt.write_text('{not json', encoding='utf-8')
         self.assertEqual(self.run_action(action('settle', never['dispatch_id']))['note'], flow.SETTLE_NO_RECEIPT['unreadable'])
+        receipt.write_text('[]', encoding='utf-8')   # read, and not a receipt
+        self.assertEqual(self.run_action(action('settle', never['dispatch_id']))['note'], flow.SETTLE_NO_RECEIPT['not_a_receipt'])
         self.assertEqual(registry.inspect(never['dispatch_id'])['state'], 'prepared')
+        row = self.started('ending-that-does-not-count')
+        launched = registry.parse(registry.inspect(row['dispatch_id'])['launched_at'])
+        receipt = flow.notification_file(row['dispatch_id'])
+        for terminal in ({'reason': 'finished', 'at': (launched - timedelta(hours=1)).isoformat()},
+                         {'reason': 'a reason the registry does not know'}):
+            with self.subTest(terminal=terminal):
+                receipt.write_text(json.dumps({'status': 'finished', 'terminal': terminal}), encoding='utf-8')
+                answer = self.run_action(action('settle', row['dispatch_id']))
+                self.assertEqual((answer['state'], answer['note']), ('started', flow.SETTLE_NO_RECEIPT['ending_not_counted']))
 
     def test_fallback_unsettled_and_disabled_say_what_they_mean(self):
         never = self.prepare()

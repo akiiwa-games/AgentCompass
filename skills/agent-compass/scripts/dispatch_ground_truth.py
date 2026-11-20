@@ -68,7 +68,9 @@ def _is_int_num(value: object) -> bool:
 _HEX_OID_RE = re.compile(r'^[0-9a-fA-F]{40,64}$')
 
 
-def _git(cwd: str | Path, *args: str, timeout: float = 5.0) -> subprocess.CompletedProcess[str] | None:
+def _git(cwd: str | Path, *args: str, timeout: float = 5.0) -> subprocess.CompletedProcess[str] | str:
+    """git's answer, or why there is none: `git_timeout` when it did not finish within `timeout`, `git_unavailable`
+    when it could not be started. Every reader records that reason as it is."""
     env = {**os.environ, 'GIT_OPTIONAL_LOCKS': '0', 'LC_ALL': 'C'}
     kwargs: dict = {
         'stdin': subprocess.DEVNULL,
@@ -83,8 +85,10 @@ def _git(cwd: str | Path, *args: str, timeout: float = 5.0) -> subprocess.Comple
         kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
     try:
         return subprocess.run(['git', '-C', str(cwd), *args], **kwargs)
+    except subprocess.TimeoutExpired:
+        return 'git_timeout'
     except (OSError, subprocess.SubprocessError):
-        return None
+        return 'git_unavailable'
 
 
 def _locate_git_dirs(target: Path) -> tuple[Path, Path, Path] | None:
@@ -182,8 +186,8 @@ def _resolve_git_head_oid(target: Path, gitdir: Path, commondir: Path) -> tuple[
                 return packed, None
             if (gitdir / 'reftable').is_dir() or (commondir / 'reftable').is_dir():
                 head = _git(target, 'rev-parse', '--verify', 'HEAD^{commit}')
-                if head is None:
-                    return None, 'git_unavailable'
+                if isinstance(head, str):
+                    return None, head
                 if head.returncode != 0 or not head.stdout.strip():
                     return None, 'git_head_unborn'
                 return head.stdout.strip().lower(), None
@@ -249,15 +253,20 @@ def _null_git_changes(reason: str) -> dict[str, int | str | None]:
 _NO_REPOSITORY = 'fatal: not a git repository'
 # setup.c, GIT_DIR_INVALID_OWNERSHIP: "detected dubious ownership in repository at '%s'" (safe.directory).
 _DUBIOUS_OWNERSHIP = 'detected dubious ownership in repository at'
+# builtin/rev-parse.c, `--show-toplevel` with a repository but no working tree (a bare repository, or a directory
+# inside `.git`): `die(_("this operation must be run in a work tree"))`, the same text as setup.c's setup_work_tree().
+_NO_WORK_TREE = 'fatal: this operation must be run in a work tree'
 
 
 def _rev_parse_failure(result: subprocess.CompletedProcess[str]) -> str:
     """The reason of a `rev-parse --show-toplevel` that printed no toplevel: `not_a_git_checkout` only when git says
-    there is no repository (or exits 0 with no toplevel, a repository without a working tree); any other failure is
-    `git_rev_parse_failed:<class>`."""
+    there is no repository (or exits 0 with no toplevel, as a git older than 2.25 does in a bare repository),
+    `git_no_work_tree` when it says the repository has no working tree, otherwise `git_rev_parse_failed:<class>`."""
     stderr = result.stderr or ''
     if result.returncode == 0 or stderr.lstrip().startswith(_NO_REPOSITORY):
         return 'not_a_git_checkout'
+    if stderr.lstrip().startswith(_NO_WORK_TREE):
+        return 'git_no_work_tree'
     if _DUBIOUS_OWNERSHIP in stderr:
         return 'git_rev_parse_failed:dubious_ownership'
     return f'git_rev_parse_failed:exit_{result.returncode}'
@@ -266,8 +275,8 @@ def _rev_parse_failure(result: subprocess.CompletedProcess[str]) -> str:
 def _untracked_files(target: Path) -> tuple[int | None, str | None]:
     """Untracked files that are not ignored, in the whole working tree (`:/`, as the diff covers it), when read."""
     listed = _git(target, 'ls-files', '--others', '--exclude-standard', '-z', '--', ':/', timeout=10.0)
-    if listed is None:
-        return None, 'git_unavailable'
+    if isinstance(listed, str):
+        return None, listed
     if listed.returncode != 0:
         return None, 'git_ls_files_failed'
     return sum(1 for name in listed.stdout.split('\0') if name), None
@@ -292,8 +301,8 @@ def collect_git_changes(row: dict) -> dict[str, int | str | None]:
     if not target.is_dir():
         return _null_git_changes('worker_cwd_missing')
     top = _git(target, 'rev-parse', '--show-toplevel')
-    if top is None:
-        return _null_git_changes('git_unavailable')
+    if isinstance(top, str):
+        return _null_git_changes(top)
     if top.returncode != 0 or not top.stdout.strip():
         return _null_git_changes(_rev_parse_failure(top))
     launch_commit = row.get('launch_commit')
@@ -301,12 +310,14 @@ def collect_git_changes(row: dict) -> dict[str, int | str | None]:
         return _null_git_changes(row.get('launch_commit_reason') or 'launch_commit_not_recorded')
     commit = launch_commit.strip()
     verified = _git(target, 'cat-file', '-e', f'{commit}^{{commit}}')
-    if verified is None:
-        return _null_git_changes('git_unavailable')
+    if isinstance(verified, str):
+        return _null_git_changes(verified)
     if verified.returncode != 0:
         return _null_git_changes('launch_commit_unreachable_in_cwd')
     diff = _git(target, '-c', 'core.quotepath=false', 'diff', '--no-ext-diff', '--numstat', commit, '--', timeout=10.0)
-    if diff is None or diff.returncode != 0:
+    if isinstance(diff, str):
+        return _null_git_changes(diff)
+    if diff.returncode != 0:
         return _null_git_changes('git_diff_failed')
     files_changed = 0
     lines_added = 0
@@ -550,6 +561,8 @@ def _locate_transcript(
             for path in root.glob(pattern):
                 try:
                     st = path.stat()
+                except FileNotFoundError:
+                    continue   # gone since the search listed it: it cannot be this dispatch's transcript
                 except OSError:
                     unreadable = True
                     continue
@@ -578,6 +591,8 @@ def _locate_transcript(
                         if did in _extract_obj_paseo_ids(harness, obj):
                             inferred = _infer_session_id(harness, path)
                             return path, session_id or inferred, False
+            except FileNotFoundError:
+                continue
             except OSError:
                 unreadable = True
                 continue

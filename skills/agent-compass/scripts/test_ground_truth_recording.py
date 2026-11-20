@@ -1201,6 +1201,21 @@ class GroundTruthRecordingTests(unittest.TestCase):
         transcript.rename(transcript.with_suffix('.txt'))
         absent = gt.collect_session_telemetry(row, **base)
         self.assertEqual(absent['active_seconds_reason'], 'session_transcript_not_found')
+        other = transcript.with_name('other-session.jsonl')
+        _write_jsonl(other, [{'type': 'user', 'timestamp': '2026-11-20T10:00:00Z', 'message': {'role': 'user', 'content': 'x'}}])
+        real_stat = Path.stat
+
+        def vanished(path, *args, **kwargs):
+            if path.name == 'other-session.jsonl':
+                raise FileNotFoundError(2, 'No such file', str(path))
+            return real_stat(path, *args, **kwargs)
+        with patch.object(Path, 'stat', vanished):
+            gone = gt.collect_session_telemetry(row, **base)
+        self.assertEqual(gone['active_seconds_reason'], 'session_transcript_not_found')
+        with patch.object(builtins, 'open', lambda path, *a, **k: (_ for _ in ()).throw(FileNotFoundError(2, 'gone'))
+                          if str(path).endswith('other-session.jsonl') else real_open(path, *a, **k)):
+            gone = gt.collect_session_telemetry(row, **base)
+        self.assertEqual(gone['active_seconds_reason'], 'session_transcript_not_found')
 
     def test_rev_parse_failing_is_not_a_checkout_only_when_git_says_there_is_no_repository(self):
         import dispatch_ground_truth as gt
@@ -1208,6 +1223,15 @@ class GroundTruthRecordingTests(unittest.TestCase):
         plain.mkdir()
         self.assertEqual(gt.collect_git_changes({'cwd': str(plain), 'launch_commit': 'a' * 40})['git_changes_reason'],
                          'not_a_git_checkout')   # git's own answer, from a real run
+        bare = self.root / 'bare.git'
+        bare.mkdir()
+        _git_run(bare, 'init', '--bare')
+        for where in (bare, self.root / 'plain-dir-repo' / '.git'):
+            if where.name == '.git':
+                _init_git_repo(where.parent)
+            with self.subTest(where=where.name):   # git's own answer, from a real run
+                self.assertEqual(gt.collect_git_changes({'cwd': str(where), 'launch_commit': 'a' * 40})['git_changes_reason'],
+                                 'git_no_work_tree')
         repo = self.root / 'rev-parse-repo'
         head = _init_git_repo(repo)
         real = gt._git
@@ -1216,6 +1240,7 @@ class GroundTruthRecordingTests(unittest.TestCase):
                 (128, 'fatal: not a git repository (or any of the parent directories): .git\n', 'not_a_git_checkout'),
                 (128, 'fatal: not a git repository (or any parent up to mount point D:/)\n', 'not_a_git_checkout'),
                 (128, 'fatal: unknown repository format\n', 'git_rev_parse_failed:exit_128'),
+                (128, 'fatal: this operation must be run in a work tree\n', 'git_no_work_tree'),
                 (1, '', 'git_rev_parse_failed:exit_1')):
             def fake(cwd, *args, **kwargs):
                 if args[:2] == ('rev-parse', '--show-toplevel'):
@@ -1251,9 +1276,21 @@ class GroundTruthRecordingTests(unittest.TestCase):
             changes = gt.collect_git_changes({'cwd': str(repo), 'launch_commit': head})
         self.assertEqual((changes['files_changed'], changes['untracked_files'], changes['untracked_files_reason']),
                          (1, None, 'git_ls_files_failed'))
-        with patch.object(gt, '_git', lambda cwd, *args, **kwargs: None if 'ls-files' in args else real(cwd, *args, **kwargs)):
-            changes = gt.collect_git_changes({'cwd': str(repo), 'launch_commit': head})
-        self.assertEqual((changes['untracked_files'], changes['untracked_files_reason']), (None, 'git_unavailable'))
+        real_run = subprocess.run
+
+        def failing(command, word, error):
+            def run(argv, *args, **kwargs):
+                if word in argv:
+                    raise error
+                return real_run(argv, *args, **kwargs)
+            return run
+        for word, field in (('ls-files', 'untracked_files_reason'), ('rev-parse', 'git_changes_reason'),
+                            ('cat-file', 'git_changes_reason'), ('diff', 'git_changes_reason')):
+            for error, reason in ((subprocess.TimeoutExpired(['git'], 5), 'git_timeout'),
+                                  (FileNotFoundError(2, 'git'), 'git_unavailable')):
+                with self.subTest(word=word, reason=reason), patch.object(gt.subprocess, 'run', failing(None, word, error)):
+                    changes = gt.collect_git_changes({'cwd': str(repo), 'launch_commit': head})
+                    self.assertEqual(changes[field], reason)
 
     def test_a_collection_that_raises_is_recorded_with_its_class_and_an_os_error_is_retried_once(self):
         import dispatch_ground_truth as gt
@@ -1289,17 +1326,25 @@ class GroundTruthRecordingTests(unittest.TestCase):
         locked = pending('gt-locked')
         record(PermissionError(13, 'locked'))   # an OSError can be a file locked for a moment: one retry is owed
         stored = registry.inspect(locked)
-        self.assertEqual((stored.get('ground_truth_pending'), stored.get('ground_truth_retry')), (True, 'PermissionError'))
+        self.assertEqual(stored.get('ground_truth_pending'), True)
+        self.assertEqual(stored['ground_truth_retry'], {'error': 'PermissionError', 'at': registry.stamp(self.now)})
         self.assertNotIn('ground_truth_recorded_at', stored)
-        record(PermissionError(13, 'locked'))
+        wait = timedelta(seconds=registry.GROUND_TRUTH_RETRY_SECONDS)
+        with patch.object(gt, 'collect_ground_truth', side_effect=PermissionError(13, 'locked')) as early:
+            registry._record_pending_ground_truth(None, self.now + wait - timedelta(seconds=1))
+        self.assertEqual(early.call_count, 0)   # a read inside the interval does not spend the retry
+        self.assertEqual(registry.inspect(locked)['ground_truth_retry']['error'], 'PermissionError')
+        with patch.object(gt, 'collect_ground_truth', side_effect=PermissionError(13, 'locked')):
+            registry._record_pending_ground_truth(None, self.now + wait)
         stored = registry.inspect(locked)
         self.assertNotIn('ground_truth_pending', stored)
         self.assertNotIn('ground_truth_retry', stored)
         self.assertEqual(stored['ground_truth_reason'], 'collection_failed:PermissionError')
+        self.assertEqual(stored['ground_truth_recorded_at'], registry.stamp(self.now + wait))
 
         recovered = pending('gt-recovered')
         record(PermissionError(13, 'locked'))
-        registry._record_pending_ground_truth(None, self.now)   # the real collection on the retry
+        registry._record_pending_ground_truth(None, self.now + wait)   # the real collection on the retry
         stored = registry.inspect(recovered)
         self.assertNotIn('ground_truth_retry', stored)
         self.assertNotIn('ground_truth_reason', stored)
