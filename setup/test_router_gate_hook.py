@@ -2547,3 +2547,86 @@ def test_gate_matches_bundle_wire_launch_model_without_crossing_provider_identit
             "tool_input": {"provider": "codex/vendor-a/novel-unmeasured", "settings": {"thinkingOptionId": "high"}},
         }, ledger_path=ledger_path, now=T0)
         assert (verdict == {}) is should_allow, (stage, extra, verdict)
+
+    # Round 4: bare model target names every bundle of the row across accounts, while `P/name` obeys `P` (and falls back
+    # only when `P` names nothing in the pool):
+    r4_accounts = json.loads(json.dumps(real_accounts))
+    r4_accounts["accounts"] = {
+        "acct_a": {
+            "billing": "subscription", "family": "codex", "windows": {"usage": {"hours": 168}},
+            "bundles": {"b_a": {"provider": "acct_a", "model": "gpt-5.5", "launch_model": "gpt-5.5", "effort": "high"}},
+        },
+        "codex": {
+            "billing": "subscription", "family": "codex", "windows": {"usage": {"hours": 168}},
+            "bundles": {"b_b": {"provider": "codex", "model": "gpt-5.5", "launch_model": "openai/gpt-5.5", "effort": "high"}},
+        },
+    }
+    acct_bare, found_bare = gate.resolve_target({"model": "gpt-5.5", "effort": "high"}, r4_accounts)
+    assert acct_bare is None  # spans both accounts (`b_a` and `b_b`)
+    assert gate.resolve_target({"model": "codex/gpt-5.5", "effort": "high"}, r4_accounts)[0] == "codex"
+    assert gate.resolve_target({"model": "openai/gpt-5.5", "effort": "high"}, r4_accounts)[0] == "codex"
+    assert gate.resolve_target({"model": "acct_a/gpt-6-astra", "effort": "high"}, r4_accounts) == (None, [])
+
+    # Clause 3 (owner, 2026-11-20): a prefix naming nothing in the pool is dropped and the rest read from the start:
+    c3_gate_accounts = json.loads(json.dumps(real_accounts))
+    c3_gate_accounts["accounts"] = {
+        "codex": {
+            "billing": "subscription", "family": "codex", "windows": {"usage": {"hours": 168}},
+            "bundles": {
+                "b_flash": {"provider": "codex", "model": "deepseek-v4.1-flash-1017",
+                            "launch_model": "deepseek/deepseek-v4-flash", "effort": "high"},
+                "b_pro": {"provider": "codex", "model": "deepseek-v4-pro-0813",
+                          "launch_model": "deepseek-v4-pro", "effort": "high"},
+            },
+        },
+    }
+    assert gate.resolve_target({"model": "opencode/deepseek-v4-flash", "effort": "high"}, c3_gate_accounts)[0] == "codex"
+    assert gate.resolve_target({"model": "google-vertex/deepseek-ai/DeepSeek-V4-Pro", "effort": "high"}, c3_gate_accounts)[0] == "codex"
+    c3_gate_with_oc = json.loads(json.dumps(c3_gate_accounts))
+    c3_gate_with_oc["accounts"]["opencode"] = {
+        "billing": "subscription", "family": "opencode", "windows": {"usage": {"hours": 168}},
+        "bundles": {"b_oc": {"provider": "opencode", "model": "gpt-5.5", "launch_model": "gpt-5.5", "effort": "high"}},
+    }
+    assert gate.resolve_target({"model": "opencode/deepseek-v4-flash", "effort": "high"}, c3_gate_with_oc) == (None, [])
+
+    # Malformed `/` or `auto:` pins are refused at the gate boundary (`resolve_target` and `evaluate_payload`), and for
+    # every `(0..4 colons) x (0..4 slashes)` string around empty and non-empty segments (with and without `auto:`) the
+    # gate answers allow or block, never an exception:
+    for bad_model in ("/gpt-5.5", "/", "openai/", "openai//gpt-5.5", ":high", "auto:acct:harness", "auto::harness:gpt-5.5"):
+        with pytest.raises(ValueError, match="invalid_model_pin"):
+            gate.resolve_target({"model": bad_model, "effort": "high"}, r4_accounts)
+        denied_spawn = gate.evaluate_payload({
+            "tool_name": "spawn_agent",
+            "tool_input": {"model": bad_model},
+        }, ledger_path=ledger_path, now=T0)
+        assert "invalid_model_pin" in denied_spawn.get("reason", ""), (bad_model, denied_spawn)
+    for bad_provider in ("/gpt-5.5", "codex/", "codex//gpt-5.5"):
+        denied_prov = gate.evaluate_payload({
+            "tool_name": "delegate_task",
+            "tool_input": {"provider": bad_provider, "settings": {"thinkingOptionId": "high"}},
+        }, ledger_path=ledger_path, now=T0)
+        assert "invalid_model_pin" in denied_prov.get("reason", ""), (bad_provider, denied_prov)
+
+    odd_gate_strings = {"auto:acct:harness"}
+    for n_colons in range(5):
+        for n_slashes in range(5):
+            for seps in ((":" * n_colons) + ("/" * n_slashes), ("/" * n_slashes) + (":" * n_colons)):
+                slots = len(seps) + 1
+                for fill in (
+                    [""] * slots,
+                    ["seg"] * slots,
+                    [""] + ["seg"] * (slots - 1),
+                    ["seg"] * (slots - 1) + [""],
+                    ["seg"] * (slots - 1) + ["high"],
+                ):
+                    built = "".join(fill[idx] + (seps[idx] if idx < len(seps) else "") for idx in range(slots))
+                    odd_gate_strings.add(built)
+                    odd_gate_strings.add("auto:" + built)
+    for odd_str in sorted(odd_gate_strings):
+        for tname, tinput in (
+            ("spawn_agent", {"model": odd_str}),
+            ("delegate_task", {"provider": odd_str}),
+            ("Read", {"file_path": odd_str}),
+        ):
+            verdict = gate.evaluate_payload({"tool_name": tname, "tool_input": tinput}, ledger_path=ledger_path, now=T0)
+            assert verdict == {} or (verdict.get("decision") == "block" and bool(verdict.get("reason"))), (tname, odd_str, verdict)

@@ -207,11 +207,8 @@ def named_route_conflict(args, bundle, accounts=None):
     import model_resolution
     if accounts is None:
         accounts = account_fleet.load_accounts()
-    model, named_effort = model_resolution.split_model_effort(args.model) if args.model else (None, None)
-    if model and not named_effort:
-        providers = account_fleet.bundle_providers(bundle, accounts) if '/' not in model else ()
-        named_effort = account_fleet.resolve_model(model, accounts, providers)['effort']
-    effort = args.effort or named_effort
+    if args.model not in (None, ''):
+        model_resolution.check_model_pin(args.model, '--model')
     same_owner = args.account in (None, bundle.get('account')) and args.provider in (None, bundle.get('provider'))
     pool = account_fleet.pin_pool(
         accounts,
@@ -219,6 +216,12 @@ def named_route_conflict(args, bundle, accounts=None):
         provider=args.provider if same_owner else bundle.get('provider'),
         extra=(bundle,),
     )
+    as_read = account_fleet.effective_pin(args.model, pool, accounts) if args.model else None
+    model, named_effort = model_resolution.split_model_effort(as_read) if as_read else (None, None)
+    if model and not named_effort:
+        providers = account_fleet.bundle_providers(bundle, accounts) if '/' not in model else ()
+        named_effort = account_fleet.resolve_model(model, accounts, providers)['effort']
+    effort = args.effort or named_effort
     # Each flag the caller gave that names another route than the worker's own; the error names only these.
     conflicting = [flag for flag, differs in (
         ('--provider', args.provider and args.provider != bundle.get('provider')),
@@ -1232,6 +1235,9 @@ def _run(args, judge):
     text = read_task_text(args)
     if not text.strip():
         raise ValueError('The task is empty.')
+    if getattr(args, 'model', None) not in (None, ''):
+        import model_resolution
+        model_resolution.check_model_pin(args.model, '--model')
     try:
         canonical_ws = host_placement.validate_workspace(getattr(args, 'workspace', None))
     except host_placement.InvalidWorkspace as exc:

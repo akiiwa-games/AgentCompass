@@ -15,7 +15,7 @@ import provider_inventory
 import public_data
 import accounts_override
 import cwd_policy
-from model_resolution import DIRECT_SOURCES, PROVIDER_NAME_STATUSES, resolve_in, split_model_effort
+from model_resolution import DIRECT_SOURCES, PROVIDER_NAME_STATUSES, check_model_pin, resolve_in, split_model_effort
 
 
 REFERENCES = Path(__file__).resolve().parents[1] / 'references'
@@ -191,6 +191,26 @@ def bundle_providers(bundle, accounts=None):
     return account_providers(accounts, account) if accounts and account else ()
 
 
+def account_presets(accounts, account):
+    """The unexpanded endpoint/preset ids `auto_bundles.derive` read an account's bundles from (`_presets`, what
+    `auto_bundles.endpoint_providers` held before `expand_host_providers` replaced Magpie's preset ids; never passed to
+    `resolve_model`, so which declarations are read does not change)."""
+    spec = ((accounts or {}).get('accounts') or {}).get(account) or {}
+    return tuple(dict.fromkeys(p for b in (spec.get('bundles') or {}).values() if isinstance(b, dict)
+                               for p in b.get('_presets') or ()))
+
+
+def bundle_presets(bundle, accounts=None):
+    """The unexpanded endpoint/preset ids `bundle` was derived with (`_presets`), else the account's."""
+    presets = (bundle or {}).get('_presets')
+    if presets:
+        return tuple(dict.fromkeys(p for p in presets if p))
+    if (bundle or {}).get('auto') is False:
+        return ()
+    account = (bundle or {}).get('account')
+    return account_presets(accounts, account) if accounts and account else ()
+
+
 def advertised_model(bundle):
     """The model spelling `bundle` advertises on its provider (no `:effort` suffix)."""
     return split_model_effort((bundle or {}).get('launch_model') or (bundle or {}).get('model') or '')[0]
@@ -275,17 +295,18 @@ def _advertises_pin(bundle, text, spelled, accounts):
 
 
 def pin_matches_identity(pin, bundle, accounts):
-    """Whether `pin` names `bundle` by bundle id or by row identity as `bundle` reads names (no prefix test)."""
+    """Whether `pin` names `bundle`: for an `auto:...` bundle id, that id only; otherwise `bundle`'s id or `bundle`'s
+    own `row_key` equal to `pin`'s `row_key` as `bundle` reads names (no prefix test)."""
     from auto_bundles import split_id
     text = str(pin or '').strip()
     if not text or not isinstance(bundle, dict):
         return False
     bid = bundle.get('id') or bundle.get('bundle_id')
+    if split_id(text) is not None:
+        return bool(bid and text == bid)
     spelled = split_model_effort(text)[0]
     if bid and (text == bid or spelled == bid):
         return True
-    if split_id(text) is not None:
-        return False
     own = row_key(bundle.get('model') or '', accounts)
     if not own:
         return False
@@ -293,31 +314,83 @@ def pin_matches_identity(pin, bundle, accounts):
     return row_key(text, accounts, providers) == own
 
 
-def pin_matching_bundles(pin, pool, accounts):
-    """Subset of `pool` (order kept) named by `pin`: if `pin` is an auto-bundle id, only that id; else if any bundle in
-    `pool` matches by bundle id or advertises the spelling the user typed (effort dropped, case-insensitive), those
-    bundles and no other; otherwise every bundle in `pool` matching by row identity as that bundle reads names."""
+def _bundle_has_prefix(bundle, prefix, accounts):
+    """Whether `prefix` (lowercase) is `bundle`'s account, provider (`_same_provider`), serving provider
+    (`bundle_providers`) or unexpanded endpoint/preset id (`bundle_presets`)."""
+    acct = str(bundle.get('account') or '').lower()
+    prov = str(bundle.get('provider') or acct).lower()
+    if prefix == acct or _same_provider(prov, prefix):
+        return True
+    known = (*bundle_providers(bundle, accounts), *bundle_presets(bundle, accounts))
+    return any(str(p).lower() == prefix for p in known)
+
+
+def _prefixed_bundle_matches(text, spelled, prefix, bundle, accounts):
+    """Clause 2 on one bundle: `bundle` matches `pin` (`P/name`) when its id is `pin`, when it advertises the typed
+    spelling (`_advertises_pin`), or when `P` is `bundle`'s account, provider or serving provider (`_bundle_has_prefix`)
+    and `bundle` is of the pin's row as `bundle` reads names."""
+    bid = bundle.get('id') or bundle.get('bundle_id')
+    if bid and (text == bid or spelled == bid):
+        return True
+    if _advertises_pin(bundle, text, spelled, accounts):
+        return True
+    if not _bundle_has_prefix(bundle, prefix, accounts):
+        return False
+    own = row_key(bundle.get('model') or '', accounts)
+    return bool(own) and row_key(text, accounts, bundle_providers(bundle, accounts)) == own
+
+
+def _unrecognized_prefix_matches(text, items, accounts):
+    """Clause 3 (owner, 2026-11-20): when a pin's `P/` prefix names nothing in `items` (no bundle id, no advertised
+    spelling, and no account, provider, serving provider or preset id `P`), drop `P/` and read the rest as the pin from
+    the start."""
+    _, _, rest = text.partition('/')
+    return _read_pin(rest, items, accounts)
+
+
+def _read_pin(text, items, accounts):
     from auto_bundles import split_id
-    text = str(pin or '').strip()
+    if not items or split_id(text) is not None:
+        matched = [b for b in items if (b.get('id') or b.get('bundle_id')) == text] if items else []
+        return text, matched
+    spelled, _ = split_model_effort(text)
+    if '/' not in spelled:
+        return text, [b for b in items if pin_matches_identity(text, b, accounts)]
+    prefix, _ = spelled.split('/', 1)
+    prefix = prefix.lower()
+    named_by_prefix = [b for b in items if _prefixed_bundle_matches(text, spelled, prefix, b, accounts)]
+    if named_by_prefix or any(_bundle_has_prefix(b, prefix, accounts) for b in items):
+        return text, named_by_prefix
+    return _unrecognized_prefix_matches(text, items, accounts)
+
+
+def effective_pin(pin, pool, accounts):
+    """The pin as read on `pool` (owner, 2026-11-20): an `auto:...` bundle id or a bare name stays itself; for `P/rest`,
+    `P/` is kept when `P` names something in `pool` and dropped (`rest` read again from the start) when `pool` is
+    non-empty and `P` names nothing in `pool`."""
+    text = check_model_pin(pin, 'model')
     items = [b for b in (pool or ()) if isinstance(b, dict)]
-    if not text or not items:
+    return _read_pin(text, items, accounts)[0]
+
+
+def pin_matching_bundles(pin, pool, accounts):
+    """Subset of `pool` (order kept) named by `pin`:
+    - `auto:...` bundle id: that id only;
+    - bare name (no `/` once effort is dropped): every bundle in `pool` matching by bundle id or `row_key` identity as
+      that bundle reads names (`pin_matches_identity`); exact advertised spelling excludes nothing;
+    - prefixed name `P/rest`: obeys `P` — bundles in `pool` that `P` names (`_prefixed_bundle_matches`), or, only when
+      `P` names no bundle, advertised spelling, account, provider, serving provider or preset id in `pool`, drops `P/`
+      and reads `rest` from the start (`_unrecognized_prefix_matches`)."""
+    if pin in (None, ''):
         return []
-    if split_id(text) is not None:
-        return [b for b in items if (b.get('id') or b.get('bundle_id')) == text]
-    spelled = split_model_effort(text)[0]
-    exact = [
-        b for b in items
-        if ((bid := (b.get('id') or b.get('bundle_id'))) and (text == bid or spelled == bid))
-        or _advertises_pin(b, text, spelled, accounts)
-    ]
-    if exact:
-        return exact
-    return [b for b in items if pin_matches_identity(text, b, accounts)]
+    text = check_model_pin(pin, 'model')
+    items = [b for b in (pool or ()) if isinstance(b, dict)]
+    return _read_pin(text, items, accounts)[1]
 
 
 def _same_provider(bundle_provider, provider):
-    if not provider:
-        return True
+    if not provider or not bundle_provider:
+        return False
     aliases = {'antigravity', 'antigravity-resilient'}
     if provider in aliases and bundle_provider in aliases:
         return True
@@ -343,7 +416,7 @@ def pin_pool(accounts, *, account=None, provider=None, bundle_id=None, source=No
     return [
         b for b in base
         if (not account or b.get('account') == account)
-        and _same_provider(b.get('provider') or b.get('account'), provider)
+        and (not provider or _same_provider(b.get('provider') or b.get('account'), provider))
         and (not bundle_id or (b.get('id') or b.get('bundle_id')) == bundle_id)
     ]
 
@@ -431,7 +504,7 @@ def bundles(accounts):
                               'model': model_name, 'effort': bundle.get('effort') or fixed,
                               **({'effort_fixed': True} if fixed else {}),
                               **{k: bundle[k] for k in ('modeId', 'disabled', 'disabled_by_default', 'efforts', 'launch_model',
-                                                        'discovery_unavailable', 'draws', '_served',
+                                                        'discovery_unavailable', 'draws', '_served', '_presets',
                                                         'auto', 'billing', 'score_source', 'score_basis',
                                                         'availability', 'compatibility', 'compatibility_reason') if k in bundle}}
     return out

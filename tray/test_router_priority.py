@@ -343,8 +343,10 @@ class PriorityTests(unittest.TestCase):
             by_model = {g['model']: g['availability'] for g in decorated[0]['models']}
             self.assertEqual(by_model, {'deepseek-v4-pro': 'detected', 'deepseek-v4-pro-0813': 'missing'})
 
-            # R2-1 (A2b): when a target's exact-spelling bundle on the account is unchecked (`disabled`) or
-            # `discovery_unavailable`, `targets` omits that button rather than re-targeting to a same-leaf sibling.
+            # R2-1 (A2b) & Round 4: when a prefixed target's bundle on the account is unchecked (`disabled`) or
+            # `discovery_unavailable`, `targets` omits that button rather than re-targeting to a same-leaf sibling; a
+            # bare target on that account names every bundle of the row on the account and keeps the button while a
+            # same-row sibling is launchable.
             for unavailable_flag in ({'disabled': True}, {'discovery_unavailable': 'not detected for 7+ days'}):
                 a2b_accounts = json.loads(json.dumps(accounts))
                 a2b_accounts['accounts']['codex']['bundles'] = {
@@ -358,6 +360,68 @@ class PriorityTests(unittest.TestCase):
                     {'account': 'codex', 'model': 'vendor-a/novel-unmeasured', 'label': 'Vendor A Novel'},
                 ]
                 self.assertEqual(priority.targets(a2b_accounts), [], unavailable_flag)
+
+                bare_accounts = json.loads(json.dumps(a2b_accounts))
+                bare_accounts['priority_targets'] = [
+                    {'account': 'codex', 'model': 'novel-unmeasured', 'label': 'Bare Novel'},
+                ]
+                self.assertEqual(
+                    [(t['account'], t['model'], t['label']) for t in priority.targets(bare_accounts)],
+                    [('codex', 'novel-unmeasured', 'Bare Novel')],
+                    unavailable_flag,
+                )
+
+                # Clause 3 (owner, 2026-11-20): when `vendor-a` names nothing on the account (no `b_va`), `vendor-a/`
+                # is dropped and `targets` resolves the rest (`novel-unmeasured`) as bare:
+                only_vb_accounts = json.loads(json.dumps(accounts))
+                only_vb_accounts['accounts']['codex']['bundles'] = {
+                    'b_vb': {'provider': 'codex', 'harness': 'codex', 'model': 'vendor-b/novel-unmeasured',
+                             'launch_model': 'vendor-b/novel-unmeasured', 'effort': 'high', 'draws': ['usage']},
+                }
+                only_vb_accounts['priority_targets'] = [
+                    {'account': 'codex', 'model': 'vendor-a/novel-unmeasured', 'label': 'Dropped Prefix Novel'},
+                ]
+                self.assertEqual(
+                    [(t['account'], t['model'], t['label']) for t in priority.targets(only_vb_accounts)],
+                    [('codex', 'novel-unmeasured', 'Dropped Prefix Novel')],
+                    unavailable_flag,
+                )
+
+                same_row_accounts = json.loads(json.dumps(accounts))
+                same_row_accounts['accounts']['codex']['bundles'] = {
+                    'b_bare': {'provider': 'codex', 'harness': 'codex', 'model': 'gpt-6-astra',
+                               'launch_model': 'gpt-6-astra', 'effort': 'high', 'draws': ['usage'], **unavailable_flag},
+                    'b_pi': {'provider': 'pi', 'harness': 'pi', 'model': 'gpt-6-astra',
+                             'launch_model': 'openai-codex/gpt-6-astra', 'effort': 'high', 'draws': ['usage']},
+                }
+                same_row_accounts['priority_targets'] = [
+                    {'account': 'codex', 'model': 'gpt-6-astra', 'label': 'Astra'},
+                ]
+                self.assertEqual(
+                    [(t['account'], t['model'], t['label']) for t in priority.targets(same_row_accounts)],
+                    [('codex', 'gpt-6-astra', 'Astra')],
+                    unavailable_flag,
+                )
+
+            # Malformed `/` model pins in `priority_targets`, `enable`, or `router_data.add_boost` are refused on new
+            # writes, while an already-stored malformed entry in `router-overrides.json` stays inert without failing `snapshot`:
+            for bad_target in ('/gpt-6-astra', 'openai/', 'openai//gpt-6-astra', ':high', 'auto:codex:codex'):
+                bad_accounts = json.loads(json.dumps(accounts))
+                bad_accounts['priority_targets'] = [{'account': 'codex', 'model': bad_target, 'label': 'Bad'}]
+                with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
+                    priority.targets(bad_accounts)
+                with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
+                    priority.enable('codex', bad_target, 'usage', 24, self.now)
+                with self.assertRaisesRegex(ValueError, 'invalid_model_pin'):
+                    router_data.add_boost('codex', bad_target, 0.2, 6, False, now=self.now)
+            self.path.write_text(json.dumps({'v': 1, 'overrides': [
+                {'id': 'legacy_bad', 'account': 'codex', 'model': '/gpt-6-astra', 'boost': 0.35,
+                 'until': (self.now + timedelta(hours=6)).isoformat(), 'stop_on_reset': True},
+            ]}), encoding='utf-8')
+            snap_with_bad = priority.snapshot(self.now)
+            self.assertFalse(any(t['selected'] for t in snap_with_bad['targets']))
+            self.assertIn('已开启', priority.enable('codex', 'gpt-6-astra', 'usage', 12, self.now))
+            self.assertEqual({r['id'] for r in self.rows()}, {'legacy_bad'} | {r['id'] for r in self.rows() if r['model'] == 'gpt-6-astra'})
 
 
 if __name__ == '__main__':

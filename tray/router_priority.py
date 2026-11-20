@@ -120,10 +120,17 @@ def overlaps(row, account, model, now, accounts):
     # An account-wide or same-model priority already applies. Do not double its
     # boost by opening another window or by adopting an existing CLI-created rule.
     import account_fleet
+    import model_resolution
     import quota_overrides
-    return (active(row, now) and not quota_overrides.override_reset_landed(row, None, accounts, now)
-            and row.get('account') == account
-            and (not row.get('model') or account_fleet.stored_model(row['model'], accounts, account) == model))
+    if not (active(row, now) and not quota_overrides.override_reset_landed(row, None, accounts, now)
+            and row.get('account') == account):
+        return False
+    if not row.get('model'):
+        return True
+    if model_resolution.model_pin_problem(row['model']) is not None:
+        return False
+    as_read = account_fleet.effective_pin(row['model'], account_fleet.pin_pool(accounts, account=account), accounts)
+    return account_fleet.stored_model(as_read, accounts, account) == model
 
 
 def _is_launchable(bundle, accounts, policy):
@@ -155,19 +162,29 @@ def _weekly_window(accounts, account, model, bundle=None):
 
 def targets(accounts):
     """The configured targets with an enabled bundle. A target's model matches over every bundle existing on that
-    account first (account_fleet.pin_pool -> pin_matching_bundles), before filtering to enabled launchable bundles, so
-    an unchecked or discovery-unavailable target never re-targets onto another provider's same-leaf bundle."""
+    account first (account_fleet.pin_pool -> pin_matching_bundles), before filtering to enabled launchable bundles: a
+    bare target names every bundle of its row on the account, while a prefixed target obeys its prefix and never
+    re-targets onto another provider's same-leaf bundle."""
     import account_fleet
     import host_policy
+    import model_resolution
     policy = host_policy.load_policy()
     configured = [t for t in accounts.get('priority_targets') or () if isinstance(t, dict)]
     pairs = []
     for target in configured:
         account, wanted = target.get('account'), target.get('model')
+        if wanted not in (None, ''):
+            model_resolution.check_model_pin(wanted, 'priority_targets.model')
         pool = account_fleet.pin_pool(accounts, account=account)
+        as_read = account_fleet.effective_pin(wanted, pool, accounts) if wanted else None
         named = account_fleet.pin_matching_bundles(wanted, pool, accounts) if wanted else []
         matched = next((b for b in named if _is_launchable(b, accounts, policy)), None)
         model = matched['model'] if matched is not None else None
+        if model and as_read and '/' not in model_resolution.split_model_effort(as_read)[0] and '/' in model:
+            src = account_fleet.resolve_model(model, accounts)['source']
+            if src not in model_resolution.PROVIDER_NAME_STATUSES:
+                model = (account_fleet.stored_form(model, accounts, account)
+                         if src in model_resolution.DIRECT_SOURCES else account_fleet.model_leaf(model))
         if model is not None and (account, model) not in [(a, m) for a, m, _, _ in pairs]:
             pairs.append((account, model, target.get('label'), matched))
     result = []
@@ -219,9 +236,11 @@ def enable(account, model, window, hours, now=None):
         raise ValueError(_tr('请选择菜单中的预期重置时间'))
     modules()
     import account_fleet
+    import model_resolution
     import override_store
     import quota_overrides
     import usage_reading
+    model_resolution.check_model_pin(model, 'model')
     now = now or datetime.now(timezone.utc)
     accounts = account_fleet.load_accounts()
     target = next((t for t in targets(accounts)
@@ -266,6 +285,7 @@ def enable(account, model, window, hours, now=None):
                            for t in targets(accounts)}
         doc['overrides'] = [r for r in doc['overrides'] if not (
             r.get('stop_on_reset') and not r.get('expires_at') and r.get('model')
+            and model_resolution.model_pin_problem(r.get('model')) is None
             and (r.get('account'), account_fleet.stored_model(r['model'], accounts, r.get('account'))) in selected_models)]
         doc.pop('last_reset', None)
         doc['overrides'].append(row)

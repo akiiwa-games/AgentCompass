@@ -90,10 +90,14 @@ def match_bundle(accounts, args, include_disabled=False):
     """Bundle id for an account/model/effort the caller names, or None when it is not a launchable bundle.
 
     A name matches over every bundle existing on the addressed account/provider (account_fleet.pin_pool ->
-    pin_matching_bundles), before any disabled or effort filter: exact advertised spellings first, else identity; a
-    family guess matches its own rows, never the flagship's. Disabled and effort filters then apply to the named bundles
-    only. With no effort named, the model's default effort (else High) leads, not whichever row the document lists first."""
+    pin_matching_bundles), before any disabled or effort filter: a bare name matches every bundle of its row (`row_key`),
+    a prefixed `P/name` obeys `P` (falling back to identity only when `P` names nothing in the pool), and a family guess
+    matches its own rows, never the flagship's. Disabled and effort filters then apply to the named bundles only. With no
+    effort named, the model's default effort (else High) leads, not whichever row the document lists first."""
     import account_fleet
+    import model_resolution
+    if args.model not in (None, ''):
+        model_resolution.check_model_pin(args.model, '--model')
     pool = account_fleet.pin_pool(accounts, account=args.account, provider=args.provider)
     named = account_fleet.pin_matching_bundles(args.model, pool, accounts)
     matches = [
@@ -119,6 +123,8 @@ def record_constraint(args, task=None, classified=None):
     basis = (args.basis or '').strip()
     if not basis or not args.account or not args.provider or not args.model:
         raise ValueError('record requires --basis, --provider, --account and --model.')
+    import model_resolution
+    model_resolution.check_model_pin(args.model, '--model')
     started = time.monotonic()
     task = _record_task(args, task)
     import account_fleet
@@ -134,31 +140,38 @@ def record_constraint(args, task=None, classified=None):
     if unavailable:
         raise ValueError(unavailable)
     # `model:effort` and `model-effort` name an effort; --effort, when given too, wins.
+    raw_spelled, raw_effort = model_resolution.split_model_effort(args.model)
     pin = copy.copy(args)
-    pin.model, named_effort = model_resolution.split_model_effort(args.model)
-    served = account_fleet.account_providers(accounts, args.account) if '/' not in pin.model else ()
-    resolved = account_fleet.resolve_model(pin.model, accounts, served)
-    pin.effort = args.effort or named_effort or resolved['effort']
-    direct = resolved['source'] in model_resolution.DIRECT_SOURCES
 
-    def rows_of_model():
-        pool = account_fleet.pin_pool(accounts, account=args.account, provider=args.provider)
-        return account_fleet.pin_matching_bundles(args.model, pool, accounts)
-    own_rows = rows_of_model()
+    def _sync_pin_as_read(cat_doc):
+        acct_pool = account_fleet.pin_pool(cat_doc, account=args.account, provider=args.provider)
+        as_read = account_fleet.effective_pin(args.model, acct_pool, cat_doc)
+        pin.model, named_effort = model_resolution.split_model_effort(as_read)
+        served = account_fleet.account_providers(cat_doc, args.account) if '/' not in pin.model else ()
+        res = account_fleet.resolve_model(pin.model, cat_doc, served)
+        pin.effort = args.effort or named_effort or raw_effort or res['effort']
+        return acct_pool, res['source'] in model_resolution.DIRECT_SOURCES
+
+    acct_pool, direct = _sync_pin_as_read(accounts)
+    own_rows = account_fleet.pin_matching_bundles(args.model, acct_pool, accounts)
     listed = None
     if not own_rows:
         # No row of this model on the account: the account's provider decides, from its live model list (read once, as
         # every named route reads it). What a name resembles is another model, never a substitute.
         import live_models
+        live_doc = live_models.load_or_refresh([args.provider], named=(args.account,))
         rows, why = provider_inventory.listed_rows(
-            accounts, args.account, args.provider, pin.model, pin.effort,
-            live_models.load_or_refresh([args.provider], named=(args.account,)))
+            accounts, args.account, args.provider, raw_spelled, pin.effort, live_doc)
+        if rows is None and pin.model != raw_spelled:
+            rows, why = provider_inventory.listed_rows(
+                accounts, args.account, args.provider, pin.model, pin.effort, live_doc)
         if rows is None:
             raise ValueError(f"named_model_unavailable: {pin.model}{':' + pin.effort if pin.effort else ''} has no row on "
                              f"{args.account}/{args.provider}, and {why}. Tell the user; do not substitute another model.")
         listed = {'account': args.account, 'rows': rows}
         accounts = provider_inventory.with_listed_rows(accounts, listed)
-        own_rows = rows_of_model()
+        acct_pool, direct = _sync_pin_as_read(accounts)
+        own_rows = account_fleet.pin_matching_bundles(args.model, acct_pool, accounts)
     accepted = {b.get('effort') for b in own_rows} | {
         e for b in own_rows for e in (account_fleet.dispatch_allowed_efforts(b, accounts) or ())}
     if pin.effort and pin.effort not in accepted:

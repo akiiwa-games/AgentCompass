@@ -1323,8 +1323,13 @@ def add_boost(account: str, model: str | None, boost: float | None = None, hours
     accounts = account_fleet.load_accounts()
     if account not in accounts["accounts"]:
         raise ValueError(_tr("未知账号"))
-    stored = account_fleet.stored_form(model, accounts, account) if model else None
-    model = account_fleet.stored_model(model, accounts, account) if model else None
+    if model not in (None, ""):
+        import model_resolution
+        model_resolution.check_model_pin(model, "model")
+    as_read = (account_fleet.effective_pin(model, account_fleet.pin_pool(accounts, account=account), accounts)
+               if model else None)
+    stored = account_fleet.stored_form(as_read, accounts, account) if as_read else None
+    model = account_fleet.stored_model(as_read, accounts, account) if as_read else None
     path = quota_overrides.overrides_path()
     with override_store.locked(path):
         document = router_priority.read_document(path)

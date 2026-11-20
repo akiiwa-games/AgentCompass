@@ -55,13 +55,23 @@ def load_overrides(now, path=None, usage=None, accounts=None, prune=True):
     return active
 
 
+def _stored_model_inert(rule):
+    """True when a stored override carries a `model` that `model_pin_problem` rejects (such as a typo written before
+    `override` validated `--model`): kept in the file until its own `until` expiry, inert on read."""
+    from model_resolution import model_pin_problem
+    if not isinstance(rule, dict) or rule.get('model') in (None, ''):
+        return False
+    return model_pin_problem(rule['model'], 'override.model') is not None
+
+
 def override_depleted(override, usage, accounts):
     """A priority whose quota is down to the safety margin (retires at 5%).
 
     At or below `safety_margin_pct` the allocator already refuses new work there, so the boost can only mislead; the
     rule is retired instead of waiting for its reset or `until`. Only a fresh reading counts, only weekly windows (or the
     override's own window) that bind its model, and a rule that also carries an expiry date is kept for that fact."""
-    if (not isinstance(override, dict) or not (override.get('boost') or expected_reset_time(override))
+    if (not isinstance(override, dict) or _stored_model_inert(override)
+            or not (override.get('boost') or expected_reset_time(override))
             or override.get('expires_at')):
         return False
     account = override.get('account')
@@ -72,7 +82,9 @@ def override_depleted(override, usage, accounts):
         return False
     scoring = accounts.get('scoring') or {}
     margin, short = scoring.get('safety_margin_pct', 5), scoring.get('short_window_hours', 24)
-    model = account_fleet.stored_model(override['model'], accounts, account) if override.get('model') else None
+    as_read = (account_fleet.effective_pin(override['model'], account_fleet.pin_pool(accounts, account=account), accounts)
+               if override.get('model') else None)
+    model = account_fleet.stored_model(as_read, accounts, account) if as_read else None
     binding = {wid: wspec for wid, wspec, _ in quota_pools.applicable_windows(spec, model, {}, accounts=accounts)} if model else spec.get('windows', {})
     for window in row.get('windows') or ():
         if not isinstance(window, dict):
@@ -227,15 +239,21 @@ def expected_reset_time(override):
     return None
 
 
-def window_reset_expectation(overrides, account, model, wid, spec, accounts, now):
+def window_reset_expectation(overrides, account, model, wid, spec, accounts, now, bundle=None, pool=None):
     """Earliest active expectation for this model and its bound long window."""
     matches = []
     for rule in overrides:
+        if _stored_model_inert(rule):
+            continue
         reset = expected_reset_time(rule)
         until = quota_pools.parse_time(rule.get('until'))
+        model_matches = (
+            account_fleet.pin_names_bundle(rule['model'], bundle, accounts, pool=pool)
+            if bundle is not None else account_fleet.stored_model(rule['model'], accounts, account) == model
+        ) if rule.get('model') else True
         if (rule.get('account') != account or reset is None or reset <= now
                 or (until is not None and until <= now)
-                or (rule.get('model') and account_fleet.stored_model(rule['model'], accounts, account) != model)):
+                or not model_matches):
             continue
         if rule.get('window'):
             if quota_pools.canonical_window_id(spec, rule['window']) != wid:
@@ -252,6 +270,8 @@ def apply_overrides(overrides, usage, accounts, now):
         return usage, accounts, []
     active, landed, depleted = [], {}, {}
     for o in overrides:
+        if not isinstance(o, dict) or _stored_model_inert(o):
+            continue
         until = quota_pools.parse_time(o.get('until')) or expected_reset_time(o)
         if until is None or until <= now:
             continue
@@ -362,18 +382,31 @@ def _manage_overrides_locked(args, now=None):
                 and not override_reset_landed(o, usage, accounts, now)
                 and not override_depleted(o, usage, accounts)]
         intent = (getattr(args, 'intent', None) or ' '.join(args.basis.split())).strip()
-        model = account_fleet.stored_model(args.model, accounts, args.account) if args.model else None
-        stored = account_fleet.stored_form(args.model, accounts, args.account) if args.model else None
+        if args.model not in (None, ''):
+            from model_resolution import check_model_pin
+            check_model_pin(args.model, '--model')
+        acct_pool = account_fleet.pin_pool(accounts, account=args.account)
+        as_read = account_fleet.effective_pin(args.model, acct_pool, accounts) if args.model else None
+        model = account_fleet.stored_model(as_read, accounts, args.account) if as_read else None
+        stored = account_fleet.stored_form(as_read, accounts, args.account) if as_read else None
         boost = 0.1 if args.boost is None else args.boost
         if not expires and override_depleted({'account': args.account, 'model': stored, 'window': args.window,
                                                         'boost': boost}, usage, accounts):
             raise ValueError(f'{args.account} is at or below the {accounts["scoring"]["safety_margin_pct"]}% safety margin; '
                              'the router dispatches no new work there, so a priority would be retired at once.')
+        def _row_key(o):
+            if _stored_model_inert(o):
+                stored_m = ('inert', o.get('id'))
+            elif o.get('model'):
+                o_pool = account_fleet.pin_pool(accounts, account=o.get('account'))
+                stored_m = account_fleet.stored_model(account_fleet.effective_pin(o['model'], o_pool, accounts),
+                                                      accounts, o.get('account'))
+            else:
+                stored_m = None
+            return (o.get('intent') or ' '.join(o.get('basis', '').split()), o.get('account'), stored_m, o.get('window'))
+
         key = (intent, args.account, model, args.window)
-        previous = next((o for o in rows if (
-            o.get('intent') or ' '.join(o.get('basis', '').split()), o.get('account'),
-            account_fleet.stored_model(o.get('model'), accounts, o.get('account')) if o.get('model') else None,
-            o.get('window')) == key), None)
+        previous = next((o for o in rows if _row_key(o) == key), None)
         rebaseline = bool(getattr(args, 'rebaseline', False))
         if rebaseline:
             if previous is None:
@@ -407,10 +440,7 @@ def _manage_overrides_locked(args, now=None):
                 entry['baseline_repaired_at'] = now.isoformat()
             elif previous.get('baseline_repaired_at'):
                 entry['baseline_repaired_at'] = previous['baseline_repaired_at']
-        rows = [o for o in rows if (
-            o.get('intent') or ' '.join(o.get('basis', '').split()), o.get('account'),
-            account_fleet.stored_model(o.get('model'), accounts, o.get('account')) if o.get('model') else None,
-            o.get('window')) != key]
+        rows = [o for o in rows if _row_key(o) != key]
         rows.append({k: v for k, v in entry.items() if v is not None})
         removed = 0
     path.parent.mkdir(parents=True, exist_ok=True)

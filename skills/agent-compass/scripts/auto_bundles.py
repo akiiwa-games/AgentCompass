@@ -135,6 +135,19 @@ def endpoint_providers(entry, provider, account, accounts=None):
     return tuple(dict.fromkeys((*own, *expand_host_providers(magpie_eps, 'magpie', src))))
 
 
+def endpoint_presets(entry, provider, account, accounts=None):
+    """The unexpanded endpoint/preset ids `endpoint_providers` held before `expand_host_providers` replaced Magpie's
+    preset ids: `(*base, *magpie_eps)` for an endpoint account, `()` for a launcher's list."""
+    entry_eps = tuple((entry or {}).get('endpoint_providers') or ())
+    disc_eps = tuple((((accounts or {}).get('_discovery') or {}).get('accounts') or {}).get(account, {}).get('magpie_providers') or ())
+    magpie_eps = tuple(dict.fromkeys(p for p in (*entry_eps, *disc_eps) if p))
+    entry_type = (entry or {}).get('type')
+    if entry_type not in ENDPOINT_TYPES and not (magpie_eps and entry_type in (None, 'configured')):
+        return ()
+    base = tuple(dict.fromkeys(p for p in (provider, account) if p))
+    return tuple(dict.fromkeys((*base, *magpie_eps)))
+
+
 def superseded_by(raw_model, accounts, providers=()):
     """The newer model id public data names for this model, or None (latest, or unknown to the data).
 
@@ -419,6 +432,7 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
                     continue
                 base, id_effort = split_effort(raw, accounts)
                 served = endpoint_providers(entry, provider, account, accounts)
+                presets = endpoint_presets(entry, provider, account, accounts)
                 profile = default_profile(raw, accounts, served)
                 harness = pair_harness if pair_harness != PER_MODEL else \
                     proxy_harness((account_families or {}).get(account) or spec.get('family'), profile['model'], accounts)
@@ -439,10 +453,10 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
                 released[released_id] = raw
                 model_name = profile['model'] if profile['source'] != 'calibrated' else key
                 pending.append((raw, harness, key, effort, released_id, model_name, provider, entry, profile, status,
-                                reason, pair_harness, served))
+                                reason, pair_harness, served, presets))
         owners = {released_id: model_name for _, _, _, _, released_id, model_name, *_ in pending}
         for raw, harness, key, effort, released_id, model_name, provider, entry, profile, status, reason, pair_harness, \
-                served in pending:
+                served, presets in pending:
             bid = auto_bundle_id(account, harness, key, effort)
             taken = out['bundles'].get(account, {}).get(bid)
             # The id v0.7.0 gave another model's name stays that name's own: this one takes its tagged id.
@@ -473,6 +487,7 @@ def derive(accounts, catalog, now, overrides=None, seen=None, account_families=N
                 'compatibility': status, **({'compatibility_reason': reason} if reason else {}),
                 '_v0_7_0_id': released_id,
                 **({'_served': list(served)} if served else {}),   # the serving providers read here (stored_model)
+                **({'_presets': list(presets)} if presets else {}),  # unexpanded preset/endpoint ids (_bundle_has_prefix)
             }
             if availability == 'expired':
                 bundle['discovery_unavailable'] = True
