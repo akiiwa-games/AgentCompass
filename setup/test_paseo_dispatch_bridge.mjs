@@ -1724,6 +1724,11 @@ test('each ending of a worker gets its own true sentence in the notice, under th
   const withReply = await composeNotice({fetchAgentTimeline: async () => ({entries: [{item: {type: 'assistant_message', text: 'the report'}}]})},
     {...base}, {key: 'terminal', reason: 'closed'});
   assert.match(withReply, /Final reply:\nthe report/);
+  // a superseded worker's latest reply belongs to the later dispatch: it is not read into this notice
+  const later = await composeNotice({fetchAgentTimeline: async () => ({entries: [{item: {type: 'assistant_message', text: 'the later dispatch report'}}]})},
+    {...base}, {key: 'terminal', reason: 'superseded by a later dispatch'});
+  assert.doesNotMatch(later, /later dispatch report/);
+  assert.match(later, /took this worker/);
 });
 
 test('the watcher records that a provider became unavailable on the terminal', async () => {
