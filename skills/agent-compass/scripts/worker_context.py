@@ -137,8 +137,15 @@ def resolve_parent(args):
         actual = ''
     host = getattr(args, 'parent_host', None) or ('paseo' if actual else None)
     explicit = getattr(args, 'parent_id', None)
-    if actual and (host not in ('paseo', 'auto') or (explicit and explicit.strip() != actual)):
-        raise ValueError('Parent differs from actual PASEO_AGENT_ID.')
+    if actual and host not in ('paseo', 'auto'):
+        given = f'--parent-host {host}' + (' with --parent-address' if getattr(args, 'parent_address', None) else '')
+        raise ValueError(f'{given} conflicts with PASEO_AGENT_ID {actual}: this command runs in a Paseo session, so its '
+                         f'parent is that Paseo agent. Drop --parent-host (and --parent-address) to address it, or run '
+                         f'the command outside the Paseo session (PASEO_AGENT_ID unset) to address a {host} parent.')
+    if actual and explicit and explicit.strip() != actual:
+        raise ValueError(f'--parent-id {explicit.strip()} differs from PASEO_AGENT_ID {actual}, the Paseo session this '
+                         "command runs in. Drop --parent-id (the session's own id is the parent), or run the command in "
+                         'the session of that parent.')
     hc = os.environ.get('HC_TERMINAL_ID', '').strip() if not actual and host in (None, 'auto', 'herdr') else ''
     if not actual and not hc and host in (None, 'auto') and in_cindy():
         raise ValueError('Cindy shell context has no supported addressable parent mailbox. '

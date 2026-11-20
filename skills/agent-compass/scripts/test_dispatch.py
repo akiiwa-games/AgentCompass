@@ -1880,7 +1880,7 @@ class RollTests(unittest.TestCase):
         self.assertIn('--spec', result['next'])
         with self.assertRaisesRegex(ValueError, '--parent-address'):
             self.roll(decision, parent='', parent_host='native', parent_id='coordinator-session')
-        with self.assertRaisesRegex(ValueError, 'actual PASEO_AGENT_ID'):
+        with self.assertRaisesRegex(ValueError, '--parent-id another-session differs from PASEO_AGENT_ID'):
             self.roll(decision, parent_id='another-session')
         with self.assertRaisesRegex(ValueError, 'message address must equal'):
             self.roll(decision, parent_address='another-session')
@@ -3633,10 +3633,11 @@ class RollLifecycleTests(unittest.TestCase):
                                file=[], provider=None, account=None, model=None, effort=None, basis=None,
                                fast=False, can_wait_hours=None)
         task = roll.build_task(args, 'implement feature', 'parent-a')
-        self.assertEqual(task['needs'], {'local_only': True, 'local_only_reason': f'inferred from --workspace {canon}'})
+        self.assertEqual(task['needs'], {'local_only': True, 'local_only_reason': f'inferred from --workspace {canon}',
+                                         'local_only_by': '--workspace'})
         explicit = SimpleNamespace(**{**vars(args), 'local_only': 'needs local DB'})
         self.assertEqual(roll.build_task(explicit, 'implement feature', 'parent-a')['needs'],
-                         {'local_only': True, 'local_only_reason': 'needs local DB'})
+                         {'local_only': True, 'local_only_reason': 'needs local DB', 'local_only_by': '--local-only'})
 
     def test_exit_status_of_a_settled_create_separates_candidate_from_request_refusal(self):
         import roll

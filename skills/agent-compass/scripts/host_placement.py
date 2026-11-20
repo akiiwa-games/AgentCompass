@@ -87,7 +87,8 @@ def native_next(host, bundle, address, workspace=None):
 
 
 def place(surface, workspace, *, default_cwd=None, bundle=None, address=None, paseo_probe=None):
-    """Map canonical `workspace` (or None) to host-native placement for `surface`."""
+    """Map canonical `workspace` (or None) to host-native placement for `surface`: a remote runner
+    (REMOTE_SURFACES), `paseo`, `herdr`, `cli` or a native host (worker_context.NATIVE_HOSTS), the surfaces roll builds."""
     if surface in REMOTE_SURFACES:
         if workspace:
             return {
@@ -135,20 +136,12 @@ def place(surface, workspace, *, default_cwd=None, bundle=None, address=None, pa
     if surface in ('herdr', 'cli'):
         landing = workspace or default_cwd or str(Path.cwd())
         return {'ok': True, 'surface': surface, 'workspace': workspace, 'cwd': landing}
-    if surface in ('orca', 't3', 'native'):
-        landing = workspace or default_cwd or str(Path.cwd())
-        return {
-            'ok': True,
-            'surface': surface,
-            'workspace': workspace,
-            'cwd': landing,
-            'next': native_next(surface, bundle or {}, address, workspace=workspace),
-        }
+    # A native host (worker_context.NATIVE_HOSTS): roll builds no other surface.
+    landing = workspace or default_cwd or str(Path.cwd())
     return {
-        'ok': False,
+        'ok': True,
         'surface': surface,
         'workspace': workspace,
-        'error': 'unsupported_host_surface',
-        'caller_action': 'check_error',
-        'next': f'Nothing was launched: unsupported host surface {surface!r}.',
+        'cwd': landing,
+        'next': native_next(surface, bundle or {}, address, workspace=workspace),
     }

@@ -4,6 +4,8 @@ This is a host integration. Its models and subscriptions remain the existing rou
 
 Supported API: current [herdr-core](https://github.com/herdrdev/herdr-core), CLI `hc`, also used by the current Herdr App. The older `herdr` TUI has a different API and is not supported by this adapter. Start the host normally and make `hc` available on PATH. Windows preflight uses the non-starting `hc server status`; on Unix the upstream CLI may autostart a core, but the adapter still requires the real parent to be live before creating a worker. It never requests a core restart. The underlying interactive Claude, Codex or Pi executable must also be installed.
 
+Herdr launches only those three harnesses, each in the one permission mode it reproduces (`host_herdr.PERMISSION_MODES`: Claude `bypassPermissions`, Codex and Pi `full-access`; Pi without fast mode). A plan for a Herdr parent excludes every other candidate with that reason (`host_herdr.cannot_run`), so an automatic roll does not choose a route Herdr cannot launch; runners that work remotely are not affected. A named route on another harness or mode is refused before any terminal exists (exit 2): `cause` names the harness Herdr cannot run, or the permission mode it cannot reproduce, and `next_action` says to name a route on a harness Herdr runs or do the task yourself.
+
 Inside an hc terminal the usual command is sufficient:
 
 ```sh

@@ -450,6 +450,12 @@ def check_caller_task(task):
 
 
 COUPLINGS = ('low', 'medium', 'high')       # chain.coupling; high is a related task that continues its worker
+# The inputs that mark work local-only (`needs.local_only_by`, written where each sets `needs.local_only`: roll.build_task,
+# route_judge.plan_stage), in the words the exclusion of a remote runner says them (candidate_eval). A fixed set, never the
+# reason's text: the plan reads no free text of the task. Unset: the caller's own needs.local_only.
+LOCAL_ONLY_BY = {'--local-only': 'the parent marked this work local-only (--local-only)',
+                 '--workspace': '--workspace places this work on this machine, so it is local-only',
+                 'classifier': 'the classifier judged this work local-only (its profile)'}
 
 
 def normalize_task(raw, policy, capabilities, accounts, route=None):
@@ -549,10 +555,14 @@ def normalize_task(raw, policy, capabilities, accounts, route=None):
             'chain_hours': float(chain.get('total_hours') or hours), 'coupling': coupling, 'worker': worker,
             'handoff_ready': bool(chain.get('handoff_ready')), 'needs_visual': needs['visual'],
             'local_only': bool(needs.get('local_only')),
+            # Which input marked the work local (LOCAL_ONLY_BY): the exclusion of a remote runner says it.
+            'local_only_by': needs.get('local_only_by') if needs.get('local_only_by') in LOCAL_ONLY_BY else None,
             'file_transfer': bool(needs.get('file_transfer')), 'outbound_ok': needs.get('outbound_ok'),
             'constraint_bundle': constraints.get('bundle') if isinstance(constraints.get('bundle'), str) else None,
             'constraint_raw_model': constraint_raw_model,
             'constraint_model': constraint_model, 'constraint_effort': constraint_effort,
             'metered_ok': bool(task.get('metered_ok')),
             'can_wait_hours': float(task.get('can_wait_hours') or 0), 'chain_id': chain.get('id'),
-            'cwd': task.get('cwd')}
+            'cwd': task.get('cwd'),
+            # The host the parent runs on (roll): a candidate it cannot launch is excluded (host_herdr.cannot_run).
+            'parent_host': task.get('parent_host')}

@@ -53,7 +53,7 @@ class OrcaParentTests(unittest.TestCase):
     def test_paseo_still_wins_and_never_turns_into_orca(self):
         env = {'PASEO_AGENT_ID': 'agent-1', 'ORCA_AGENT_SESSION_ID': 'sess-1'}
         self.assertEqual(parent(env), ('agent-1', 'paseo', 'agent-1'))
-        with self.assertRaisesRegex(ValueError, 'actual PASEO_AGENT_ID'):
+        with self.assertRaisesRegex(ValueError, '--parent-host orca conflicts with PASEO_AGENT_ID agent-1'):
             parent(env, parent_host='orca')
 
     def test_orca_variables_do_not_leak_into_an_explicit_other_host(self):

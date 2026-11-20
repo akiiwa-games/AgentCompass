@@ -24,3 +24,12 @@ def matches(pattern, path=None):
         return not pattern or re.search(pattern, normalized(path), re.IGNORECASE) is not None
     except (re.error, TypeError):
         return False
+
+
+def refusal(account, pattern, path=None):
+    """The one sentence of an account whose `cwd_regex` does not match the directory it was matched against: the account,
+    the pattern, that directory and whose it is, and that the restriction is the user's own setting on this machine.
+    Callers add whether anything still launches."""
+    origin = 'the task directory' if path else "this process's working directory"
+    return (f"account {account} is restricted to directories matching its cwd_regex {pattern!r} (the user's own "
+            f'account setting on this machine), and {origin} {normalized(path)} does not match')

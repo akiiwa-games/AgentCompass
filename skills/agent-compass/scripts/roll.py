@@ -90,7 +90,9 @@ def read_task_text(args):
     return args.task
 
 
-def build_task(args, text, parent):
+def build_task(args, text, parent, said=None):
+    """The task `roll` routes. `said` (a list) receives what the caller's own flags decided that the caller would not
+    otherwise read: the assumptions of the answer."""
     # Same brief, same parent -> same task_id, so a repeated roll cannot open a second live dispatch.
     hours = getattr(args, 'hours', None)
     if hours is not None and not (isinstance(hours, (int, float)) and not isinstance(hours, bool) and hours > 0 and hours != float('inf')):
@@ -113,11 +115,16 @@ def build_task(args, text, parent):
         local_only_reason = str(args.local_only).strip()
         if not local_only_reason:
             raise ValueError('--local-only requires a non-empty reason.')
-        task['needs'] = {'local_only': True, 'local_only_reason': local_only_reason}
+        task['needs'] = {'local_only': True, 'local_only_reason': local_only_reason, 'local_only_by': '--local-only'}
     elif getattr(args, 'workspace', None):
         ws = host_placement.canonical_dir(args.workspace)
         if ws:
-            task['needs'] = {'local_only': True, 'local_only_reason': f'inferred from --workspace {ws}'}
+            task['needs'] = {'local_only': True, 'local_only_reason': f'inferred from --workspace {ws}',
+                             'local_only_by': '--workspace'}
+            if said is not None:
+                said.append(f'--workspace {ws} places this work on this machine, so it is local-only: remote runners '
+                            '(which work on a computer of their own) were not considered. Roll without --workspace if a '
+                            'remote runner may take it.')
     if getattr(args, 'file', None) or getattr(args, 'apply_to', None):
         task.setdefault('needs', {})['file_transfer'] = True
     if getattr(args, 'fast', False):
@@ -464,6 +471,15 @@ def none_next(decision):
         return (f"Nothing can start now: {reset['bundle']} is held back by {reset['account']}'s {reset['window']} quota, which "
                 f"returns in {reset['hours']}h (at {reset['at']}). Wait that long and roll again, or do the task yourself, "
                 'or ask the user.')
+    settings = (decision.get('decision') or {}).get('local_settings')
+    if settings:
+        way = ("To use one on the user's word, name it with --provider, --account, --model and --basis (the user's own "
+               'words): a named route reaches past allowed_accounts and the model-management checkbox.'
+               if settings['named_route_reaches'] else
+               "An account's cwd_regex holds for a named route too.")
+        return ("No worker fits: only the user's own settings on this machine keep the closest candidates out ("
+                + '; '.join(settings['exclusions']) + f"). They are the user's choice, not a fault. {way} Otherwise do the "
+                'task yourself or ask the user.')
     return ('No worker fits this brief (route.reason lists the closest candidates and why each is excluded); do it yourself '
             'or ask the user.')
 
@@ -768,9 +784,14 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
                 out = dict(out, assumptions=[*out.get('assumptions', []),
                                              f'Running agents in workspace {workspace} could not be read ({unavailable}); only recorded dispatches were checked.'])
         else:
-            probe = dispatch_flow.paseo_placement_probe(workspace, parent)
+            # A reader holds no claim on the directory: only the placement is read (the holders are not its conflict).
+            _, unavailable, probe = dispatch_flow.workspace_holders(workspace, parent)
             if probe and probe.get('placeable') is False:
                 return placement_refused(out, 'paseo', host_placement.place('paseo', workspace, paseo_probe=probe))
+            if unavailable:
+                out = dict(out, assumptions=[*out.get('assumptions', []),
+                                             f'Paseo could not be read for workspace {workspace} ({unavailable}); the '
+                                             'placement there was not verified, and the worker is started with that cwd.'])
     resume_agent_id = None
     resume_bundle = None
     explicit_id = (getattr(args, 'resume', None) or '').strip()
@@ -1348,13 +1369,27 @@ def run_batch(args, judge):
         scorer_client.prefetch_scores([build_task(one, read_task_text(one), None) for one in each], args.score_timeout)
     results, codes = [], []
     batch_used_agents = set()
-    for one in each:
+    for index, one in enumerate(each):
         one._exclude_agents = set(batch_used_agents)
         try:
             result, code = run(one, judge)
-        except (OSError, ValueError, RuntimeError) as exc:
-            result, code = {'status': 'error', 'cause': str(exc)[:300],
+        except Exception as exc:
+            # OSError, ValueError, RuntimeError: a refusal or a failure of this brief alone, and the batch goes on.
+            unexpected = not isinstance(exc, (OSError, ValueError, RuntimeError))
+            if unexpected and not results and public_data.is_data_error(exc):
+                raise   # nothing done yet: the run falls back to the shipped reference set as a whole (with_fallback)
+            failed = judge.failure_answer(exc, 'roll')     # its error class and text, nothing of a host's free text
+            result, code = {'status': 'error', 'error_type': failed['error_type'], 'cause': failed['cause'],
                             'next_action': 'Fix the cause, then roll this brief again on its own.'}, 1
+            if unexpected:
+                # The briefs after it are not started, and the ones before keep their results.
+                not_started = [str(rest.brief) for rest in each[index + 1:]]
+                results.append({'brief': str(one.brief), **result})
+                return {'status': 'batch', 'results': results, 'not_started': not_started,
+                        'next_action': (f'Brief {one.brief} failed with an unexpected error (its result says which), and '
+                                        f'{len(not_started)} brief(s) after it were not started (not_started). Handle each '
+                                        'result on its own; fix the cause, then roll the failed brief and the ones not '
+                                        'started again.')}, 1
         used_id = (result.get('worker') or {}).get('agent_id') if isinstance(result, dict) else None
         if isinstance(used_id, str) and used_id:
             batch_used_agents.add(used_id)
@@ -1420,7 +1455,8 @@ def _run(args, judge):
         parent, parent_host, parent_address = None, None, None
     else:
         parent, parent_host, parent_address = resolve_parent(args)
-    task = build_task(args, text, parent)
+    said = []
+    task = build_task(args, text, parent, said)
     task.update(parent_host=parent_host, parent_address=parent_address)
     host_session = harness_session(parent) if parent else ''
     if host_session:
@@ -1538,8 +1574,10 @@ def _run(args, judge):
         out['route']['reason'] = decision.get('reason')
         return dict(out, launched=False, dispatch_mode='split', caller_action='roll_each_line',
                     task_count=decision['task_count'], next=decision['next']), 2
-    if (said := hours_assumption(args, decision)) is not None:
-        out['assumptions'] = [said]
+    if (hours := hours_assumption(args, decision)) is not None:
+        said.insert(0, hours)
+    if said:
+        out['assumptions'] = said
     if decision.get('error') == 'scorer_unavailable':
         out['route']['reason'] = decision.get('reason') or 'scorer_unavailable'
         return dict(out, launched=False, dispatch_mode='scorer_unavailable',
