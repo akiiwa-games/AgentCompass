@@ -1,7 +1,7 @@
 {
  "schema": "agent-compass.five-axis-scores/12",
  "generated_at": "2026-11-19T00:35:51+00:00",
- "measurements_sha256": "5b9c6e0a31d541dbf46b2b629d88ca3a64bf34aabbe0c31062e2f45b696e2021",
+ "measurements_sha256": "6a75a64f5ff53513e3f16f08cdb63b5bbd55c190fa86bb301ed39bd5901339bd",
  "distrusted_sources": [],
  "method": "Category scores, usd_per_hour, duration and plan capacity from `references/public-measurements.json`.",
  "estimate_fits": {
@@ -12111,6 +12111,2151 @@
     "aa_only": false
    },
    "data_errors": []
+  },
+  "gemini-pro-orchestrator": {
+   "axes": {
+    "creativity": {
+     "facets": {
+      "creative_writing": {
+       "value": -0.1981,
+       "by_effort": {
+        "none": -0.1981,
+        "minimal": -0.1981,
+        "low": -0.1981,
+        "medium": -0.1981,
+        "high": -0.1981,
+        "xhigh": -0.1981,
+        "max": -0.1981,
+        "ultra": -0.1981
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-carbon",
+         "value": -0.0283,
+         "status": "measured",
+         "method": "measured"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": -0.7075,
+         "status": "measured",
+         "method": "measured"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      }
+     },
+     "missing_facets": [],
+     "value": -0.1981,
+     "by_effort": {
+      "none": -0.1981,
+      "minimal": -0.1981,
+      "low": -0.1981,
+      "medium": -0.1981,
+      "high": -0.1981,
+      "xhigh": -0.1981,
+      "max": -0.1981,
+      "ultra": -0.1981
+     },
+     "status": "estimated"
+    },
+    "coding": {
+     "facets": {
+      "execution": {
+       "value": 0.1871,
+       "by_effort": {
+        "none": 0.1871,
+        "minimal": 0.1871,
+        "low": 0.1871,
+        "medium": 0.1871,
+        "high": 0.1871,
+        "xhigh": 0.1871,
+        "max": 0.1871,
+        "ultra": 0.1871
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-carbon",
+         "value": 0.3111,
+         "status": "measured",
+         "method": "measured"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": -0.1847,
+         "status": "measured",
+         "method": "measured"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      },
+      "faithfulness": {
+       "value": -0.809,
+       "by_effort": {
+        "none": -0.809,
+        "minimal": -0.809,
+        "low": -0.809,
+        "medium": -0.809,
+        "high": -0.809,
+        "xhigh": -0.809,
+        "max": -0.809,
+        "ultra": -0.809
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-carbon",
+         "value": -0.6541,
+         "status": "estimated",
+         "method": "sibling_shift"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": -1.2737,
+         "status": "estimated",
+         "method": "sibling_shift"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      }
+     },
+     "missing_facets": [],
+     "value": -0.809,
+     "by_effort": {
+      "none": -0.809,
+      "minimal": -0.809,
+      "low": -0.809,
+      "medium": -0.809,
+      "high": -0.809,
+      "xhigh": -0.809,
+      "max": -0.809,
+      "ultra": -0.809
+     },
+     "status": "estimated"
+    },
+    "aesthetics": {
+     "facets": {
+      "design": {
+       "value": -0.1353,
+       "by_effort": {
+        "none": -0.1353,
+        "minimal": -0.1353,
+        "low": -0.1353,
+        "medium": -0.1353,
+        "high": -0.1353,
+        "xhigh": -0.1353,
+        "max": -0.1353,
+        "ultra": -0.1353
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-carbon",
+         "value": -0.0309,
+         "status": "measured",
+         "method": "measured"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": -0.4487,
+         "status": "measured",
+         "method": "measured"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      }
+     },
+     "missing_facets": [],
+     "value": -0.1353,
+     "by_effort": {
+      "none": -0.1353,
+      "minimal": -0.1353,
+      "low": -0.1353,
+      "medium": -0.1353,
+      "high": -0.1353,
+      "xhigh": -0.1353,
+      "max": -0.1353,
+      "ultra": -0.1353
+     },
+     "status": "estimated"
+    },
+    "tool_operation": {
+     "facets": {
+      "responsiveness": {
+       "value": -1.2235,
+       "by_effort": {
+        "none": -1.2235,
+        "minimal": -1.2235,
+        "low": -1.2235,
+        "medium": -1.2235,
+        "high": -1.2235,
+        "xhigh": -1.2235,
+        "max": -1.2235,
+        "ultra": -1.2235
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-carbon",
+         "value": -1.7003,
+         "status": "measured",
+         "method": "measured"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": 0.2069,
+         "status": "measured",
+         "method": "measured"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      },
+      "image_recognition": {
+       "value": 0.8543,
+       "by_effort": {
+        "none": 0.8543,
+        "minimal": 0.8543,
+        "low": 0.8543,
+        "medium": 0.8543,
+        "high": 0.8543,
+        "xhigh": 0.8543,
+        "max": 0.8543,
+        "ultra": 0.8543
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-carbon",
+         "value": 1.2554,
+         "status": "estimated",
+         "method": "panel_effort_step"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": -0.3492,
+         "status": "estimated",
+         "method": "sibling_shift"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      }
+     },
+     "missing_facets": [],
+     "by_level": {
+      "2": {
+       "by_effort": {
+        "none": -1.2235,
+        "minimal": -1.2235,
+        "low": -1.2235,
+        "medium": -1.2235,
+        "high": -1.2235,
+        "xhigh": -1.2235,
+        "max": -1.2235,
+        "ultra": -1.2235
+       },
+       "facets": [
+        "responsiveness"
+       ]
+      },
+      "3": {
+       "by_effort": {
+        "none": -1.2235,
+        "minimal": -1.2235,
+        "low": -1.2235,
+        "medium": -1.2235,
+        "high": -1.2235,
+        "xhigh": -1.2235,
+        "max": -1.2235,
+        "ultra": -1.2235
+       },
+       "facets": [
+        "responsiveness",
+        "image_recognition"
+       ]
+      }
+     },
+     "value": -1.2235,
+     "by_effort": {
+      "none": -1.2235,
+      "minimal": -1.2235,
+      "low": -1.2235,
+      "medium": -1.2235,
+      "high": -1.2235,
+      "xhigh": -1.2235,
+      "max": -1.2235,
+      "ultra": -1.2235
+     },
+     "status": "estimated"
+    }
+   },
+   "scores": {
+    "creativity": -0.1981,
+    "coding": -0.809,
+    "aesthetics": -0.1353,
+    "tool_operation": -1.2235
+   },
+   "missing_axes": [],
+   "usd_per_hour": {
+    "value": 10.089,
+    "status": "ok",
+    "kind": "estimated",
+    "method": "between",
+    "estimated": true,
+    "fallback": false,
+    "share": 0.25,
+    "scale": "log",
+    "used": [],
+    "merge": "between: gemini-4-carbon 8.463 moved 0.25 of the way toward gemini-4-hydrogen-high 17.094 on the log scale",
+    "sources": {
+     "planner": {
+      "model": "gemini-4-carbon",
+      "value": 8.463,
+      "kind": "community",
+      "method": null,
+      "estimated": false
+     },
+     "implementer": {
+      "model": "gemini-4-hydrogen-high",
+      "value": 17.094,
+      "kind": "community",
+      "method": null,
+      "estimated": false
+     },
+     "declaration": {
+      "source": "accounts.json between['gemini-pro-orchestrator']",
+      "kind": "vendor",
+      "url": "https://antigravity.google/docs/models.md",
+      "as_of": "2026-11-20",
+      "share_declared": {
+       "kind": "maintainer",
+       "as_of": "2026-11-20"
+      }
+     }
+    }
+   },
+   "duration_multiplier": {
+    "status": "ok",
+    "anchor_minutes": 9.289,
+    "by_effort": {
+     "none": 2.6151,
+     "minimal": 2.6151,
+     "low": 2.6151,
+     "medium": 2.6151,
+     "high": 2.6151,
+     "xhigh": 2.6151,
+     "max": 2.6151,
+     "ultra": 2.6151
+    },
+    "minutes_by_effort": {
+     "none": 24.292,
+     "minimal": 24.292,
+     "low": 24.292,
+     "medium": 24.292,
+     "high": 24.292,
+     "xhigh": 24.292,
+     "max": 24.292,
+     "ultra": 24.292
+    },
+    "basis_by_effort": {
+     "none": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-carbon",
+       "minutes": 34.519,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "minimal": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-carbon",
+       "minutes": 34.519,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "low": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-carbon",
+       "minutes": 34.519,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "medium": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-carbon",
+       "minutes": 34.519,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "high": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-carbon",
+       "minutes": 34.519,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "xhigh": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-carbon",
+       "minutes": 34.519,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "max": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-carbon",
+       "minutes": 34.519,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "ultra": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-carbon",
+       "minutes": 34.519,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     }
+    },
+    "efforts_without_time": []
+   },
+   "image_input": {
+    "value": null,
+    "status": "unknown",
+    "source": null,
+    "kind": null,
+    "sources": [],
+    "reason": "no cited public modality source"
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": null,
+   "intelligence_index": null,
+   "tier": {
+    "value": 0.0853,
+    "method": "between",
+    "status": "estimated",
+    "share": 0.25,
+    "planner": {
+     "model": "gemini-4-carbon",
+     "value": 0.1583,
+     "method": "arena_overall"
+    },
+    "implementer": {
+     "model": "gemini-4-hydrogen-high",
+     "value": -0.1335,
+     "method": "arena_overall"
+    },
+    "sources": []
+   },
+   "evidence": {
+    "independent_sources": {
+     "creativity": [
+      "lmarena.creative_writing"
+     ],
+     "coding": [
+      "arena.agent_code"
+     ],
+     "aesthetics": [
+      "designarena.3d",
+      "designarena.svg",
+      "designarena.website",
+      "lmarena.webdev"
+     ],
+     "tool_operation": []
+    },
+    "aa_only": false,
+    "bases": [
+     "gemini-4-carbon",
+     "gemini-4-hydrogen-high"
+    ]
+   },
+   "data_errors": [
+    {
+     "model": "gemini-pro-orchestrator",
+     "field": "image_input",
+     "reason": "no_cited_source",
+     "level": "red_if_vision_demanded",
+     "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
+    }
+   ]
+  },
+  "gemini-pro-orchestrator-argon": {
+   "axes": {
+    "creativity": {
+     "facets": {
+      "creative_writing": {
+       "value": -0.0621,
+       "by_effort": {
+        "none": -0.0621,
+        "minimal": -0.0621,
+        "low": -0.0621,
+        "medium": -0.0621,
+        "high": -0.0621,
+        "xhigh": -0.0621,
+        "max": -0.0621,
+        "ultra": -0.0621
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-argon-high",
+         "value": 0.153,
+         "status": "measured",
+         "method": "measured"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": -0.7075,
+         "status": "measured",
+         "method": "measured"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator-argon']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      }
+     },
+     "missing_facets": [],
+     "value": -0.0621,
+     "by_effort": {
+      "none": -0.0621,
+      "minimal": -0.0621,
+      "low": -0.0621,
+      "medium": -0.0621,
+      "high": -0.0621,
+      "xhigh": -0.0621,
+      "max": -0.0621,
+      "ultra": -0.0621
+     },
+     "status": "estimated"
+    },
+    "coding": {
+     "facets": {
+      "execution": {
+       "value": -0.6126,
+       "by_effort": {
+        "none": -0.6126,
+        "minimal": -0.6126,
+        "low": -0.6126,
+        "medium": -0.6126,
+        "high": -0.6126,
+        "xhigh": -0.6126,
+        "max": -0.6126,
+        "ultra": -0.6126
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-argon-high",
+         "value": -0.7553,
+         "status": "measured",
+         "method": "measured"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": -0.1847,
+         "status": "measured",
+         "method": "measured"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator-argon']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      },
+      "faithfulness": {
+       "value": -0.809,
+       "by_effort": {
+        "none": -0.809,
+        "minimal": -0.809,
+        "low": -0.809,
+        "medium": -0.809,
+        "high": -0.809,
+        "xhigh": -0.809,
+        "max": -0.809,
+        "ultra": -0.809
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-argon-high",
+         "value": -0.6541,
+         "status": "measured",
+         "method": "measured"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": -1.2737,
+         "status": "estimated",
+         "method": "sibling_shift"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator-argon']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      }
+     },
+     "missing_facets": [],
+     "value": -0.809,
+     "by_effort": {
+      "none": -0.809,
+      "minimal": -0.809,
+      "low": -0.809,
+      "medium": -0.809,
+      "high": -0.809,
+      "xhigh": -0.809,
+      "max": -0.809,
+      "ultra": -0.809
+     },
+     "status": "estimated"
+    },
+    "aesthetics": {
+     "facets": {
+      "design": {
+       "value": -0.5457,
+       "by_effort": {
+        "none": -0.5457,
+        "minimal": -0.5457,
+        "low": -0.5457,
+        "medium": -0.5457,
+        "high": -0.5457,
+        "xhigh": -0.5457,
+        "max": -0.5457,
+        "ultra": -0.5457
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-argon-high",
+         "value": -0.5781,
+         "status": "measured",
+         "method": "measured"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": -0.4487,
+         "status": "measured",
+         "method": "measured"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator-argon']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      }
+     },
+     "missing_facets": [],
+     "value": -0.5457,
+     "by_effort": {
+      "none": -0.5457,
+      "minimal": -0.5457,
+      "low": -0.5457,
+      "medium": -0.5457,
+      "high": -0.5457,
+      "xhigh": -0.5457,
+      "max": -0.5457,
+      "ultra": -0.5457
+     },
+     "status": "estimated"
+    },
+    "tool_operation": {
+     "facets": {
+      "responsiveness": {
+       "value": -0.7863,
+       "by_effort": {
+        "none": -0.7863,
+        "minimal": -0.7863,
+        "low": -0.7863,
+        "medium": -0.7863,
+        "high": -0.7863,
+        "xhigh": -0.7863,
+        "max": -0.7863,
+        "ultra": -0.7863
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-argon-high",
+         "value": -1.1174,
+         "status": "measured",
+         "method": "measured"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": 0.2069,
+         "status": "measured",
+         "method": "measured"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator-argon']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      },
+      "image_recognition": {
+       "value": 0.6596,
+       "by_effort": {
+        "none": 0.6596,
+        "minimal": 0.6596,
+        "low": 0.6596,
+        "medium": 0.6596,
+        "high": 0.6596,
+        "xhigh": 0.6596,
+        "max": 0.6596,
+        "ultra": 0.6596
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-argon-high",
+         "value": 0.9958,
+         "status": "estimated",
+         "method": "panel_effort_step"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": -0.3492,
+         "status": "estimated",
+         "method": "sibling_shift"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator-argon']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      }
+     },
+     "missing_facets": [],
+     "by_level": {
+      "2": {
+       "by_effort": {
+        "none": -0.7863,
+        "minimal": -0.7863,
+        "low": -0.7863,
+        "medium": -0.7863,
+        "high": -0.7863,
+        "xhigh": -0.7863,
+        "max": -0.7863,
+        "ultra": -0.7863
+       },
+       "facets": [
+        "responsiveness"
+       ]
+      },
+      "3": {
+       "by_effort": {
+        "none": -0.7863,
+        "minimal": -0.7863,
+        "low": -0.7863,
+        "medium": -0.7863,
+        "high": -0.7863,
+        "xhigh": -0.7863,
+        "max": -0.7863,
+        "ultra": -0.7863
+       },
+       "facets": [
+        "responsiveness",
+        "image_recognition"
+       ]
+      }
+     },
+     "value": -0.7863,
+     "by_effort": {
+      "none": -0.7863,
+      "minimal": -0.7863,
+      "low": -0.7863,
+      "medium": -0.7863,
+      "high": -0.7863,
+      "xhigh": -0.7863,
+      "max": -0.7863,
+      "ultra": -0.7863
+     },
+     "status": "estimated"
+    }
+   },
+   "scores": {
+    "creativity": -0.0621,
+    "coding": -0.809,
+    "aesthetics": -0.5457,
+    "tool_operation": -0.7863
+   },
+   "missing_axes": [],
+   "usd_per_hour": {
+    "value": 7.795,
+    "status": "ok",
+    "kind": "estimated",
+    "method": "between",
+    "estimated": true,
+    "fallback": false,
+    "share": 0.25,
+    "scale": "log",
+    "used": [],
+    "merge": "between: gemini-4-argon-high 6.0 moved 0.25 of the way toward gemini-4-hydrogen-high 17.094 on the log scale",
+    "sources": {
+     "planner": {
+      "model": "gemini-4-argon-high",
+      "value": 6.0,
+      "kind": "community",
+      "method": null,
+      "estimated": false
+     },
+     "implementer": {
+      "model": "gemini-4-hydrogen-high",
+      "value": 17.094,
+      "kind": "community",
+      "method": null,
+      "estimated": false
+     },
+     "declaration": {
+      "source": "accounts.json between['gemini-pro-orchestrator-argon']",
+      "kind": "vendor",
+      "url": "https://antigravity.google/docs/models.md",
+      "as_of": "2026-11-20",
+      "share_declared": {
+       "kind": "maintainer",
+       "as_of": "2026-11-20"
+      }
+     }
+    }
+   },
+   "duration_multiplier": {
+    "status": "ok",
+    "anchor_minutes": 9.289,
+    "by_effort": {
+     "none": 2.3119,
+     "minimal": 2.3119,
+     "low": 2.3119,
+     "medium": 2.3119,
+     "high": 2.3119,
+     "xhigh": 2.3119,
+     "max": 2.3119,
+     "ultra": 2.3119
+    },
+    "minutes_by_effort": {
+     "none": 21.475,
+     "minimal": 21.475,
+     "low": 21.475,
+     "medium": 21.475,
+     "high": 21.475,
+     "xhigh": 21.475,
+     "max": 21.475,
+     "ultra": 21.475
+    },
+    "basis_by_effort": {
+     "none": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-argon-high",
+       "minutes": 29.288,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator-argon']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "minimal": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-argon-high",
+       "minutes": 29.288,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator-argon']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "low": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-argon-high",
+       "minutes": 29.288,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator-argon']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "medium": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-argon-high",
+       "minutes": 29.288,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator-argon']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "high": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-argon-high",
+       "minutes": 29.288,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator-argon']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "xhigh": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-argon-high",
+       "minutes": 29.288,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator-argon']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "max": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-argon-high",
+       "minutes": 29.288,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator-argon']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "ultra": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-argon-high",
+       "minutes": 29.288,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator-argon']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     }
+    },
+    "efforts_without_time": []
+   },
+   "image_input": {
+    "value": null,
+    "status": "unknown",
+    "source": null,
+    "kind": null,
+    "sources": [],
+    "reason": "no cited public modality source"
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": null,
+   "intelligence_index": null,
+   "tier": {
+    "value": 0.0579,
+    "method": "between",
+    "status": "estimated",
+    "share": 0.25,
+    "planner": {
+     "model": "gemini-4-argon-high",
+     "value": 0.1217,
+     "method": "arena_overall"
+    },
+    "implementer": {
+     "model": "gemini-4-hydrogen-high",
+     "value": -0.1335,
+     "method": "arena_overall"
+    },
+    "sources": []
+   },
+   "evidence": {
+    "independent_sources": {
+     "creativity": [
+      "lmarena.creative_writing"
+     ],
+     "coding": [
+      "arena.agent_alignment",
+      "arena.agent_code"
+     ],
+     "aesthetics": [
+      "designarena.3d",
+      "designarena.svg",
+      "designarena.website",
+      "lmarena.webdev"
+     ],
+     "tool_operation": []
+    },
+    "aa_only": false,
+    "bases": [
+     "gemini-4-argon-high",
+     "gemini-4-hydrogen-high"
+    ]
+   },
+   "data_errors": [
+    {
+     "model": "gemini-pro-orchestrator-argon",
+     "field": "image_input",
+     "reason": "no_cited_source",
+     "level": "red_if_vision_demanded",
+     "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
+    }
+   ]
+  },
+  "gemini-pro-orchestrator-neon": {
+   "axes": {
+    "creativity": {
+     "facets": {
+      "creative_writing": {
+       "value": -0.0962,
+       "by_effort": {
+        "none": -0.0962,
+        "minimal": -0.0962,
+        "low": -0.0962,
+        "medium": -0.0962,
+        "high": -0.0962,
+        "xhigh": -0.0962,
+        "max": -0.0962,
+        "ultra": -0.0962
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-neon",
+         "value": 0.1076,
+         "status": "estimated",
+         "method": "sibling_shift"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": -0.7075,
+         "status": "measured",
+         "method": "measured"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator-neon']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      }
+     },
+     "missing_facets": [],
+     "value": -0.0962,
+     "by_effort": {
+      "none": -0.0962,
+      "minimal": -0.0962,
+      "low": -0.0962,
+      "medium": -0.0962,
+      "high": -0.0962,
+      "xhigh": -0.0962,
+      "max": -0.0962,
+      "ultra": -0.0962
+     },
+     "status": "estimated"
+    },
+    "coding": {
+     "facets": {
+      "execution": {
+       "value": 0.4068,
+       "by_effort": {
+        "none": 0.4068,
+        "minimal": 0.4068,
+        "low": 0.4068,
+        "medium": 0.4068,
+        "high": 0.4068,
+        "xhigh": 0.4068,
+        "max": 0.4068,
+        "ultra": 0.4068
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-neon",
+         "value": 0.604,
+         "status": "measured",
+         "method": "measured"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": -0.1847,
+         "status": "measured",
+         "method": "measured"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator-neon']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      },
+      "faithfulness": {
+       "value": -0.809,
+       "by_effort": {
+        "none": -0.809,
+        "minimal": -0.809,
+        "low": -0.809,
+        "medium": -0.809,
+        "high": -0.809,
+        "xhigh": -0.809,
+        "max": -0.809,
+        "ultra": -0.809
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-neon",
+         "value": -0.6541,
+         "status": "estimated",
+         "method": "sibling_shift"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": -1.2737,
+         "status": "estimated",
+         "method": "sibling_shift"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator-neon']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      }
+     },
+     "missing_facets": [],
+     "value": -0.809,
+     "by_effort": {
+      "none": -0.809,
+      "minimal": -0.809,
+      "low": -0.809,
+      "medium": -0.809,
+      "high": -0.809,
+      "xhigh": -0.809,
+      "max": -0.809,
+      "ultra": -0.809
+     },
+     "status": "estimated"
+    },
+    "aesthetics": {
+     "facets": {
+      "design": {
+       "value": -0.3106,
+       "by_effort": {
+        "none": -0.3106,
+        "minimal": -0.3106,
+        "low": -0.3106,
+        "medium": -0.3106,
+        "high": -0.3106,
+        "xhigh": -0.3106,
+        "max": -0.3106,
+        "ultra": -0.3106
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-neon",
+         "value": -0.2646,
+         "status": "estimated",
+         "method": "sibling_shift"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": -0.4487,
+         "status": "measured",
+         "method": "measured"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator-neon']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      }
+     },
+     "missing_facets": [],
+     "value": -0.3106,
+     "by_effort": {
+      "none": -0.3106,
+      "minimal": -0.3106,
+      "low": -0.3106,
+      "medium": -0.3106,
+      "high": -0.3106,
+      "xhigh": -0.3106,
+      "max": -0.3106,
+      "ultra": -0.3106
+     },
+     "status": "estimated"
+    },
+    "tool_operation": {
+     "facets": {
+      "responsiveness": {
+       "value": -0.6237,
+       "by_effort": {
+        "none": -0.6237,
+        "minimal": -0.6237,
+        "low": -0.6237,
+        "medium": -0.6237,
+        "high": -0.6237,
+        "xhigh": -0.6237,
+        "max": -0.6237,
+        "ultra": -0.6237
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-neon",
+         "value": -0.9005,
+         "status": "measured",
+         "method": "measured"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": 0.2069,
+         "status": "measured",
+         "method": "measured"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator-neon']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      },
+      "image_recognition": {
+       "value": 0.3163,
+       "by_effort": {
+        "none": 0.3163,
+        "minimal": 0.3163,
+        "low": 0.3163,
+        "medium": 0.3163,
+        "high": 0.3163,
+        "xhigh": 0.3163,
+        "max": 0.3163,
+        "ultra": 0.3163
+       },
+       "sources": {},
+       "status": "estimated",
+       "measured_efforts": [],
+       "estimate": {
+        "method": "between",
+        "share": 0.25,
+        "at_effort": "high",
+        "planner": {
+         "model": "gemini-4-neon",
+         "value": 0.5381,
+         "status": "estimated",
+         "method": "sibling_shift"
+        },
+        "implementer": {
+         "model": "gemini-4-hydrogen-high",
+         "value": -0.3492,
+         "status": "estimated",
+         "method": "sibling_shift"
+        },
+        "declaration": {
+         "source": "accounts.json between['gemini-pro-orchestrator-neon']",
+         "kind": "vendor",
+         "url": "https://antigravity.google/docs/models.md",
+         "as_of": "2026-11-20",
+         "share_declared": {
+          "kind": "maintainer",
+          "as_of": "2026-11-20"
+         }
+        }
+       }
+      }
+     },
+     "missing_facets": [],
+     "by_level": {
+      "2": {
+       "by_effort": {
+        "none": -0.6237,
+        "minimal": -0.6237,
+        "low": -0.6237,
+        "medium": -0.6237,
+        "high": -0.6237,
+        "xhigh": -0.6237,
+        "max": -0.6237,
+        "ultra": -0.6237
+       },
+       "facets": [
+        "responsiveness"
+       ]
+      },
+      "3": {
+       "by_effort": {
+        "none": -0.6237,
+        "minimal": -0.6237,
+        "low": -0.6237,
+        "medium": -0.6237,
+        "high": -0.6237,
+        "xhigh": -0.6237,
+        "max": -0.6237,
+        "ultra": -0.6237
+       },
+       "facets": [
+        "responsiveness",
+        "image_recognition"
+       ]
+      }
+     },
+     "value": -0.6237,
+     "by_effort": {
+      "none": -0.6237,
+      "minimal": -0.6237,
+      "low": -0.6237,
+      "medium": -0.6237,
+      "high": -0.6237,
+      "xhigh": -0.6237,
+      "max": -0.6237,
+      "ultra": -0.6237
+     },
+     "status": "estimated"
+    }
+   },
+   "scores": {
+    "creativity": -0.0962,
+    "coding": -0.809,
+    "aesthetics": -0.3106,
+    "tool_operation": -0.6237
+   },
+   "missing_axes": [],
+   "usd_per_hour": {
+    "value": 15.815,
+    "status": "ok",
+    "kind": "estimated",
+    "method": "between",
+    "estimated": true,
+    "fallback": false,
+    "share": 0.25,
+    "scale": "log",
+    "used": [],
+    "merge": "between: gemini-4-neon 15.41 moved 0.25 of the way toward gemini-4-hydrogen-high 17.094 on the log scale",
+    "sources": {
+     "planner": {
+      "model": "gemini-4-neon",
+      "value": 15.41,
+      "kind": "derived",
+      "method": null,
+      "estimated": true
+     },
+     "implementer": {
+      "model": "gemini-4-hydrogen-high",
+      "value": 17.094,
+      "kind": "community",
+      "method": null,
+      "estimated": false
+     },
+     "declaration": {
+      "source": "accounts.json between['gemini-pro-orchestrator-neon']",
+      "kind": "vendor",
+      "url": "https://antigravity.google/docs/models.md",
+      "as_of": "2026-11-20",
+      "share_declared": {
+       "kind": "maintainer",
+       "as_of": "2026-11-20"
+      }
+     }
+    }
+   },
+   "duration_multiplier": {
+    "status": "ok",
+    "anchor_minutes": 9.289,
+    "by_effort": {
+     "none": 1.3867,
+     "minimal": 1.3867,
+     "low": 1.3867,
+     "medium": 1.3867,
+     "high": 1.3867,
+     "xhigh": 1.3867,
+     "max": 1.3867,
+     "ultra": 1.3867
+    },
+    "minutes_by_effort": {
+     "none": 12.881,
+     "minimal": 12.881,
+     "low": 12.881,
+     "medium": 12.881,
+     "high": 12.881,
+     "xhigh": 12.881,
+     "max": 12.881,
+     "ultra": 12.881
+    },
+    "basis_by_effort": {
+     "none": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-neon",
+       "minutes": 14.815,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator-neon']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "minimal": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-neon",
+       "minutes": 14.815,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator-neon']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "low": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-neon",
+       "minutes": 14.815,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator-neon']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "medium": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-neon",
+       "minutes": 14.815,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator-neon']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "high": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-neon",
+       "minutes": 14.815,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator-neon']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "xhigh": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-neon",
+       "minutes": 14.815,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator-neon']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "max": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-neon",
+       "minutes": 14.815,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator-neon']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     },
+     "ultra": {
+      "method": "between",
+      "share": 0.25,
+      "at_effort": "high",
+      "scale": "log",
+      "planner": {
+       "model": "gemini-4-neon",
+       "minutes": 14.815,
+       "method": "aa"
+      },
+      "implementer": {
+       "model": "gemini-4-hydrogen-high",
+       "minutes": 8.466,
+       "method": "aa"
+      },
+      "source": "aa.cost_time",
+      "declaration": {
+       "source": "accounts.json between['gemini-pro-orchestrator-neon']",
+       "kind": "vendor",
+       "url": "https://antigravity.google/docs/models.md",
+       "as_of": "2026-11-20",
+       "share_declared": {
+        "kind": "maintainer",
+        "as_of": "2026-11-20"
+       }
+      }
+     }
+    },
+    "efforts_without_time": []
+   },
+   "image_input": {
+    "value": null,
+    "status": "unknown",
+    "source": null,
+    "kind": null,
+    "sources": [],
+    "reason": "no cited public modality source"
+   },
+   "fast_mode": {
+    "status": "unsupported",
+    "price_multiplier": null,
+    "speed_multiplier": null,
+    "source": null
+   },
+   "price": null,
+   "intelligence_index": null,
+   "tier": {
+    "value": 0.0795,
+    "method": "between",
+    "status": "estimated",
+    "share": 0.25,
+    "planner": {
+     "model": "gemini-4-neon",
+     "value": 0.1505,
+     "method": "other_overall"
+    },
+    "implementer": {
+     "model": "gemini-4-hydrogen-high",
+     "value": -0.1335,
+     "method": "arena_overall"
+    },
+    "sources": []
+   },
+   "evidence": {
+    "independent_sources": {
+     "creativity": [
+      "lmarena.creative_writing"
+     ],
+     "coding": [
+      "arena.agent_code"
+     ],
+     "aesthetics": [
+      "designarena.3d",
+      "designarena.website",
+      "lmarena.webdev"
+     ],
+     "tool_operation": []
+    },
+    "aa_only": false,
+    "bases": [
+     "gemini-4-neon",
+     "gemini-4-hydrogen-high"
+    ]
+   },
+   "data_errors": [
+    {
+     "model": "gemini-pro-orchestrator-neon",
+     "field": "image_input",
+     "reason": "no_cited_source",
+     "level": "red_if_vision_demanded",
+     "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
+    }
+   ]
   },
   "claude-sonnet-5-5": {
    "axes": {
@@ -128563,6 +130708,27 @@
    "reason": "aa_only",
    "level": "yellow",
    "effect": "every axis value comes from Artificial Analysis (the Intelligence Index and AA boards collinear with it): one source, not independent evidence"
+  },
+  {
+   "model": "gemini-pro-orchestrator",
+   "field": "image_input",
+   "reason": "no_cited_source",
+   "level": "red_if_vision_demanded",
+   "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
+  },
+  {
+   "model": "gemini-pro-orchestrator-argon",
+   "field": "image_input",
+   "reason": "no_cited_source",
+   "level": "red_if_vision_demanded",
+   "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
+  },
+  {
+   "model": "gemini-pro-orchestrator-neon",
+   "field": "image_input",
+   "reason": "no_cited_source",
+   "level": "red_if_vision_demanded",
+   "effect": "unknown image-input modality; excluded from automatic routing when tool_operation is 3 (mode B)"
   },
   {
    "model": "grok-bot",
