@@ -3094,9 +3094,9 @@ class BetweenRowTests(unittest.TestCase):
         """Rule (five_axis.axis_evidence, copied_from; round 058 review F5): `aa_only` holds when no axis has a measured
         non-AA source; a cell read from other rows as they stand (a `between` cell from both bases, a `same_model` copy
         from its model, transitively) carries those rows' measured non-AA sources of the same facet; an estimate from a
-        relative carries none."""
+        relative carries none, even when its cell records its base's sources (only a measured cell's sources count)."""
         def cell(sources=(), estimate=None):
-            return ({'status': 'estimated', 'estimate': estimate, 'sources': {}} if estimate else
+            return ({'status': 'estimated', 'estimate': estimate, 'sources': dict.fromkeys(sources, 0.0)} if estimate else
                     {'status': 'measured', 'sources': dict.fromkeys(sources, 0.0)})
 
         def axes(c):
@@ -3104,16 +3104,18 @@ class BetweenRowTests(unittest.TestCase):
         between = {'method': 'between', 'planner': {'model': 'p'}, 'implementer': {'model': 'i'}}
         rows = {'p': {'axes': axes(cell(['aa.x']))}, 'i': {'axes': axes(cell(['arena.agent_alignment', 'aa.y']))},
                 'aa': {'axes': axes(cell(['aa.z']))},
-                'copy': {'axes': axes(cell(estimate={'method': 'same_model', 'base_model': 'i'}))}}
+                'copy': {'axes': axes(cell(estimate={'method': 'same_model', 'base_model': 'i'}))},
+                'shift': {'axes': axes(cell(['arena.agent_alignment'], {'method': 'sibling_shift', 'base_model': 'i'}))}}
         cases = [(between, False, ['arena.agent_alignment']),
                  ({**between, 'implementer': {'model': 'aa'}}, True, []),
                  ({'method': 'same_model', 'base_model': 'i'}, False, ['arena.agent_alignment']),
                  ({'method': 'same_model', 'base_model': 'copy'}, False, ['arena.agent_alignment']),   # transitively
                  ({'method': 'same_model', 'base_model': 'aa'}, True, []),
-                 ({'method': 'sibling_shift', 'base_model': 'i'}, True, [])]
+                 ({'method': 'sibling_shift', 'base_model': 'i'}, True, []),
+                 ({'method': 'same_model', 'base_model': 'shift'}, True, [])]     # a copy of an estimate: none
         for est, aa_only, indep in cases:
             with self.subTest(estimate=est):
-                got = five_axis.axis_evidence(axes(cell(estimate=est)), rows)
+                got = five_axis.axis_evidence(axes(cell(['arena.recorded'], est)), rows)
                 self.assertEqual((got['aa_only'], got['independent_sources']['coding']), (aa_only, indep))
 
     def test_a_declaration_naming_no_row_or_a_copy_of_a_declared_row_stops_the_build(self):
