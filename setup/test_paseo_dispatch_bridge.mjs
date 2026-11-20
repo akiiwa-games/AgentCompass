@@ -1888,3 +1888,61 @@ test('the watcher records that a provider became unavailable, and a released wat
     assert.match(body, expect, JSON.stringify(terminal));
   }
 });
+
+test('a poll\'s late save over the stop of a refused resume does not keep the create from retiring the old watcher', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'router-notify-'));
+  const oldEnv = {...process.env};
+  const pids = new Set();
+  const running = pid => {try {process.kill(pid, 0); return true;} catch {return false;}};
+  const until = async predicate => {
+    for (let i = 0; i < 200; i++) {
+      if (predicate()) return;
+      await pause(50);
+    }
+    assert.fail('notifier lifecycle deadline exceeded');
+  };
+  const file = path.join(root, 'paseo-notifications', 'raced.json');
+  const record = () => JSON.parse(fs.readFileSync(file, 'utf8'));
+  try {
+    process.env.ROUTER_PASEO_SDK_ROOT = fakeNotifierSdk(root);
+    process.env.ROUTER_STATE_DIR = root;
+    process.env.PASEO_HOME = root;
+    fs.writeFileSync(path.join(root, 'agent.json'), JSON.stringify({status: 'idle', labels: {'router.dispatch_id': 'before'}}));
+    const request = {provider: 'claude/m', title: 't', initialPrompt: 'p', labels: {'router.dispatch_id': 'raced'}};
+    const old = {id: 'old-worker', provider: 'claude', model: 'm', status: 'idle', labels: {'router.parent_id': 'parent'}};
+    const refused = await execute({
+      fetchAgent: async id => ({agent: id === 'parent' ? {cwd: '/fixture'} : old}),
+      updateAgent: async () => {},
+      sendMessage: async () => {throw new Error('fixture refusal');},
+    }, {operation: 'resume', dispatch_id: 'raced', parent_id: 'parent', agent_id: 'old-worker', request});
+    assert.equal(refused.error, 'host_resume_failed');
+    const firstPid = record().pid;
+    pids.add(firstPid);
+    // The old watcher stops at its next poll. Its last save was made before it saw the stop marker, so it can land
+    // after the stop's own save: the interleaving, made on purpose. The marker stays; the record says `watching`.
+    await until(() => !running(firstPid));
+    assert.equal(fs.existsSync(`${file}.creation-failed`), true);
+    fs.writeFileSync(file, JSON.stringify({...record(), status: 'watching'}));
+    assert.equal(record().status, 'watching');
+
+    const created = await execute({
+      fetchAgent: async () => ({agent: {cwd: '/fixture'}}),
+      createAgent: async options => ({id: options.agentId, provider: 'claude', model: 'm', status: 'running', labels: options.labels}),
+    }, {operation: 'create', dispatch_id: 'raced', parent_id: 'parent', request,
+      create_deadline: new Date(Date.now() + 60000).toISOString()});
+    assert.equal(created.ok, true);
+    pids.add(created.completion_notification.pid);
+    assert.equal(created.completion_notification.status, 'watching');
+    assert.notEqual(created.completion_notification.pid, firstPid);
+    assert.equal(record().agent_id, undefined);
+    assert.equal(fs.existsSync(`${file}.creation-failed`), false);
+  } finally {
+    if (fs.existsSync(file)) pids.add(record().pid);
+    for (const pid of pids) if (running(pid)) process.kill(pid);
+    for (const name of ['ROUTER_STATE_DIR', 'ROUTER_PASEO_SDK_ROOT', 'PASEO_HOME']) {
+      if (oldEnv[name] === undefined) delete process.env[name]; else process.env[name] = oldEnv[name];
+    }
+    await until(() => [...pids].every(pid => !running(pid)));
+    fs.rmSync(root, {recursive: true, force: true});
+  }
+});

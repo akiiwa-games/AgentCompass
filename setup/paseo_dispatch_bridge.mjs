@@ -965,10 +965,14 @@ function stopWatcher(input, reason) {
 
 // A refused resume's stopped watcher followed the old worker. The create falling back from it needs a watcher of its
 // own on the new one, and the old watcher must be gone first or its last save would overwrite the new record.
+// The stop is the marker file: `stopWatcher` writes it before it saves the record, and no save touches it. The record's
+// status is not the stop, because a poll that checked the marker before it was written saves `watching` after the
+// stop's own save.
 async function retireRefusedResume(input) {
   const file = notificationFile(input.dispatch_id);
   const record = readRecord(file);
-  if (record?.parent_id !== input.parent_id || record.status !== 'creation_failed' || !record.agent_id) return;
+  if (record?.parent_id !== input.parent_id || !record.agent_id) return;
+  if (record.status !== 'creation_failed' && !fs.existsSync(`${file}.creation-failed`)) return;
   for (let waited = 0; alive(record.pid); waited += 100) {
     if (waited >= WATCHER_STOP_MS) throw new Error('notification_start_failed');
     await pause(100);
