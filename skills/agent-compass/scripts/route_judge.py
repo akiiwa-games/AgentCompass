@@ -123,10 +123,21 @@ def record_constraint(args, task=None, classified=None):
     basis = (args.basis or '').strip()
     if refusal := roll.named_route_refusal(args, require=True):      # roll owns what a named route needs
         raise ValueError(refusal)
+    if len(basis) > decision_ledger.BASIS_LIMIT:
+        # A cut quote is not the user's quote: the ledger keeps the words whole or not at all.
+        raise ValueError(f"--basis is {len(basis)} characters; a record keeps the user's words whole, up to "
+                         f'{decision_ledger.BASIS_LIMIT}. Quote the words that name this route within that limit.')
+    workflow = decision_ledger.WORKFLOW_RECORD     # the one record the spawn gate accepts for a Workflow
+    if getattr(args, 'trigger', None) == workflow['trigger'] and args.constraint != workflow['constraint']:
+        raise ValueError(f"--trigger {workflow['trigger']} is accepted by the spawn gate only on a record with --constraint "
+                         f"{workflow['constraint']} (the user asked for the Workflow in this request, in their words in "
+                         f"--basis); a {args.constraint} record does not authorize it. Record it with --constraint "
+                         f"{workflow['constraint']} when the user asked for the Workflow, or drop --trigger.")
     import model_resolution
     model_resolution.check_model_pin(args.model, '--model')
     started = time.monotonic()
     task = _record_task(args, task)
+    no_task = classified is None and not (set(task) - {'parent_agent_id'})
     import account_fleet
     import auto_bundles
     import axis_scores
@@ -139,9 +150,12 @@ def record_constraint(args, task=None, classified=None):
     unavailable = provider_inventory.unavailable_reason(accounts.get('_discovery') or {}, args.account, args.provider)
     if unavailable:
         raise ValueError(unavailable)
+    if refusal := named_pair_refusal(accounts, args.account, args.provider):
+        raise ValueError(refusal)
     # `model:effort` and `model-effort` name an effort; --effort, when given too, wins.
     raw_spelled, raw_effort = model_resolution.split_model_effort(args.model)
     pin = copy.copy(args)
+    read_as = {}
 
     def _sync_pin_as_read(cat_doc):
         acct_pool = account_fleet.pin_pool(cat_doc, account=args.account, provider=args.provider)
@@ -149,6 +163,7 @@ def record_constraint(args, task=None, classified=None):
         pin.model, named_effort = model_resolution.split_model_effort(as_read)
         served = account_fleet.account_providers(cat_doc, args.account) if '/' not in pin.model else ()
         res = account_fleet.resolve_model(pin.model, cat_doc, served)
+        read_as.update(res)
         pin.effort = args.effort or named_effort or raw_effort or res['effort']
         return acct_pool, res['source'] in model_resolution.DIRECT_SOURCES
 
@@ -216,7 +231,7 @@ def record_constraint(args, task=None, classified=None):
     if chosen:
         quota_bundle['id'] = chosen
         quota_bundle.setdefault('bundle_id', chosen)
-    _check_record_launch(args, pin, quota_bundle, accounts, usage, now)
+    looked = _check_record_launch(args, pin, quota_bundle, accounts, usage, now)
     # A model the user names on a held account or model is the probe that can lift the hold: it goes, with a warning.
     retrying = provider_retry.reason(quota_bundle, provider_retry.active(now=now))
     c_model = account_fleet.canonical(row_model, accounts)
@@ -225,6 +240,11 @@ def record_constraint(args, task=None, classified=None):
         fast_modes.validate(account_fleet.bundle_harness(discovered or sibling or {'provider': args.provider}, args.account),
                                       c_model, account_fleet.row_spec(accounts, c_model))
     warnings = []
+    if not looked and (unobserved := quota_unobserved(accounts, usage, args.account)):
+        warnings.append(unobserved)
+    if args.effort and raw_effort and raw_effort != args.effort:
+        warnings.append(f'--effort {args.effort} and --model {args.model} name different efforts: {args.effort} was used '
+                        '(--effort wins over an effort spelled in --model).')
     effort = pin.effort or discovered.get('effort')
     reviewed_task = task
     if classified:
@@ -236,13 +256,20 @@ def record_constraint(args, task=None, classified=None):
               'effort': effort, **({'bundle_id': chosen} if chosen else {}), **({'fast': True} if fast_requested else {})}
     if not direct:
         bundle.setdefault('launch_model', pin.model)
+    if read_as.get('key') and read_as['key'] != read_as.get('bare'):
+        # A moving name, a preview name, an alias or a family guess: the row it read as is what launches.
+        by = f" of provider {read_as['provider']}" if read_as.get('provider') else ''
+        warnings.append(f"--model {raw_spelled} was read as the row {row_model} (model resolution: "
+                        f"{read_as['source']}{by}); that row is what launches.")
+    if no_task:
+        warnings.append(NO_TASK_COMPARED)
     bundle['harness'] = account_fleet.bundle_harness(bundle, args.account, chosen)
     if 'modeId' not in bundle and bundle['harness'] in auto_bundles.HARNESS_MODE:
         bundle['modeId'] = auto_bundles.HARNESS_MODE[bundle['harness']]
     if fast_requested and bundle['harness'] == 'claude':
         bundle['fast_billing'] = fast_modes.claude_billing(accounts['accounts'][args.account])
     result = {'stage': 'record', 'choice': 'constraint', 'source': 'constraint_record',
-              'constraint': args.constraint, 'basis': basis[:400], 'specialty': args.specialty,
+              'constraint': args.constraint, 'basis': basis, 'specialty': args.specialty,
               **({'trigger': args.trigger} if getattr(args, 'trigger', None) else {}),
               'reason_category': getattr(args, 'reason_category', None),
               'selected_bundle': bundle, 'judge': None, 'observed_at': now.isoformat(), 'usage': usage}
@@ -267,8 +294,15 @@ def record_constraint(args, task=None, classified=None):
             'account': args.account, 'dispatch_allowed': False, 'policy_path': str(host_policy.policy_path()[0]),
             'reason': (f'{outside}; a {args.constraint} record does not override that, only a route the user named '
                        "in this request (--constraint user_override with the user's words in --basis)")}
+        # Written all the same: the spawn gate reads this row and refuses a launch on it (check_route_authority).
+        result.update(status='blocked', cause=outside, next_action=(
+            f"Dispatch on {args.account} is not allowed: {result['host_policy_violation']['reason']}. Do not launch on "
+            'it. If the user named this route in this request, record it again with --constraint user_override; '
+            'otherwise roll without naming a route, and the router chooses among the accounts in automatic routing.'))
     if warnings:
         result['warnings'] = warnings
+    if not looked and not usage.get('read_ok'):
+        result['alerts'] = [{'code': 'no_usage_data', 'severity': 'warn', 'account': None, 'message': NO_USAGE_DATA}]
     if classified:
         result['_allocation_task'] = task
         if classified.get('scorer') is not None:
@@ -278,7 +312,7 @@ def record_constraint(args, task=None, classified=None):
         if classified.get('hours_estimate'):
             result['hours_estimate'] = classified['hours_estimate']
         if classified.get('alerts'):
-            result['alerts'] = list(classified['alerts'])
+            result['alerts'] = [*result.get('alerts', []), *classified['alerts']]
     # What this record decides beyond the task: kept on the decision, passed to the plan as route fields
     # (task_intake.ROUTE_FIELDS), never written into a task.
     route = {**({'unclassified': classified['unclassified']} if (classified or {}).get('unclassified') else {}),
@@ -354,6 +388,42 @@ def _unchecked_refusal(args, model):
             "only a route the user named in this request (--constraint user_override with the user's words in --basis)")
 
 
+NO_TASK_COMPARED = ("No task was given (record reads one only from --input), so the route was not compared with the "
+                    "router's own choice for it.")
+
+
+def named_pair_refusal(accounts, account, provider):
+    """Why `account` / `provider` names no route on this machine, before any model list is read; None when it does: an
+    account the fleet does not have, or a provider the account does not launch through (`auto_bundles.launch_providers`,
+    and the providers of its bundles)."""
+    import account_fleet
+    import auto_bundles
+    specs = accounts.get('accounts') or {}
+    spec = specs.get(account)
+    if not isinstance(spec, dict):
+        names = ', '.join(sorted(name for name, row in specs.items() if isinstance(row, dict)))
+        return (f'account {account} is not configured on this machine (its accounts: {names}). Ask the user which one '
+                'they meant; do not substitute another account.')
+    served = auto_bundles.launch_providers(account, spec)
+    if provider in served or account_fleet.pin_pool(accounts, account=account, provider=provider):
+        return None
+    return (f"account {account} does not launch through provider {provider} (it launches through {', '.join(served)}). "
+            'Name the provider it launches through; do not substitute another account.')
+
+
+def quota_unobserved(accounts, usage, account):
+    """Why the quota windows of `account` were not looked at before a named launch, or None for an account with no
+    windows. Not read is not exhausted: the launch goes ahead and says so (`plan` says it as alert no_usage_data)."""
+    if not ((accounts.get('accounts') or {}).get(account) or {}).get('windows'):
+        return None
+    if not usage.get('read_ok'):
+        return f'quota not observed: no window of {account} was read, so none was checked before this launch. {NO_USAGE_DATA}'
+    row = (usage.get('accounts') or {}).get(account) or {}
+    why = ', '.join(str(v) for v in (row.get('status') or 'no reading', row.get('reason')) if v)
+    return (f'quota not observed: {account} has no fresh usage reading ({why}), so none of its windows was checked '
+            'before this launch; a window not read is not a window with quota left.')
+
+
 def _record_task(args, task):
     """The task a record is for: the caller's, else the --input document's; parented to this host session when it
     names no parent."""
@@ -377,14 +447,17 @@ def _record_task(args, task):
 
 def _check_record_launch(args, pin, quota_bundle, accounts, usage, now):
     """Refuse a forced route that cannot launch now: no quota left in a window it draws, a launch cooling down, or a
-    latched model. External runners dispatch directly after record, so this is the protection prepared dispatches get."""
+    latched model. External runners dispatch directly after record, so this is the protection prepared dispatches get.
+    Returns whether the account's windows were looked at (a fresh reading, a rate limit or a latched window)."""
     import candidate_eval
     import launch_failures
     import model_latch
     import quota_pools
     dispatch_registry.check_launch_quota(quota_bundle, accounts, usage, now)
     acc_usage = (usage.get('accounts') or {}).get(args.account) or {}
-    if acc_usage.get('status') == 'fresh' or acc_usage.get('rate_limited_until') or quota_pools.latched_windows(accounts, args.account):
+    looked = bool(acc_usage.get('status') == 'fresh' or acc_usage.get('rate_limited_until')
+                  or quota_pools.latched_windows(accounts, args.account))
+    if looked:
         blockers = quota_pools.launch_blockers(
             quota_bundle, accounts, usage, now, records=dispatch_flow.reservation_records(read_only=True))
         if blockers:
@@ -400,6 +473,7 @@ def _check_record_launch(args, pin, quota_bundle, accounts, usage, now):
     latched_model = model_latch.reason(quota_bundle, model_latch.active(now=now))
     if latched_model:
         raise ValueError(f"{args.account}/{pin.model}: {latched_model}. Tell the user; do not substitute another model.")
+    return looked
 
 
 def _compare_with_router(result, task, usage, now, chosen, fast_requested, classified):
@@ -451,6 +525,8 @@ def router_command():
 
 
 ONBOARD_HINT = (f'Run `{router_command()} setup` to detect the CLIs you are signed in to and start usage collection.')
+NO_USAGE_DATA = ('No usage data is available (the collector has not produced a snapshot), so quota-aware ranking is '
+                 'running blind and the pick is a default, not a measured choice. ' + ONBOARD_HINT)
 
 
 def readiness_gap(accounts, usage):
@@ -476,9 +552,7 @@ def readiness_gap(accounts, usage):
         return {'code': 'no_ready_account', 'fatal': True,
                 'message': 'No provider account is ready on this machine (no signed-in CLI was found). ' + ONBOARD_HINT}
     if not usage.get('read_ok'):
-        return {'code': 'no_usage_data', 'fatal': False,
-                'message': 'No usage data is available (the collector has not produced a snapshot), so quota-aware '
-                           'ranking is running blind and the pick is a default, not a measured choice. ' + ONBOARD_HINT}
+        return {'code': 'no_usage_data', 'fatal': False, 'message': NO_USAGE_DATA}
     return None
 
 
@@ -909,11 +983,11 @@ def build_parser():
     parser.add_argument('--new-worker', action='store_true', help='roll: always create a new dispatch and worker: no resume, and no handing back an open dispatch of the same brief.')
     parser.add_argument('--access', choices=('read-only', 'write'), help='roll: explicit override for whether this brief only reads or writes its workspace (default: classified by System-One, else write). Only a writer is held to one per --workspace.')
     parser.add_argument('--score', action='store_true',
-                        help='plan: profile the task first with the System-One scorer (default on plan when objective is present).')
+                        help='plan/roll: profile the task first with the System-One scorer (default when objective is present; with --dry-run only when given).')
     parser.add_argument('--no-score', action='store_true',
-                        help='plan: skip the System-One scorer model call and use only caller-supplied task fields/profile.')
+                        help='plan/roll: skip the System-One scorer model call and use only caller-supplied task fields/profile.')
     parser.add_argument('--score-timeout', type=int, default=scorer_client.SCORER_TIMEOUT_SECONDS,
-                        help='score/plan/scorer: scorer time limit in seconds (1-120); a CLI process tree is stopped on timeout.')
+                        help='score/plan/roll/scorer: scorer time limit in seconds (1-120); a CLI process tree is stopped on timeout.')
     parser.add_argument('--action', choices=('show', 'set', 'test'), default='show',
                         help='scorer: show the System-One scorer config (keys masked), set it, or test it live.')
     parser.add_argument('--type', dest='scorer_type', choices=tuple(scorer_client.SCORER_TYPES),
@@ -922,33 +996,36 @@ def build_parser():
     parser.add_argument('--base-url', help='scorer set: API base URL for jev/gemini_decision/openai_compatible ("" clears it).')
     parser.add_argument('--fallback-to-agy', choices=('on', 'off'), help='scorer set: fall back to agy when the chosen scorer fails.')
     parser.add_argument('--objective', help='scorer test: the sample task to classify.')
-    parser.add_argument('--input', type=Path)
+    parser.add_argument('--input', type=Path, help='plan/score/delegate/select/dispatch prepare: the input JSON document. '
+                        'record: a task document ({"task": ...}), to compare the forced route with the router\'s own choice.')
     parser.add_argument('--dispatch-action', choices=('prepare', 'start', 'status', 'reconcile', 'release', 'fallback', 'settle'), default='prepare')
     parser.add_argument('--dispatch-id')
-    parser.add_argument('--parent-id')
+    parser.add_argument('--parent-id', help='roll/record/launch/dispatch release: the parent session id (default for roll and '
+                        'record: detected from the host session).')
     parser.add_argument('--parent-host', choices=('auto', 'paseo', 'native', 'orca', 't3', 'herdr'), help='roll: host owning the parent session (default: auto-detected from environment)')
     parser.add_argument('--parent-address', help='roll: native host coordinator inbox address')
     parser.add_argument('--watch-seconds', type=float, default=3600)
     parser.add_argument('--poll-seconds', type=float, default=5)
     parser.add_argument('--usage-cache', type=Path, help='Read only this usage cache file (overrides ROUTER_USAGE_CACHE and the default locations).')
     parser.add_argument('--show', action='store_true', help='usage: print the merged usage windows (this is what the stage does; the flag only tells `agentcompass usage` not to collect).')
-    parser.add_argument('--accounts', nargs='+', help='usage: exact account keys to inspect.')
+    parser.add_argument('--accounts', nargs='+', help='usage: exact account keys to inspect. record (and a roll that names its route): read usage of only these '
+                        'accounts; an account left out has no window read, and the result says so.')
     parser.add_argument('--judge', choices=('auto', 'sonnet', 'codex'), default='auto')
     parser.add_argument('--timeout', type=int, default=120, help='Bounded CLI timeout, in seconds.')
-    parser.add_argument('--dry-run', action='store_true', help='delegate/select: print the reviewed payload without a model call. plan/record: compute the result but write no ledger row.')
+    parser.add_argument('--dry-run', action='store_true', help='delegate/select: print the reviewed payload without a model call. plan/record: compute the result but write no ledger row. roll: record and launch nothing.')
     parser.add_argument('--demo', action='store_true', help='plan --dry-run: offline reference fleet and synthetic quotas; no local credentials needed.')
     parser.add_argument('--format', choices=('json', 'table'), help='Plan output (default: table for --demo, JSON otherwise).')
     parser.add_argument('--constraint', choices=CONSTRAINTS, help='record: why the route is forced (user_override, hard_constraint, dot_closed_loop).')
     parser.add_argument('--basis', help='record/roll: quote the user instruction or constraint that forces this route; roll needs it with --provider, --account, --model or --effort, and ignores it (with a warning) without them.')
     parser.add_argument('--reason-category', choices=REASON_CATEGORIES,
-                        help='record: why the override departs from the router: ' + ', '.join(REASON_CATEGORIES) + '.')
+                        help='record (and a roll that names its route): why the override departs from the router: ' + ', '.join(REASON_CATEGORIES) + '.')
     parser.add_argument('--provider')
     parser.add_argument('--account')
     parser.add_argument('--model')
     parser.add_argument('--effort')
-    parser.add_argument('--specialty')
+    parser.add_argument('--specialty', help='record (and a roll that names its route): a free-text label kept on the decision and its ledger row.')
     parser.add_argument('--trigger', choices=('workflow',),
-                        help='record: the launch this record authorizes when it is not a worker roll starts; '
+                        help='record (and a roll that names its route, which records it): the launch this record authorizes when it is not a worker roll starts; '
                              'workflow = a Claude Code Workflow the user asked for in this session (the spawn gate '
                              'accepts it only with --constraint user_override, from the same session).')
     parser.add_argument('--intent', help='override: stable intent key for idempotent updates (default: normalized user basis).')
@@ -1051,9 +1128,29 @@ def failure_answer(exc, stage):
     return failure
 
 
+ALWAYS_READ = ('stage', 'help', 'help_all')     # what every stage reads: which stage, and whether to show its help
+
+
+def unread_flags(args):
+    """The flags the caller gave (a value other than the parser's default) that `args.stage` does not read, as spelled on
+    the command line, in the parser's order. What a stage reads is its row of `stage_help.STAGES`."""
+    summary, usage, basic, extra = stage_help.STAGES[args.stage]
+    listed = {*basic, *extra, *ALWAYS_READ}
+    return [action.option_strings[0] for action in build_parser()._actions
+            if action.option_strings and action.dest not in listed
+            and getattr(args, action.dest, action.default) != action.default]
+
+
+def unread_flag_note(stage, flags):
+    """The note a result carries for flags its stage did not read (a note, not a refusal: the stage ran without them)."""
+    return (f"{', '.join(flags)} {'is' if len(flags) == 1 else 'are'} not read by {stage} and had no effect "
+            f'(`{router_command()} {stage} -h` lists what {stage} reads).')
+
+
 def _run_stage(args):
     """One stage, from freshly parsed arguments (a re-run gets its own)."""
     import account_fleet
+    unread = unread_flags(args) if args.stage in stage_help.STAGES else []
     if args.demo and (args.stage != 'plan' or not args.dry_run):
         raise ValueError('--demo requires plan --dry-run; remove --demo to use live providers.')
     if not 1 <= args.timeout <= 600:
@@ -1100,7 +1197,9 @@ def _run_stage(args):
         if args.constraint is None:
             raise ValueError('record requires --constraint.')
         result = record_constraint(args)
-        code = 0
+        # A record the host's switches do not let launch is still written (the spawn gate reads it and refuses the
+        # launch); its answer says so, and the exit is not success.
+        code = 2 if result.get('status') == 'blocked' else 0
     elif args.stage == 'plan':
         if args.input is None and args.demo:
             from demo_plan import sample_document
@@ -1122,6 +1221,8 @@ def _run_stage(args):
             result = decision_ledger.finalize(subscription_judge.evaluate(payload, args.judge, args.timeout), payload, args.judge,
                               started, document.get('task'))
         code = 1 if result.get('source') == 'judge_unavailable' else 0
+    if unread and isinstance(result, dict):
+        result['warnings'] = [*(result.get('warnings') or []), unread_flag_note(args.stage, unread)]
     print(render(result, table=args.stage == 'plan' and (args.format == 'table' or (args.demo and args.format is None))))
     return code
 

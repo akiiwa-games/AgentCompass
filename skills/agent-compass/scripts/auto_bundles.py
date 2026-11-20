@@ -264,6 +264,12 @@ def _account_harnesses(account, spec):
     return pairs
 
 
+def launch_providers(account, spec):
+    """The catalog providers `account` launches through, sorted: its manual bundles' providers and the account itself
+    (`derive` reads a provider's model list for an account under these names only)."""
+    return sorted({*_account_harnesses(account, spec).values(), account})
+
+
 PER_MODEL = '*'
 
 

@@ -1624,12 +1624,16 @@ def written_by(row: dict, identities: set[str]) -> bool:
 
 
 def check_workflow_record(rows: list[dict], identities: set[str]) -> str | None:
-    """A Workflow passes only on this session's `record --constraint user_override --trigger workflow`."""
+    """A Workflow passes only on this session's `record --constraint user_override --trigger workflow`: the row
+    `decision_ledger.WORKFLOW_RECORD` names, which `record` also reads to refuse any other constraint."""
     if not identities:
         return workflow_deny_reason("hook 输入里没有会话 ID，无法确认授权记录属于本会话")
+    try:
+        rule = router_module("decision_ledger").WORKFLOW_RECORD
+    except (ImportError, AttributeError) as exc:
+        return workflow_deny_reason(f"无法读取 Workflow 授权规则（decision_ledger.WORKFLOW_RECORD：{type(exc).__name__}）")
     for row in rows:
-        if (row.get("stage") == "record" and row.get("constraint") == "user_override"
-                and row.get("trigger") == "workflow" and written_by(row, identities)):
+        if all(row.get(key) == value for key, value in rule.items()) and written_by(row, identities):
             return None
     return workflow_deny_reason("最近 15 分钟内本会话没有 `--trigger workflow` 的 user_override 记录")
 

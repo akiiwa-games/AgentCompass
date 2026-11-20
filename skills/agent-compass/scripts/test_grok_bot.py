@@ -686,11 +686,11 @@ with patch.object(runner, 'submit', side_effect=accept), patch.object(
                 else:
                     self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                     self.assertTrue(json.loads(proc.stdout)['worker']['mocked_send'])
-        # A named route is refused only by a fact, and the refusal states it (router-internals.md, record): a model or
-        # provider the account has no row for, with no readable provider list to decide it; an effort the launch
-        # contract does not list.
+        # A named route is refused only by a fact, and the refusal states it (router-internals.md, record): a model the
+        # account has no row for, with no readable provider list to decide it; a provider the account does not launch
+        # through, known before any list (route_judge.named_pair_refusal); an effort the launch contract does not list.
         for flag, value, fact in [('--model', 'grok-4.7', 'named_model_unavailable: grok-4.7 has no row on grok-bot/grok-bot'),
-                                  ('--provider', 'unknown-bot', 'named_model_unavailable: grok-bot has no row on grok-bot/unknown-bot'),
+                                  ('--provider', 'unknown-bot', 'account grok-bot does not launch through provider unknown-bot'),
                                   ('--effort', 'high', 'high is not an effort grok-bot/grok-bot accepts (it takes none)')]:
             args = list(command)
             if flag in args:

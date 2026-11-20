@@ -1,7 +1,8 @@
 """Per-stage help for `agentcompass <stage> -h`: only that stage's options, the few that matter first.
 
-route_judge.py keeps one flat option set (existing automation passes any of them to any stage). This module only
-decides what each stage's help shows; `--help-all` still prints every option.
+route_judge.py keeps one flat option set (existing automation passes any of them to any stage). `STAGES` is what each
+stage reads: its help shows those options (`--help-all` still prints every option), and `route_judge.unread_flags` names a
+given flag the stage's row does not list, in a note of the stage's result. A flag listed for a stage is read by it.
 """
 import argparse
 
@@ -13,7 +14,9 @@ STAGES = {
              'roll (--task TEXT | --task - | --brief FILE)',
              ('task', 'brief'),
              ('hours', 'local_only', 'can_wait_hours', 'keep_whole', 'file', 'apply_to', 'fast', 'resume', 'new_worker', 'workspace',
-              'provider', 'account', 'model', 'effort', 'basis')),
+              'access', 'title', 'task_id', 'verbose', 'dry_run', 'no_score', 'score', 'score_timeout', 'usage_cache',
+              'provider', 'account', 'model', 'effort', 'basis', 'reason_category', 'specialty', 'trigger', 'accounts',
+              'parent_id', 'parent_host', 'parent_address')),
     'plan': ('Rank the signed-in model x effort bundles for a task file without launching anything (write no ledger row with --dry-run).',
              'plan --input TASK.json [--dry-run]   |   plan --demo --dry-run',
              ('input',),
@@ -34,17 +37,18 @@ STAGES = {
     'record': ('Record a route the user or a hard constraint forced, so the spawn gate accepts it.',
                'record --constraint user_override --provider P --account A --model M --effort E --basis "<user quote>"',
                ('constraint', 'provider', 'account', 'model', 'effort', 'basis'),
-               ('trigger', 'reason_category', 'specialty', 'hours', 'fast', 'dry_run', 'usage_cache')),
+               ('input', 'trigger', 'reason_category', 'specialty', 'fast', 'dry_run', 'parent_id', 'usage_cache', 'accounts')),
     'override': ('Add, list or clear a temporary routing boost (reset or subscription end coming soon).',
-                 'override --list   |   override --provider P --account A --basis "<user quote>" [--resets-in H | --expires-in H]',
-                 ('list', 'clear', 'provider', 'account', 'model', 'basis'),
+                 'override --list   |   override --account A --basis "<user quote>" [--resets-in H | --expires-in H]',
+                 ('list', 'clear', 'account', 'model', 'basis'),
                  ('intent', 'window', 'resets_in', 'resets_at', 'expires_in', 'expires_at', 'boost', 'until', 'stop_on_reset',
-                  'reset_confirmation', 'rebaseline', 'specialty', 'reason_category', 'usage_cache')),
-    'dispatch': ('Drive one dispatch through its lifecycle (prepare, start, status, reconcile, release).',
+                  'reset_confirmation', 'rebaseline', 'usage_cache')),
+    'dispatch': ('Drive one dispatch through its lifecycle (prepare, start, status, reconcile, release, fallback, settle).',
                  'dispatch --dispatch-action status --dispatch-id ID', ('dispatch_action', 'dispatch_id'),
-                 ('input', 'parent_id', 'watch_seconds', 'poll_seconds', 'basis', 'usage_cache')),
-    'launch': ('Prepare and start one dispatch from a plan file.', 'launch --input PLAN.json', ('input',),
-               ('parent_id', 'watch_seconds', 'poll_seconds', 'basis', 'usage_cache')),
+                 ('input', 'parent_id', 'basis', 'usage_cache')),
+    'launch': ('Start a prepared dispatch, or observe it (the continuation a roll hands back), watching for its answer.',
+               'launch --dispatch-id ID --parent-id ID', ('dispatch_id', 'parent_id'),
+               ('watch_seconds', 'poll_seconds')),
 }
 
 

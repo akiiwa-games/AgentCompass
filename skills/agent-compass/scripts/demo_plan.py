@@ -112,4 +112,5 @@ def format_table(result):
         status = '; '.join(excluded) if excluded else ('winner' if candidate['id'] == result.get('choice') else 'eligible')
         lines.append(f"{str(rank) if not excluded else '-':<5} {candidate['id']:<24} {score:>8}  {status}")
     lines.extend(['', result.get('decision', {}).get('reason', '')])
+    lines.extend(f'warning: {text}' for text in result.get('warnings') or ())
     return '\n'.join(lines)
