@@ -1808,6 +1808,7 @@ const noticeParts = async (client, record, event) => {
 const noticeBase = {dispatch_id: 'd1', parent_id: 'p1', agent_id: 'a1', created_at: Date.now() - 1000, creation_deadline: Date.now() + 1e6};
 const timeline = entries => ({fetchAgentTimeline: async () => ({entries: entries.map(([type, text, ids]) => ({item: {type, text, ...(ids ?? {})}}))})});
 const SUPERSEDED_TEXT = 'superseded by a later dispatch';
+const NOT_LANDED_STATE = 'ended; no later turn of this parent landed on this worker';
 const NOT_LANDED = "A later dispatch took this worker's labels, but AgentCompass recorded no turn of it from this " +
   "parent that landed on this worker, so this is this dispatch's own end.\n";
 
@@ -1845,13 +1846,25 @@ test('each ending of a worker has its own sentence in the body, under the unchan
   assert.equal((await noticeParts(reply, noticeBase, {key: 'terminal', reason: 'closed'})).body, 'Final reply:\nthe report\n');
 });
 
-test("a superseded notice, sent once the registry found no landed later turn, is this dispatch's own end", async () => {
-  const event = {key: 'terminal', reason: SUPERSEDED_TEXT};
-  let got = await noticeParts(timeline([['user_message', 'brief'], ['assistant_message', 'this dispatch reply']]), noticeBase, event);
-  assert.equal(got.body, `${NOT_LANDED}Final reply:\nthis dispatch reply\n`);
-  assert.ok(got.header.includes(`State: ${SUPERSEDED_TEXT}\n`));
-  got = await noticeParts(timeline([['user_message', 'brief']]), noticeBase, event);
-  assert.equal(got.body, `${NOT_LANDED}This dispatch's turn left no final reply.\n`);
+test("a superseded notice, sent once the registry found no landed later turn, is this dispatch's own end in its header too", async () => {
+  // The watcher only claims a superseded record; only the catch-up composes it, once the registry found no landed turn.
+  for (const [entries, body] of [
+    [[{item: {type: 'user_message', text: 'brief'}}, {item: {type: 'assistant_message', text: 'this dispatch reply'}}],
+      `${NOT_LANDED}Final reply:\nthis dispatch reply\n`],
+    [[{item: {type: 'user_message', text: 'brief'}}], `${NOT_LANDED}This dispatch's turn left no final reply.\n`]]) {
+    await withNoticeState(async () => {
+      writeRecord('child', {dispatch_id: 'child', parent_id: 'parent', status: 'continued', continued_by: 'later-dispatch',
+        delivered: [], seen: true, pending: null, terminal: {reason: SUPERSEDED_TEXT}});
+      const sends = [];
+      const client = {fetchAgent: async () => ({agent: {status: 'idle'}}), fetchAgentTimeline: async () => ({entries}),
+        sendMessage: async (...args) => sends.push(args)};
+      assert.equal((await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'})).sent, true);
+      const text = sends[0][1];
+      assert.ok(text.includes(`State: ${NOT_LANDED_STATE}\n`), text);
+      assert.ok(!text.includes(`State: ${SUPERSEDED_TEXT}`), text);
+      assert.ok(text.endsWith(body), text);
+    });
+  }
 });
 
 test('a catch-up for a receipt with no terminal invents no finish', async () => {
@@ -2040,6 +2053,10 @@ const idOf = (dispatchId, attempt = 0) => createHash('sha256')
 const accepted = (clientMessageId, extra = {}) => ({item: {type: 'user_message', text: 'x', clientMessageId, messageId: clientMessageId},
   turnId: 'turn-1', ...extra});
 const rejected = clientMessageId => ({item: {type: 'user_message', text: 'x', clientMessageId, messageId: clientMessageId}});
+// The row Paseo writes right after a prompt whose turn failed to start (agent-manager.ts appendSystemErrorTimelineMessage).
+const systemError = () => ({item: {type: 'assistant_message', text: '[System Error] Failed to start turn'}});
+// A row replayed from provider history after a daemon restart: no turnId, and no error rows anywhere.
+const replayed = clientMessageId => ({item: {type: 'user_message', text: 'x', clientMessageId}, timestamp: '2026-11-21T08:00:01.000Z'});
 
 // A timeline read back in pages of two from the newest, as the daemon's `before` cursor does.
 function pagedTimeline(entries, reads = []) {
@@ -2072,8 +2089,10 @@ function writeRecord(dispatchId, record) {
 
 const SAVED_AT = '2026-11-21T08:00:00.000Z';
 const pendingRecord = (extra = {}) => ({dispatch_id: 'child', parent_id: 'parent', status: 'watching', delivered: [],
-  seen: true, pending: {key: 'terminal', messageId: idOf('child'), text: 'THE NOTICE', saved_at: SAVED_AT},
+  seen: true, pending: {key: 'terminal', messageId: idOf('child'), text: 'THE NOTICE', saved_at: SAVED_AT, sent_at: SAVED_AT},
   terminal: {reason: 'finished'}, ...extra});
+// Past the first resend interval since the record's first send (RESEND_AFTER_MS): a next id is due.
+const LATER = Date.parse(SAVED_AT) + 16 * MINUTE;
 const unknownClient = (timelineEntries, sends, reads = []) => ({
   fetchAgent: async id => ({agent: {id, status: 'running'}}),
   fetchAgentTimeline: pagedTimeline(timelineEntries, reads),
@@ -2109,9 +2128,9 @@ test('a notice Paseo rejected (its turn failed to start) is not a delivery: it i
   await withNoticeState(async () => {
     writeRecord('child', pendingRecord());
     const sends = [];
-    const client = unknownClient([rejected(idOf('child')), {type: 'error', message: 'turn failed'}], sends);
+    const client = unknownClient([rejected(idOf('child')), systemError()], sends);
     client.sendMessage = async (...args) => {sends.push(args); if (args[2].messageId === idOf('child')) throw new Error(UNKNOWN);};
-    const answer = await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'});
+    const answer = await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'}, LATER);
     assert.deepEqual(answer, {ok: true, sent: true, message_id: idOf('child', 1), outcome: 'resent'});
     assert.deepEqual(sends.map(call => call[2].messageId), [idOf('child'), idOf('child', 1)]);
   });
@@ -2131,7 +2150,7 @@ test('an unknown send outcome whose notice is not in the parent timeline is sent
       if (args[2].messageId === idOf('child')) throw new Error(UNKNOWN);
       savedBeforeResend = JSON.parse(fs.readFileSync(file, 'utf8'));
     };
-    const answer = await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'});
+    const answer = await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'}, LATER);
     assert.deepEqual(answer, {ok: true, sent: true, message_id: idOf('child', 1), outcome: 'resent'});
     assert.deepEqual(sends.map(call => call[2].messageId), [idOf('child'), idOf('child', 1)]);
     assert.deepEqual(sends.map(call => call[1]), ['THE NOTICE', 'THE NOTICE']);
@@ -2154,8 +2173,8 @@ test('two observers of one unknown outcome send under one derived id, and a rese
       if (options.messageId === idOf('child')) throw new Error(UNKNOWN);
       resent.push(options.messageId);
     };
-    await Promise.all([notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'}),
-      notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'})]);
+    await Promise.all([notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'}, LATER),
+      notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'}, LATER)]);
     assert.deepEqual(resent, [idOf('child', 1), idOf('child', 1)]);
   });
   await withNoticeState(async () => {
@@ -2170,40 +2189,122 @@ test('two observers of one unknown outcome send under one derived id, and a rese
   });
 });
 
-test('resends end: past three ids nothing more is sent and the notice is undelivered', async () => {
+test('a next id waits its interval after the previous send, and the notice is undelivered only after the third', async () => {
   await withNoticeState(async () => {
-    const file = writeRecord('child', pendingRecord());
-    const sends = [];
-    // Every send fails in the daemon after its receipt was written: the first call of an id throws a restart, a
-    // later call of the same id answers unknown, and no row is ever written.
+    const file = writeRecord('child', pendingRecord({pending: {key: 'terminal', text: 'THE NOTICE', saved_at: SAVED_AT}}));
+    const sends = [], reads = [];
+    // Every send fails in the daemon after its receipt was written (a parent whose turns are rejected for a while): the
+    // first call of an id throws a restart, a later call of the same id answers unknown, and no row is ever written.
     const tried = new Set();
-    const client = unknownClient([], sends);
+    const client = unknownClient([], sends, reads);
     client.sendMessage = async (...args) => {
       sends.push(args[2].messageId);
       if (tried.has(args[2].messageId)) throw new Error(UNKNOWN);
       tried.add(args[2].messageId);
       throw new Error('daemon restarted');
     };
-    const answers = [];
-    for (let read = 0; read < 6; read++) {
-      try { answers.push(await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'})); }
-      catch (error) { answers.push(error.message); }
-    }
-    assert.equal(new Set(sends).size, 3);
-    assert.deepEqual([...new Set(sends)], [idOf('child'), idOf('child', 1), idOf('child', 2)]);
+    const t0 = Date.parse(SAVED_AT);
+    const read = async minutes => {
+      try { return await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'}, t0 + minutes * MINUTE); }
+      catch (error) { return error.message; }
+    };
+    const wait = id => ({ok: false, error: 'notice_resend_wait', message_id: id});
+    assert.equal(await read(0), 'daemon restarted');
+    assert.deepEqual(await read(1), wait(idOf('child')), 'not in the timeline, but the next id is not due');
+    const quiet = [sends.length, reads.length];
+    assert.deepEqual(await read(14), wait(idOf('child')));
+    assert.deepEqual([sends.length, reads.length], quiet, 'nothing is sent or read before it is due');
+    assert.equal(await read(15), 'daemon restarted', 'the second id at 15 minutes');
+    assert.deepEqual(await read(16), wait(idOf('child', 1)));
+    assert.deepEqual(await read(74), wait(idOf('child', 1)));
+    assert.equal(await read(75), 'daemon restarted', 'the third id 60 minutes after the second');
     const undelivered = {ok: true, sent: false, error: 'notice_undelivered', message_id: idOf('child', 2)};
-    assert.deepEqual(answers.slice(0, 4), ['daemon restarted', 'daemon restarted', 'daemon restarted',
-      {...undelivered, outcome: 'undelivered'}]);
-    assert.deepEqual(answers.slice(4), [undelivered, undelivered], 'nothing more is sent');
-    assert.equal(sends.length, 6);
+    assert.deepEqual(await read(76), {...undelivered, outcome: 'undelivered'});
+    const before = sends.length;
+    assert.deepEqual(await read(500), undelivered, 'nothing more is sent');
+    assert.equal(sends.length, before);
+    assert.deepEqual([...new Set(sends)], [idOf('child'), idOf('child', 1), idOf('child', 2)]);
     const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
     assert.equal(saved.status, 'undelivered');
     assert.equal(saved.pending, null);
-    assert.deepEqual(saved.delivered, []);
+  });
+  // The watcher's step keeps polling while it waits, and its pending notice stays.
+  await withNoticeState(async () => {
+    const record = pendingRecord({pending: {key: 'terminal', text: 'THE NOTICE', saved_at: SAVED_AT, sent_at: SAVED_AT,
+      messageId: idOf('child')}});
+    const client = unknownClient([], []);
+    client.fetchAgent = async id => ({agent: id === 'parent' ? {status: 'running'} : {status: 'idle', attentionReason: 'finished'}});
+    assert.equal(await notificationStep(client, record, () => {}, Date.parse(SAVED_AT) + MINUTE, null), false);
+    assert.equal(record.pending.unknown, true);
+    assert.equal(record.status, 'watching');
   });
 });
 
-test('the search for a notice stops at rows older than its first save, and a pending without that time reads one page', async () => {
+test('a notice row counts unless Paseo rejected it: accepted live, rejected live, and replayed from history', async () => {
+  for (const [name, entries, outcome] of [
+    ['accepted live', [accepted(idOf('child')), {type: 'assistant_message', text: 'ok'}], 'found'],
+    ['rejected live', [rejected(idOf('child')), systemError()], 'resent'],
+    // the error row on the newer page: the rejected row ends the older one
+    ['rejected live across pages', [{type: 'assistant_message', text: 'a'}, rejected(idOf('child')), systemError(),
+      {type: 'assistant_message', text: 'b'}], 'resent'],
+    ['replayed from history', [replayed(idOf('child')), {item: {type: 'assistant_message', text: 'reply'}}], 'found'],
+    ['replayed, the newest row', [{item: {type: 'assistant_message', text: 'a'}}, replayed(idOf('child'))], 'found']]) {
+    await withNoticeState(async () => {
+      writeRecord('child', pendingRecord());
+      const sends = [];
+      const client = unknownClient(entries, sends);
+      client.sendMessage = async (...args) => {sends.push(args); if (args[2].messageId === idOf('child')) throw new Error(UNKNOWN);};
+      const answer = await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'}, LATER);
+      assert.equal(answer.outcome, outcome, name);
+      assert.equal(sends.length, outcome === 'found' ? 1 : 2, name);
+    });
+  }
+});
+
+test('a pending notice a v0.7.4 install wrote searches back to its own terminal sighting', async () => {
+  await withNoticeState(async () => {
+    const terminalAt = '2026-11-21T06:00:00.000Z';
+    const at = minutes => new Date(Date.parse(terminalAt) + minutes * MINUTE).toISOString();
+    // v0.7.4's receipt: no saved_at, no sent_at, the terminal sighting dated
+    writeRecord('child', {dispatch_id: 'child', parent_id: 'parent', agent_id: 'worker', status: 'watching', delivered: [],
+      seen: true, created_at: Date.parse(terminalAt) - 30 * MINUTE, deadline: Date.parse(terminalAt) + 7 * 24 * 60 * MINUTE,
+      creation_deadline: Date.parse(terminalAt) - 28 * MINUTE,
+      pending: {key: 'terminal', reason: 'finished', messageId: idOf('child'), text: 'THE NOTICE'},
+      terminal: {reason: 'finished', status: 'idle', attentionReason: 'finished', at: terminalAt}});
+    // the notice lands a minute after the sighting; the parent then works on, many pages
+    const rows = [accepted(idOf('child'), {timestamp: at(1)})];
+    for (let n = 2; n < 14; n++) rows.push({item: {type: 'assistant_message', text: `work ${n}`}, timestamp: at(n)});
+    const sends = [], reads = [];
+    const answer = await notifyEnd(unknownClient(rows, sends, reads), {dispatch_id: 'child', parent_id: 'parent'},
+      Date.parse(terminalAt) + 300 * MINUTE);
+    assert.equal(answer.outcome, 'found');
+    assert.equal(sends.length, 1, 'the one send of its own id, answered unknown; nothing new is sent');
+    assert.ok(reads.length >= 7, String(reads.length));
+  });
+});
+
+test("a catch-up does not write over a receipt whose watcher is still running the attempt's fallback", async () => {
+  for (const status of ['running', 'scheduled', 'waiting']) {
+    await withNoticeState(async () => {
+      const record = {dispatch_id: 'child', parent_id: 'parent', status: 'watching', delivered: [], seen: true,
+        pending: null, pid: process.pid, terminal: {reason: 'error', status: 'error', at: SAVED_AT},
+        fallback: {status, at: SAVED_AT}};
+      const file = writeRecord('child', record);
+      const before = fs.readFileSync(file, 'utf8');
+      const sends = [];
+      const client = {fetchAgent: async () => ({agent: {status: 'idle'}}), fetchAgentTimeline: async () => ({entries: []}),
+        sendMessage: async (...args) => sends.push(args)};
+      assert.deepEqual(await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'}), {ok: false, error: 'fallback_pending'});
+      assert.equal(sends.length, 0, status);
+      assert.equal(fs.readFileSync(file, 'utf8'), before, status);
+      // a watcher that died with its fallback open holds nothing: the registry asked, so the notice goes
+      writeRecord('child', {...record, pid: 2 ** 30});
+      assert.equal((await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'})).sent, true, status);
+    });
+  }
+});
+
+test('the search for a notice stops at rows older than its first save, and a pending with no time of its own reads one page', async () => {
   const at = offset => new Date(Date.parse(SAVED_AT) + offset * 1000).toISOString();
   // newest first in reading order: two pages after the save, then a page that reaches before it, then older ones
   const rows = [accepted(idOf('child'), {timestamp: at(-300)}), {item: {type: 'assistant_message', text: 'a'}, timestamp: at(-200)},
@@ -2212,11 +2313,11 @@ test('the search for a notice stops at rows older than its first save, and a pen
     {item: {type: 'assistant_message', text: 'f'}, timestamp: at(30)}, {item: {type: 'assistant_message', text: 'g'}, timestamp: at(40)}];
   for (const [pending, pages] of [[{saved_at: SAVED_AT}, 3], [{}, 1]]) {
     await withNoticeState(async () => {
-      writeRecord('child', pendingRecord({pending: {key: 'terminal', text: 'THE NOTICE', ...pending}}));
+      writeRecord('child', pendingRecord({pending: {key: 'terminal', text: 'THE NOTICE', sent_at: SAVED_AT, ...pending}}));
       const sends = [], reads = [];
       const client = unknownClient(rows, sends, reads);
       client.sendMessage = async (...args) => {sends.push(args); if (args[2].messageId === idOf('child')) throw new Error(UNKNOWN);};
-      const answer = await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'});
+      const answer = await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'}, LATER);
       assert.equal(answer.outcome, 'resent', JSON.stringify(pending));
       assert.equal(reads.length, pages, JSON.stringify(pending));
     });

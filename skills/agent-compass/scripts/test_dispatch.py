@@ -1489,23 +1489,212 @@ except ValueError as e:
         self.assertEqual((stored['end_notice']['source'], stored['end_notice']['message_id']),
                          ('watcher', registry.end_notice_message_id(stored['dispatch_id'])))
 
-    def test_a_notice_given_up_as_undelivered_stops_being_due_and_one_answer_names_it(self):
+    def test_a_notice_given_up_as_undelivered_is_named_once_in_its_own_parents_next_router_answer(self):
+        # dispatch_flow.name_undelivered: no read's answer carries it (a gate read, a watcher's settle, the tray's log);
+        # the row's end_notice is the record, and the parent's own router call is the first sign it takes turns again.
         used = hashlib.sha256(b'third id').hexdigest()
         answers = {'catchup': {'ok': True, 'sent': False, 'error': 'notice_undelivered', 'outcome': 'undelivered', 'message_id': used},
                    'watcher': {'ok': True, 'sent': False, 'error': 'notice_undelivered', 'message_id': used}}
+        parent = self.task['parent_agent_id']
+        given_up = []
         for who, answer in answers.items():
             receipt = {'pending': {'key': 'terminal', 'text': 'notice'}} if who == 'catchup' else {'pending': None}
             stored, state, when = self._due_notice('watching' if who == 'catchup' else 'undelivered', **receipt)
-            self.assertEqual(stored['end_notice']['state'], 'due', who)
             with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}), \
                     patch.object(flow, 'paseo_config', return_value={'daemon': 'fixture'}), \
                     patch.object(flow, 'host_call', return_value=answer):
-                first = flow.end_notices({}, now=when)
-                second = flow.end_notices({}, now=when)
-            self.assertEqual(first, {'end_notices_undelivered': [stored['dispatch_id']]}, who)
-            self.assertEqual(second, {}, who)
+                self.assertEqual(flow.end_notices({}, now=when), {}, who)
             notice = registry.inspect(stored['dispatch_id'])['end_notice']
             self.assertEqual((notice['state'], notice['source'], notice['message_id']), ('sent', who + '_undelivered', used))
+            given_up.append(stored['dispatch_id'])
+
+        def answer_of(stage, action=None, actual=parent):
+            args = SimpleNamespace(stage=stage, dispatch_action=action, dry_run=False)
+            with patch.dict(os.environ, {'PASEO_AGENT_ID': actual}):
+                return flow.name_undelivered({'status': 'ok'}, args)
+        # Not to another parent, not to a caller with no Paseo parent (the tray), not to a watcher's own steps.
+        self.assertEqual(answer_of('roll', actual='parent-b'), {'status': 'ok'})
+        self.assertEqual(answer_of('roll', actual=''), {'status': 'ok'})
+        self.assertEqual(answer_of('dispatch', 'settle'), {'status': 'ok'})
+        self.assertEqual(answer_of('dispatch', 'fallback'), {'status': 'ok'})
+        named = answer_of('roll')
+        self.assertEqual(sorted(item['dispatch_id'] for item in named['undelivered_end_notices']), sorted(given_up))
+        self.assertEqual(named['undelivered_end_notices_meaning'], flow.UNDELIVERED_MEANING)
+        self.assertEqual(answer_of('dispatch', 'reconcile'), {'status': 'ok'})   # named once
+        # Every stage's answer goes through it (route_judge._run_stage).
+        import route_judge
+        seen = []
+        with patch.object(route_judge, '_stage_result', return_value=({'status': 'ok'}, 0, False)), \
+                patch.object(flow, 'name_undelivered', side_effect=lambda result, args: seen.append(args.stage) or result), \
+                patch('builtins.print'):
+            route_judge._run_stage(route_judge.build_parser().parse_args(['plan', '--input', '-']))
+        self.assertEqual(seen, ['plan'])
+
+    def _failed_attempt(self, code=None):
+        """A launched dispatch whose worker ended in an error, its watcher dead with the end notice due: the end time."""
+        self._attempts = getattr(self, '_attempts', 0) + 1
+        task = dict(self.task, task_id=f'attempt-{self._attempts}')
+        row = self.prepare(self.issue(task), task)
+        registry.claim(row['request'], now=self.now)
+        registry.observe(row['dispatch_id'], self.snapshot(row), now=self.now)
+        ended = self.now + timedelta(seconds=30)
+        with registry.transaction() as connection:
+            current = registry.get(connection, 'dispatches', row['dispatch_id'])
+            current['agent_id'] = 'worker-' + row['dispatch_id']
+            registry.save(connection, current)
+        registry.observe(row['dispatch_id'], self.snapshot(row, 'error', id='worker-' + row['dispatch_id'],
+                         attentionReason='error', updatedAt=ended.isoformat()), now=ended)
+        with registry.transaction() as connection:
+            current = registry.get(connection, 'dispatches', row['dispatch_id'])
+            if code:
+                current['failure_code'] = code
+            current['end_notice'] = {'state': 'due', 'message_id': registry.end_notice_message_id(row['dispatch_id'])}
+            registry.save(connection, current)
+        stored = registry.inspect(row['dispatch_id'])
+        self.assertEqual(stored['state'], 'failed')
+        return stored, ended
+
+    def test_an_attempt_whose_fallback_may_still_relaunch_has_no_end_notice_until_its_chain_is_final(self):
+        # dispatch_registry._chain_hold: one brief gets one end notice, when its chain is final. Fallback is on, as by
+        # default. Each case is one attempt; the notice is asked for through the catch-up (deliver_end_notices).
+        import dispatch_fallback
+        self.assertTrue(dispatch_fallback.enabled())
+        soon = timedelta(seconds=registry.RUN_LEASE // 2)
+
+        def handled(stored, outcome, **fields):
+            def change(fallback):
+                fallback.update(fields)
+                fallback['handled'] = {**(fallback.get('handled') or {}), stored['dispatch_id']: outcome}
+            registry.update_fallback(stored['dispatch_id'], change)
+
+        def ask(stored, at):
+            calls = []
+
+            def host(payload):
+                calls.append(payload['dispatch_id'])
+                return {'ok': True, 'sent': True, 'message_id': registry.end_notice_message_id(payload['dispatch_id'])}
+            flow.deliver_end_notices(now=at, host=host)
+            return stored['dispatch_id'] in calls, registry.inspect(stored['dispatch_id'])['end_notice']
+
+        # A covered failure no observer took yet: it waits while a fallback step may still take it ...
+        stored, ended = self._failed_attempt()
+        self.assertTrue(dispatch_fallback.failure_of(stored)['covered'])
+        self.assertEqual(ask(stored, ended + soon), (False, {'state': 'due', 'message_id': registry.end_notice_message_id(stored['dispatch_id'])}))
+        # ... and past the time a fallback step holds its claim it is closed in its chain and sent; no later step relaunches it.
+        sent, notice = ask(stored, ended + timedelta(seconds=registry.RUN_LEASE + 1))
+        self.assertEqual((sent, notice['state'], notice['source']), (True, 'sent', 'catchup'))
+        closed = registry.inspect(stored['dispatch_id'])['fallback']['handled'][stored['dispatch_id']]
+        self.assertEqual((closed['action'], closed['result']), ('final', 'not_handled'))
+        self.assertEqual(dispatch_fallback.handle(stored['dispatch_id'], judge=object(), host=lambda _p: {'ok': False}), closed)
+
+        # A step in progress (its claim inside its own until) waits; a scheduled retry waits while its guard holds.
+        stored, ended = self._failed_attempt()
+        handled(stored, {'action': 'pending', 'at': registry.stamp(ended), 'until': registry.stamp(ended + soon * 2)})
+        self.assertFalse(ask(stored, ended + soon)[0])
+        stored, ended = self._failed_attempt()
+        handled(stored, {'action': 'scheduled', 'retry_at': registry.stamp(ended + soon)}, state='retrying',
+                retry_of=stored['dispatch_id'], retry_at=registry.stamp(ended + soon), until=registry.stamp(ended + soon * 3))
+        self.assertFalse(ask(stored, ended + soon * 2)[0])
+        # Past the guard the retry never starts (its claim retires it), so the notice goes.
+        self.assertTrue(ask(stored, ended + soon * 4)[0])
+
+        # Relaunched: another attempt carries the brief and its own notice reports it; this one is not owed.
+        stored, ended = self._failed_attempt()
+        handled(stored, {'action': 'relaunched', 'dispatch_id': 'attempt-2'})
+        sent, notice = ask(stored, ended + soon)
+        self.assertEqual((sent, notice['state'], notice['source']), (False, 'sent', 'relaunched'))
+
+        # Final: sent at once.
+        stored, ended = self._failed_attempt()
+        handled(stored, {'action': 'final', 'result': 'blocked'})
+        self.assertTrue(ask(stored, ended + soon)[0])
+
+        # A failure the fallback does not cover, and any failure once the fallback is switched off, is sent at once.
+        stored, ended = self._failed_attempt('task_input_rejected')
+        self.assertFalse(dispatch_fallback.failure_of(stored)['covered'])
+        self.assertTrue(ask(stored, ended + soon)[0])
+        stored, ended = self._failed_attempt()
+        with patch.dict(os.environ, {'AGENTCOMPASS_ROLL_FALLBACK': 'off'}):
+            self.assertTrue(ask(stored, ended + soon)[0])
+
+    def _resume_row(self):
+        self._resumes = getattr(self, '_resumes', 0) + 1
+        task = dict(self.task, task_id=f'resume-{self._resumes}')
+        return registry.prepare(self.issue(task)['decision_id'], task, self.launch, self.usage, accounts=self.accounts,
+                                now=self.now, resume_agent_id='w-vanished', fallback_prompt='Only fixture work')
+
+    def test_a_launching_claim_belongs_to_the_roll_that_made_it(self):
+        # dispatch_registry._in_flight_claim and fallback_to_create: a reconcile that runs while roll's automatic resume
+        # is in flight, the worker no longer listed, leaves the claim to roll; roll creates a worker only on a claim that
+        # is still its own, so no worker runs without the row that binds it. The two run interleaved for real.
+        import threading
+        import account_fleet as fleet
+        import usage_reading as readings
+
+        def run(lose_claim):
+            row = self._resume_row()
+            in_resume, go_on, created = threading.Event(), threading.Event(), []
+
+            def host(payload):
+                if payload['operation'] == 'resume':
+                    in_resume.set()
+                    go_on.wait(10)
+                    return {'ok': False, 'sent': False, 'error': 'worker_not_found', 'condition': 'absent'}
+                if payload['operation'] == 'create':
+                    created.append(payload['dispatch_id'])
+                    return {'ok': True, 'sent': True, 'agent': self.snapshot(row, id='w-new'),
+                            'completion_notification': {'status': 'watching'}}
+                if payload.get('agent_id') == 'w-new':
+                    return {'ok': True, 'agent': self.snapshot(row, id='w-new')}
+                return {'ok': True, 'agent': None, 'missing': True}
+            result = {}
+            with patch.object(fleet, 'load_accounts', return_value=self.accounts), \
+                    patch.object(readings, 'usage_snapshot', return_value=self.usage):
+                roll_thread = threading.Thread(target=lambda: result.update(
+                    flow.launch(row['dispatch_id'], 'parent-a', host, watch_seconds=0)))
+                roll_thread.start()
+                self.assertTrue(in_resume.wait(10))
+                claimed = registry.inspect(row['dispatch_id'])
+                self.assertEqual((claimed['state'], claimed['agent_id']), ('launching', 'w-vanished'))
+                # The periodic reconcile, while roll's resume is still out.
+                flow.reconcile(None, host=lambda payload: {'ok': True, 'agent': None, 'missing': True})
+                if lose_claim:   # another step settled the row in the meantime
+                    registry.release(row['dispatch_id'], 'parent-a', 'settled elsewhere', failed=True)
+                go_on.set()
+                roll_thread.join(10)
+            return row, result, created
+
+        row, result, created = run(lose_claim=False)
+        after = registry.inspect(row['dispatch_id'])
+        self.assertEqual(created, [row['dispatch_id']])
+        self.assertEqual((after['state'], after['agent_id'], after['operation']), ('started', 'w-new', 'create'))
+        self.assertEqual((result['state'], result['agent_id']), ('started', 'w-new'))
+        self.assertIn(row['dispatch_id'], [r['dispatch_id'] for r in registry.reservations()])
+
+        row, result, created = run(lose_claim=True)
+        self.assertEqual(created, [])
+        self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'failed')
+        self.assertEqual(result['state'], 'failed')
+
+        # Past its create window a claim no observation bound is no roll's any more: a removed worker cancels it.
+        row = self._resume_row()
+        registry.claim(row['request'], now=self.now)
+        late = registry.create_deadline(registry.inspect(row['dispatch_id']))
+        flow.reconcile(row['dispatch_id'], host=lambda _p: {'ok': True, 'agent': None, 'missing': True}, now=late)
+        self.assertEqual(registry.inspect(row['dispatch_id'])['state'], 'canceled')
+
+    def test_a_create_observed_idle_after_its_prompt_reads_as_before(self):
+        # The `started_at` an observation keeps for a delivered prompt is a resume's (its turn landing on a worker an
+        # earlier round used); a create's states stay as they were: launched until its run is seen or it finishes.
+        row = self.prepare()
+        registry.claim(row['request'], now=self.now)
+        prompt = (self.now + timedelta(seconds=5)).isoformat()
+        first = registry.observe(row['dispatch_id'], self.snapshot(row, 'idle', lastUserMessageAt=prompt,
+                                 updatedAt=(self.now + timedelta(seconds=6)).isoformat()), now=self.now + timedelta(seconds=7))
+        self.assertEqual((first['state'], first.get('started_at')), ('launched', None))
+        second = registry.observe(row['dispatch_id'], self.snapshot(row, 'idle', lastUserMessageAt=prompt,
+                                  updatedAt=(self.now + timedelta(seconds=8)).isoformat()), now=self.now + timedelta(seconds=9))
+        self.assertEqual(second['state'], 'launched')
 
     def test_a_removed_worker_leaves_its_notice_due_for_the_catch_up(self):
         # missing_agent is a terminal writer like settle_create and observe: it records the end notice too.

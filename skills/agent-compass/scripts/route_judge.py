@@ -1244,6 +1244,7 @@ def _run_stage(args):
     if args.stage in ('dispatch', 'launch') and args.dry_run:
         raise ValueError('Dispatch/launch is a lifecycle operation; use an isolated fake host for tests')
     result, code, table = _stage_result(args)
+    result = dispatch_flow.name_undelivered(result, args)
     if notes and isinstance(result, dict):
         result['warnings'] = [*(result.get('warnings') or []), *notes]
     print(render(result, table=table))

@@ -51,6 +51,8 @@ const RETRY_STUCK = 'provider retry stuck';
 // classifier's scope; this list only says which sightings to hand over before telling the parent anything).
 const FALLBACK_REASONS = new Set(['error', RETRY_STUCK, CREATE_FAILED]);
 const FALLBACK_TEXT_LIMIT = 6000;
+// A watcher's fallback step that is not over: running, waiting on another observer, or a retry scheduled.
+const FALLBACK_OPEN = new Set(['running', 'scheduled', 'waiting']);
 // A final reply at or under this length is in the one end notice. A longer one is written beside the receipt
 // and the notice carries a summary plus that path, so the parent does not call another tool to read it.
 export const REPORT_INLINE_LIMIT = 8000;
@@ -266,47 +268,85 @@ function noticeMessageId(dispatchId, key, attempt = 0) {
 const OUTCOME_UNKNOWN = 'agent_request_outcome_unknown';
 const outcomeUnknown = error => error?.message === OUTCOME_UNKNOWN;
 const TIMELINE_PAGE = 200;
-// At most this many ids per notice (attempt 0 and two derived): past it nothing more is sent and the notice is
-// recorded `undelivered`. Each id costs a Paseo receipt and a delivery attempt.
-const NOTICE_IDS = 3;
+// After Paseo answers that an id's outcome is unknown and the parent's timeline does not hold the notice, the next id is
+// derived no sooner than this after the previous one was first sent: 15 minutes after id 0, 60 after id 1. A parent whose
+// turns are rejected for a while (its provider down, its account signed out) is tried again at 15 and 75 minutes, so one
+// unreachable for an hour gets the notice when it recovers. The third id answered unknown and not in the timeline is the
+// end: nothing more is sent, the receipt says `undelivered`, and the parent's own next router call names the notice
+// (dispatch_flow.name_undelivered). Past an hour and a quarter of rejected turns another blind send says nothing new,
+// and that call is the first sign the parent takes turns again.
+const RESEND_AFTER_MS = Object.freeze([15 * 60 * 1000, 60 * 60 * 1000]);
+const NOTICE_IDS = RESEND_AFTER_MS.length + 1;
+// The text Paseo opens its own timeline row with when a turn fails, a turn that failed to start included
+// (agent-manager.ts SYSTEM_ERROR_PREFIX, appendSystemErrorTimelineMessage). Compared in memory only, never stored.
+const SYSTEM_ERROR_PREFIX = '[System Error]';
+
+// Whether a timeline row is the error row Paseo writes right after a prompt whose turn failed to start: an assistant
+// message outside any turn that opens with Paseo's own prefix. A replay from provider history writes no such row.
+function rejectionRow(entry) {
+  const item = entry?.item;
+  return item?.type === 'assistant_message' && !entry.turnId && typeof item.text === 'string'
+    && item.text.startsWith(SYSTEM_ERROR_PREFIX);
+}
 
 // The id of the parent's timeline row that is this notice, or null. Paseo records a message sent without a source
-// under the id it was sent with (`clientMessageId`, and `messageId`), so the ids say which notice it is and no text is
-// read. The ids hash this dispatch id and notice key, so another dispatch's notice, and a resume prompt (whose id is a
-// dispatch id), never match. Only a row Paseo accepted counts: an accepted prompt (turn start, accepted steer) carries
-// the entry's `turnId`, and a prompt whose turn failed to start is recorded `rejected` with none
-// (agent-manager.ts recordSubmittedPrompt). Paged back from the newest; the page that reaches rows older than `since`
-// (the notice's first save) is the last read. A page that cannot be read throws, and nothing is decided.
+// under the id it was sent with (`clientMessageId`, and `messageId`), so the ids say which notice it is and no text of
+// the parent's conversation is read. The ids hash this dispatch id and notice key, so another dispatch's notice, and a
+// resume prompt (whose id is a dispatch id), never match. A matching row is a delivery unless Paseo rejected it: a
+// prompt whose turn failed to start is recorded with no `turnId` and followed at once by Paseo's error row
+// (agent-manager.ts recordSubmittedPrompt `rejected`, then turn_failed). A rejected prompt never reaches provider
+// history, and a timeline Paseo rebuilt from that history after a restart has no `turnId` on any row and no error rows,
+// so a row there counts. Paged back from the newest; the page that reaches rows older than `since` is the last read. A
+// page that cannot be read throws, and nothing is decided.
 async function noticeInTimeline(client, parentId, ids, since) {
   const wanted = new Set(ids);
   let cursor = null;
+  let newer = null;   // the first row of the newer page: the row after this page's last
   for (;;) {
     const page = await client.fetchAgentTimeline(parentId, {direction: cursor ? 'before' : 'tail',
       ...(cursor ? {cursor} : {}), limit: TIMELINE_PAGE, projection: 'canonical'});
     const entries = page?.entries ?? [];
-    for (const entry of entries) {
-      const item = entry?.item;
-      if (item?.type !== 'user_message' || typeof entry.turnId !== 'string' || !entry.turnId) continue;
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i], item = entry?.item;
+      if (item?.type !== 'user_message') continue;
       const id = wanted.has(item.clientMessageId) ? item.clientMessageId : wanted.has(item.messageId) ? item.messageId : null;
-      if (id) return id;
+      if (!id) continue;
+      const next = i + 1 < entries.length ? entries[i + 1] : newer;
+      if ((typeof entry.turnId === 'string' && entry.turnId) || !rejectionRow(next)) return id;
     }
+    if (entries.length) newer = entries[0];
     const oldest = Date.parse(entries[0]?.timestamp ?? '');
     if (!page?.hasOlder || !page.startCursor || (Number.isFinite(oldest) && oldest < since)) return null;
     cursor = page.startCursor;
   }
 }
 
+// How far back a notice can be in the parent's timeline: its first save (`saved_at`). A pending notice saved before
+// that field existed (v0.7.4) is no older than the terminal sighting that composed it (`terminal.at`), else than its
+// receipt (`created_at`).
+function noticeSince(record, now) {
+  for (const value of [record.pending?.saved_at, record.terminal?.at, record.created_at]) {
+    const at = typeof value === 'number' ? value : Date.parse(value ?? '');
+    if (Number.isFinite(at)) return at;
+  }
+  return now;
+}
+
 // The one send of a notice, for the watcher's step and the catch-up alike. `record.pending` holds the text, its key,
-// its attempt and `saved_at` (its first save, before its first send), saved before every send. Returns the outcome and
-// the id it ended on: `sent`; or, after Paseo answered that an earlier send of this notice has an unknown outcome,
-// `found` (the parent's timeline holds it, accepted: it was delivered), `resent` (it does not: sent once under the next
-// derived id), or `undelivered` (it does not, and the notice has used its ids: nothing is sent). Any other failure, a
-// timeline that cannot be read included, throws with the pending notice kept, and the next read starts here again.
-// A pending notice saved before `saved_at` existed searches from now: only the newest page.
+// its attempt, `saved_at` (its first save, before its first send) and `sent_at` (when the current id was first sent),
+// saved before every send. Returns the outcome and the id it ended on: `sent`; or, after Paseo answered that an earlier
+// send of this notice has an unknown outcome, `found` (the parent's timeline holds it: it was delivered), `waiting` (it
+// does not, and the next id is not due yet, RESEND_AFTER_MS: nothing is sent, and nothing is read until it is due),
+// `resent` (sent once under the next derived id), or `undelivered` (its ids are used: nothing is sent). Any other
+// failure, a timeline that cannot be read included, throws with the pending notice kept, and the next read starts here.
 async function deliverNotice(client, record, persist, now = Date.now()) {
   const pending = record.pending;
   const attempt = Number.isInteger(pending.attempt) && pending.attempt > 0 ? pending.attempt : 0;
   pending.messageId = noticeMessageId(record.dispatch_id, pending.key, attempt);
+  if (typeof pending.sent_at !== 'string' || !Number.isFinite(Date.parse(pending.sent_at)))
+    pending.sent_at = new Date(now).toISOString();
+  const nextAt = Date.parse(pending.sent_at) + (RESEND_AFTER_MS[attempt] ?? 0);
+  if (pending.unknown === true && now < nextAt) return {outcome: 'waiting', messageId: pending.messageId};
   persist();
   const send = () => client.sendMessage(record.parent_id, pending.text,
     {messageId: pending.messageId, activeTurnBehavior: 'steer'});
@@ -317,19 +357,25 @@ async function deliverNotice(client, record, persist, now = Date.now()) {
     if (!outcomeUnknown(error)) throw error;
   }
   const ids = Array.from({length: attempt + 1}, (_, n) => noticeMessageId(record.dispatch_id, pending.key, n));
-  const since = Date.parse(pending.saved_at ?? '');
-  const found = await noticeInTimeline(client, record.parent_id, ids, Number.isFinite(since) ? since : now);
+  const found = await noticeInTimeline(client, record.parent_id, ids, noticeSince(record, now));
   if (found) return {outcome: 'found', messageId: found};
   if (attempt + 1 >= NOTICE_IDS) return {outcome: 'undelivered', messageId: pending.messageId};
+  if (now < nextAt) {
+    pending.unknown = true;
+    persist();
+    return {outcome: 'waiting', messageId: pending.messageId};
+  }
   pending.attempt = attempt + 1;
   pending.messageId = noticeMessageId(record.dispatch_id, pending.key, pending.attempt);
+  pending.sent_at = new Date(now).toISOString();
+  delete pending.unknown;
   persist();
   await send();
   return {outcome: 'resent', messageId: pending.messageId};
 }
 
 // Record how a terminal notice's send ended. `delivered` for a send, a find or a resend; `undelivered` keeps the
-// pending text off the receipt's next sends (nothing more is sent) and is reported by the next catch-up.
+// pending text off the receipt's next sends (nothing more is sent) and the next catch-up records it on the row.
 function settleTerminal(record, result) {
   record.delivery_message_id = result.messageId;
   if (result.outcome !== 'sent') record.delivery_outcome = result.outcome;
@@ -515,13 +561,16 @@ function endingSentence(reason, terminal, targetId) {
   if (reason === 'finished') return 'The worker finished its turn without a final reply.\n';
   if (reason === WATCH_EXPIRED)
     return 'The notification watch expired before this worker was seen to end; check it with get_agent_status. It left no final reply that was read.\n';
-  if (reason === SUPERSEDED) return "This dispatch's turn left no final reply.\n";
+  if (reason === NOT_LANDED_STATE) return "This dispatch's turn left no final reply.\n";
   if (reason === END_UNKNOWN)
     return 'This dispatch ended, but the notification watch did not see how: whether it finished, failed or was canceled is not known here. ' +
       `Check the worker with get_agent_status (agentId: ${targetId}).\n`;
   return WITHOUT_REPLY;
 }
 
+// The state a catch-up names for a record the watcher ended as superseded, sent only once the registry found no later
+// turn of this parent that landed (dispatch_registry.due_end_notices): this dispatch's own end, as the body says.
+const NOT_LANDED_STATE = 'ended; no later turn of this parent landed on this worker';
 const NOT_LANDED = "A later dispatch took this worker's labels, but AgentCompass recorded no turn of it from this " +
   "parent that landed on this worker, so this is this dispatch's own end.\n";
 
@@ -570,7 +619,7 @@ async function noticeBody(client, record, event) {
       "error of the worker's own work or of this task's input holds nothing.\n" : '';
   // Sent only by a catch-up: the registry found no turn of the later dispatch that landed (dispatch_registry
   // .due_end_notices), so the worker's latest reply is still this dispatch's.
-  const notLanded = event.reason === SUPERSEDED ? NOT_LANDED : '';
+  const notLanded = event.reason === NOT_LANDED_STATE ? NOT_LANDED : '';
   return classifier + notLanded + reportSection(record.dispatch_id, await loadFinalReply(client, targetId),
     endingSentence(event.reason, record.terminal, targetId));
 }
@@ -823,6 +872,7 @@ export async function notificationStep(client, record, persist, now = Date.now()
   }
   if (!record.pending) return false;
   const result = await deliverNotice(client, record, persist, now);
+  if (result.outcome === 'waiting') return false;
   if (record.pending.key !== 'terminal') {
     record.delivered.push(record.pending.key);
     record.pending = null;
@@ -839,7 +889,7 @@ export async function notificationStep(client, record, persist, now = Date.now()
 // attempt's unknown outcome ended: `found` in the parent's timeline (nothing sent), `resent` under the next derived id,
 // or `undelivered` (error `notice_undelivered`: its ids are used up and nothing more is sent). A receipt that claims a
 // later dispatch (`continued_by`) is sent here: the registry calls this only when that dispatch did not land.
-export async function notifyEnd(client, input) {
+export async function notifyEnd(client, input, now = Date.now()) {
   let file;
   try { file = notificationFile(input.dispatch_id); }
   catch { return {ok: false, error: 'notification_unavailable'}; }
@@ -854,6 +904,10 @@ export async function notifyEnd(client, input) {
   if (record.status === 'delivered' || delivered.includes('terminal')
       || (DONE.has(record.status) && record.status !== 'delivery_failed' && !claimed))
     return alreadyNotice(record, delivered);
+  // A watcher still running this attempt's fallback holds the receipt in memory and writes it back: writing here would
+  // be overwritten, and the fallback may still relaunch the brief. The registry does not ask then
+  // (dispatch_registry._chain_hold); this refuses it if it does, and the notice stays due.
+  if (FALLBACK_OPEN.has(record.fallback?.status) && alive(record.pid)) return {ok: false, error: 'fallback_pending'};
   if (claimed) {
     delete record.continued;
     delete record.continued_by;
@@ -883,9 +937,13 @@ export async function notifyEnd(client, input) {
     saveRecord(file, record);
     return {ok: true, sent: false, already: true, evidence: 'skipped', skipped: 'continued'};
   }
-  record.pending = pendingEnd ?? {key: 'terminal', text, saved_at: new Date().toISOString()};
+  record.pending = pendingEnd ?? {key: 'terminal', text, saved_at: new Date(now).toISOString()};
   saveRecord(file, record);
-  const result = await deliverNotice(client, record, () => saveRecord(file, record));
+  const result = await deliverNotice(client, record, () => saveRecord(file, record), now);
+  if (result.outcome === 'waiting') {
+    saveRecord(file, record);
+    return {ok: false, error: 'notice_resend_wait', message_id: result.messageId};
+  }
   settleTerminal(record, result);
   saveRecord(file, record);
   const id = {message_id: result.messageId};
@@ -898,6 +956,7 @@ export async function notifyEnd(client, input) {
 // `worker unavailable`, as a watcher would have said; a read that fails, or a worker still listed, leaves the
 // registry's recorded ending (recordedEnd).
 async function catchUpReason(client, record, input) {
+  if (record.terminal?.reason === SUPERSEDED) return NOT_LANDED_STATE;
   if (record.terminal?.reason) return record.terminal.reason;
   try {
     const found = await client.fetchAgent(record.agent_id ?? record.dispatch_id);
