@@ -353,6 +353,7 @@ class DispatchNoticeUnitTests(unittest.TestCase):
         parent_id: object = "parent-1",
         fallback: dict | None = None,
         pending: dict | None = None,
+        terminal: dict | None = None,
         mtime_age_s: float = 0.0,
     ) -> Path:
         notif_dir = self.state_dir / "paseo-notifications"
@@ -371,6 +372,7 @@ class DispatchNoticeUnitTests(unittest.TestCase):
             "deadline": now_ms + 3600_000,
             "creation_deadline": now_ms + 240_000,
             **({"fallback": fallback} if fallback is not None else {}),
+            **({"terminal": terminal} if terminal is not None else {}),
         }
         path.write_text(json.dumps(record), encoding="utf-8")
         if mtime_age_s:
@@ -1058,6 +1060,152 @@ class DispatchNoticeUnitTests(unittest.TestCase):
             mono[0] = 1000.0 + 2166.0
             self.assertTrue(services.dispatch_notice_tick())
             self.assertEqual(started_times[-1], 2166.0)
+
+    def test_unsettled_receipt_ending_gate_and_exclusions(self):
+        now = datetime(2026, 11, 21, 12, 0, 0, tzinfo=timezone.utc)
+        fin_at = (now - timedelta(seconds=5)).isoformat()
+        valid_terminal = {
+            "reason": "finished",
+            "status": "idle",
+            "attentionReason": "finished",
+            "at": fin_at,
+            "replied": True,
+        }
+
+        # Positive: open rows (`launching` past send window, `launched`, `started`) and live `expired` rows
+        # whose readable receipt proves an ending (`dispatch_registry.state_from_receipt`) get a pass.
+        for state in ("launching", "launched", "started", "expired"):
+            for done_status in ("delivery_failed", "delivered"):
+                with self.subTest(state=state, done_status=done_status):
+                    db_pos = self.root / f"n1-pos-{state}-{done_status}.sqlite3"
+                    did = f"d-pos-{state}-{done_status}"
+                    row = base_paseo_row(did, state=state, now=now)
+                    if state == "launching":
+                        row["launched_at"] = (now - timedelta(seconds=registry.CREATE_SEND_WINDOW + 5)).isoformat()
+                    elif state == "expired":
+                        row["lease_until"] = (now - timedelta(minutes=5)).isoformat()
+                        row["hard_until"] = (now + timedelta(hours=12)).isoformat()
+                    seed_dispatch_row(db_pos, row)
+                    self.write_receipt(did, status=done_status, pid=999999, terminal=valid_terminal)
+                    self.assertEqual(registry.state_from_receipt(row, registry.watcher_receipt(did))[0], "completed")
+                    with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_pos)}):
+                        self.assertTrue(services.dispatch_notice_needed(now=now))
+
+        # Exclusions: zero processes over 4 ticks when the row is a parent follow-up, or when the receipt is
+        # `parent_unavailable`, a refused resume (`creation_failed` with no terminal), or anything
+        # `dispatch_registry.state_from_receipt` reads as no ending.
+        db_pu = self.root / "n1-parent-unavail.sqlite3"
+        seed_dispatch_row(db_pu, base_paseo_row("d-n1-pu", state="started", now=now))
+        self.write_receipt("d-n1-pu", status="parent_unavailable", pid=999999, terminal=None)
+        with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_pu)}):
+            self.assert_zero_processes_over_ticks(now)
+
+        db_refused = self.root / "n1-refused-resume.sqlite3"
+        refused_row = base_paseo_row("d-n1-refused", state="expired", agent_id="w-prev", now=now)
+        refused_row["operation"] = "resume"
+        refused_row["lease_until"] = (now - timedelta(minutes=5)).isoformat()
+        refused_row["hard_until"] = (now + timedelta(hours=12)).isoformat()
+        seed_dispatch_row(db_refused, refused_row)
+        self.write_receipt("d-n1-refused", status="creation_failed", pid=999999, terminal=None)
+        (self.state_dir / "paseo-notifications" / "d-n1-refused.json.creation-failed").write_text(
+            "host_resume_failed", encoding="utf-8"
+        )
+        with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_refused)}):
+            self.assert_zero_processes_over_ticks(now)
+
+        for label, bad_terminal in (
+            ("creation_failed_reason", {"reason": "creation failed", "failure_class": "provider_unavailable", "at": fin_at}),
+            ("predates_launch", {"reason": "finished", "at": (now - timedelta(minutes=10)).isoformat(), "replied": True}),
+            ("unknown_reason", {"reason": "not_a_known_ending", "at": fin_at}),
+        ):
+            with self.subTest(no_ending_case=label):
+                db_ne = self.root / f"n1-noend-{label}.sqlite3"
+                did = f"d-noend-{label}"
+                row = base_paseo_row(did, state="started", now=now)
+                seed_dispatch_row(db_ne, row)
+                self.write_receipt(did, status="delivery_failed", pid=999999, terminal=bad_terminal)
+                self.assertIsNone(registry.state_from_receipt(row, registry.watcher_receipt(did))[0])
+                with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_ne)}):
+                    self.assert_zero_processes_over_ticks(now)
+
+        # Parent follow-up (`host_followup` reopened `started` row) keeps Turn 1's `delivered` + `terminal` receipt:
+        # must start zero passes across ticks.
+        db_fup = self.root / "n1-followup.sqlite3"
+        fup_row = base_paseo_row("d-n1-fup", state="started", agent_id="w-fup", now=now)
+        fup_row["events"].append(
+            {"state": "started", "at": now.isoformat(), "reason": "host_followup status=running", "kind": registry.HOST_FOLLOWUP_KIND}
+        )
+        self.assertTrue(registry._followed_up(fup_row))
+        seed_dispatch_row(db_fup, fup_row)
+        self.write_receipt("d-n1-fup", status="delivered", pid=999999, terminal=valid_terminal)
+        with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_fup)}):
+            self.assert_zero_processes_over_ticks(now)
+
+    def test_backoff_resets_when_no_pass_needed_including_while_daemon_is_down(self):
+        now = datetime(2026, 11, 21, 12, 0, 0, tzinfo=timezone.utc)
+        seed_dispatch_row(
+            self.db_path,
+            base_paseo_row(
+                "d-comeback-2",
+                state="completed",
+                agent_id="w-comeback-2",
+                now=now,
+                end_notice={"state": "due", "message_id": registry.end_notice_message_id("d-comeback-2")},
+            ),
+        )
+        self.write_receipt("d-comeback-2", status="delivery_failed")
+
+        closed_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        closed_sock.bind(("127.0.0.1", 0))
+        closed_port = closed_sock.getsockname()[1]
+        closed_sock.close()
+
+        mono = [1000.0]
+        with mock.patch.object(services.time, "monotonic", side_effect=lambda: mono[0]), \
+                mock.patch.object(registry, "utcnow", return_value=now), \
+                mock.patch.object(services, "hidden_popen", return_value=self.child(False)) as popen:
+            # Build prior backoff on unchanged reason set: Pass 1 at t=0, Pass 2 at t=60, Pass 3 at t=180
+            # (interval=120 -> next unchanged pass would otherwise wait 240 s until t=420).
+            self.assertTrue(services.dispatch_notice_tick(force=False))  # t=0
+            mono[0] = 1030.0
+            self.assertFalse(services.dispatch_notice_tick(force=False))
+            mono[0] = 1060.0
+            self.assertTrue(services.dispatch_notice_tick(force=False))  # t=60
+            mono[0] = 1090.0
+            self.assertFalse(services.dispatch_notice_tick(force=False))
+            mono[0] = 1180.0
+            self.assertTrue(services.dispatch_notice_tick(force=False))  # t=180
+            self.assertEqual(popen.call_count, 3)
+
+            # Daemon goes down at t=215 (`paseo_reachable` is False -> gate answers no pass needed).
+            self.configure_paseo_daemon(port=closed_port)
+            self.assertFalse(dispatch_flow.paseo_reachable(timeout=0.2))
+            mono[0] = 1215.0
+            self.assertFalse(services.dispatch_notice_tick(force=False))
+            self.assertEqual(popen.call_count, 3)
+
+            # Daemon comes back at t=220; next watch tick at t=225 (+5 s, within one 30 s interval!) runs immediately.
+            srv2, port2, stop2 = start_loopback_listener()
+            try:
+                self.configure_paseo_daemon(port=port2)
+                self.assertTrue(dispatch_flow.paseo_reachable(timeout=0.2))
+                mono[0] = 1225.0
+                self.assertTrue(services.dispatch_notice_tick(force=False))
+                self.assertEqual(popen.call_count, 4)
+
+                # Direct gate query (`dispatch_notice_needed() == False`) while daemon is down also resets backoff,
+                # so once Paseo comes back the pass runs within one 30 s interval.
+                mono[0] = 1255.0
+                self.assertFalse(services.dispatch_notice_tick(force=False))  # doubles to 60 s
+                self.configure_paseo_daemon(port=closed_port)
+                self.assertFalse(services.dispatch_notice_needed(now=now))
+                self.configure_paseo_daemon(port=port2)
+                mono[0] = 1260.0  # +35 s after Pass 4 at t=225, inside old 60 s backoff
+                self.assertTrue(services.dispatch_notice_tick(force=False))
+                self.assertEqual(popen.call_count, 5)
+            finally:
+                stop2.set()
+                srv2.close()
 
     def test_dispatch_notice_log_rotates_above_size_bound(self):
         seed_dispatch_row(self.db_path, base_paseo_row("d-log", state="started"))
@@ -2038,6 +2186,82 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
             len([m for m in self.read_jsonl("raw_sends.jsonl") if "Dispatch: d-race\n" in m["text"]]),
             raw_count,
         )
+
+    def test_unsettled_finished_receipt_with_dead_watcher_settles_and_delivers_in_one_pass(self):
+        now = datetime.now(timezone.utc)
+        fin_at = (now - timedelta(seconds=5)).isoformat()
+        started_row = base_paseo_row("d-unset-df", state="started", agent_id="w-unset-df", now=now)
+        started_row["observed_at"] = started_row["launched_at"]
+        expired_row = base_paseo_row("d-unset-exp", state="expired", agent_id="w-unset-exp", now=now)
+        expired_row["observed_at"] = expired_row["launched_at"]
+        expired_row["lease_until"] = (now - timedelta(minutes=5)).isoformat()
+        expired_row["hard_until"] = (now + timedelta(hours=12)).isoformat()
+        seed_dispatch_row(self.db_path, started_row)
+        seed_dispatch_row(self.db_path, expired_row)
+
+        agents = {}
+        timelines = {}
+        for row in (started_row, expired_row):
+            did = row["dispatch_id"]
+            aid = row["agent_id"]
+            r_path = self.write_dead_watcher_receipt(did, agent_id=aid, status="delivery_failed")
+            rec = json.loads(r_path.read_text(encoding="utf-8"))
+            rec["seen"] = True
+            rec["started"] = True
+            rec["terminal"] = {
+                "reason": "finished",
+                "status": "idle",
+                "attentionReason": "finished",
+                "at": fin_at,
+                "replied": True,
+            }
+            rec["pending"] = {
+                "key": "terminal",
+                "reason": "finished",
+                "messageId": registry.end_notice_message_id(did),
+                "text": (
+                    f"[AgentCompass worker notification]\nDispatch: {did}\nWorker: {aid}\n"
+                    f"State: finished\nFinal reply:\nImportant result for {did}.\n"
+                ),
+                "saved_at": fin_at,
+            }
+            r_path.write_text(json.dumps(rec), encoding="utf-8")
+            agents[aid] = {
+                "id": aid,
+                "status": "idle",
+                "attentionReason": "finished",
+                "provider": "codex",
+                "model": "gpt-6.1-sol",
+                "labels": row["request"]["labels"],
+                "updatedAt": fin_at,
+            }
+            timelines[aid] = [
+                {"timestamp": row["launched_at"], "item": {"type": "user_message", "text": "Run task"}},
+                {"timestamp": fin_at, "item": {"type": "assistant_message", "text": f"Important result for {did}."}},
+            ]
+        self.write_host_state({"parent_id": "parent-1", "agents": agents, "timelines": timelines})
+
+        self.assertTrue(services.dispatch_notice_needed())
+        self.run_pass_and_wait(force=False)
+
+        for did in ("d-unset-df", "d-unset-exp"):
+            settled = registry.inspect(did, self.db_path)
+            self.assertEqual(settled["state"], "completed")
+            self.assertEqual(
+                settled.get("end_notice"),
+                {
+                    "state": "sent",
+                    "message_id": registry.end_notice_message_id(did),
+                    "source": "catchup",
+                },
+            )
+            msgs = [m for m in self.read_jsonl("messages.jsonl") if f"Dispatch: {did}\n" in m["text"]]
+            self.assertEqual(len(msgs), 1)
+            self.assertIn(f"Important result for {did}.", msgs[0]["text"])
+
+        # After the one pass, both rows are settled so the gate does not repeat.
+        self.assertFalse(services.dispatch_notice_needed())
+        self.assertFalse(services.dispatch_notice_tick(force=True))
 
     def test_open_dispatches_with_live_watchers_spawn_zero_processes_and_zero_connections(self):
         for count in (1, 3):

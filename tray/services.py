@@ -955,7 +955,6 @@ _dispatch_notice: dict = {
     "last_reasons": None,
     "interval": DISPATCH_NOTICE_INTERVAL,
     "doubled": False,
-    "local_reasons": None,
     "evaluated_reasons": None,
 }
 
@@ -967,7 +966,6 @@ def _reset_dispatch_notice() -> None:
         last_reasons=None,
         interval=DISPATCH_NOTICE_INTERVAL,
         doubled=False,
-        local_reasons=None,
         evaluated_reasons=None,
     )
 
@@ -1081,6 +1079,16 @@ def _watcher_restartable(dispatch_id: object, state_dir: Path) -> bool:
     return not _watcher_process_alive(record.get("pid"), str(dispatch_id))
 
 
+def _receipt_proves_ending(row: dict, dispatch_id: object, state_dir: Path) -> bool:
+    """True when `row` is not a parent follow-up and its readable receipt already proves an ending to the registry."""
+    if dispatch_registry._followed_up(row):
+        return False
+    record = _readable_receipt(dispatch_id, state_dir)
+    if record is None:
+        return False
+    return dispatch_registry.state_from_receipt(row, record)[0] is not None
+
+
 def _local_dispatch_notice_reasons(now: datetime | None = None) -> frozenset[tuple[str, str]]:
     """Dispatches and reasons for which a reconcile pass can change something now, before probing the local daemon."""
     db = _dispatch_db_path()
@@ -1111,9 +1119,13 @@ def _local_dispatch_notice_reasons(now: datetime | None = None) -> frozenset[tup
                 continue
             if _watcher_restartable(dispatch_id, state_dir):
                 reasons.add((str(dispatch_id), f"watcher:{state}"))
+            elif _receipt_proves_ending(row, dispatch_id, state_dir):
+                reasons.add((str(dispatch_id), "settle_receipt"))
         elif state == "expired" and row.get("launched_at") and dispatch_registry.later(row.get("hard_until"), current):
             if _watcher_restartable(dispatch_id, state_dir):
                 reasons.add((str(dispatch_id), "watcher:expired"))
+            elif _receipt_proves_ending(row, dispatch_id, state_dir):
+                reasons.add((str(dispatch_id), "settle_receipt"))
         elif dispatch_registry.fallback_guard(row, current):
             if not _safe_dispatch_id(dispatch_id):
                 continue
@@ -1174,7 +1186,6 @@ def _local_dispatch_notice_reasons(now: datetime | None = None) -> frozenset[tup
 def dispatch_notice_reasons(now: datetime | None = None) -> frozenset[tuple[str, str]]:
     """Dispatches and reasons for which a reconcile pass can make progress right now."""
     local = _local_dispatch_notice_reasons(now=now)
-    _dispatch_notice["local_reasons"] = local
     if not local:
         return frozenset()
     if not dispatch_flow.paseo_reachable(timeout=PASEO_REACHABLE_TIMEOUT):
@@ -1186,7 +1197,10 @@ def dispatch_notice_needed(now: datetime | None = None) -> bool:
     """True only when a reconcile pass can change something now and the local Paseo daemon answers."""
     reasons = dispatch_notice_reasons(now=now)
     _dispatch_notice["evaluated_reasons"] = reasons
-    return bool(reasons)
+    if not reasons:
+        _reset_dispatch_notice_backoff()
+        return False
+    return True
 
 
 def dispatch_reconcile_command() -> list[str] | None:
@@ -1241,11 +1255,9 @@ def dispatch_notice_tick(force: bool = False) -> bool:
     now_mono = time.monotonic()
     if not force and started is not None and now_mono - started < DISPATCH_NOTICE_INTERVAL:
         return False
-    _dispatch_notice["local_reasons"] = None
     _dispatch_notice["evaluated_reasons"] = None
     if not dispatch_notice_needed():
-        if _dispatch_notice["local_reasons"] == frozenset():
-            _reset_dispatch_notice_backoff()
+        _reset_dispatch_notice_backoff()
         return False
     reasons = _dispatch_notice["evaluated_reasons"] or frozenset({("*", "needed")})
     last_reasons = _dispatch_notice["last_reasons"]
