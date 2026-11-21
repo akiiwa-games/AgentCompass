@@ -193,6 +193,49 @@ class RegistryLaunchRecords(unittest.TestCase):
                          {'d-old': None, 'd-bare': None})
         self.assertEqual(used(read), 2)
 
+    def test_a_row_the_count_cannot_place_is_no_launch_and_raises_nothing(self):
+        # The registry is derived state: a damaged row (a time that is not a time, a bundle that is not an object, no
+        # dispatch id) is read as no launch, without a default and without an exception, beside real launches.
+        import json
+        import sqlite3
+        self.claim(0, launched=True)
+        self.claim(1, launched=True)
+        stamp = registry.stamp(NOW - timedelta(hours=1))
+        damaged = {
+            'launched_at is a number': dict(dispatch_id='n1', decision_id='n1', state='completed', bundle=BUNDLE,
+                                            launched_at=1763700000, created_at=stamp),
+            'launched_at is not a time': dict(dispatch_id='n2', decision_id='n2', state='completed', bundle=BUNDLE,
+                                              launched_at='yesterday', created_at=stamp),
+            'created_at is not a time': dict(dispatch_id='n3', decision_id='n3', state='launched', bundle=BUNDLE,
+                                             created_at='soon', lease_until=registry.stamp(NOW + timedelta(hours=1))),
+            'lease_until is a number': dict(dispatch_id='n4', decision_id='n4', state='launched', bundle=BUNDLE,
+                                            created_at=stamp, lease_until=5),
+            'bundle is a string': dict(dispatch_id='n5', decision_id='n5', state='completed', bundle='pro_max',
+                                       launched_at=stamp, created_at=stamp),
+            'dispatch_id missing': dict(decision_id='n6', state='completed', bundle=BUNDLE, launched_at=stamp,
+                                        created_at=stamp),
+            'not an object': ['n7'],
+        }
+        with registry.transaction(self.path) as connection:
+            stored = registry.rows(connection, 'dispatches')
+        for label, row in damaged.items():
+            with self.subTest(label=label):
+                read = registry.launches([*stored, row], self.accounts, NOW)
+                self.assertEqual(used(read), 2)
+                self.assertTrue(all(r['at'] is None for r in read[len(stored):]), read[len(stored):])
+        # Stored in the file itself, all at once: what every plan, record and roll reads.
+        connection = sqlite3.connect(self.path)
+        try:
+            for i, row in enumerate(damaged.values()):
+                key = row.get('dispatch_id', f'x{i}') if isinstance(row, dict) else f'x{i}'
+                decision = row.get('decision_id', f'x{i}') if isinstance(row, dict) else f'x{i}'
+                connection.execute('INSERT INTO dispatches(id,decision_id,data) VALUES (?,?,?)',
+                                   (key, decision, json.dumps(row)))
+            connection.commit()
+        finally:
+            connection.close()
+        self.assertEqual(self.counted(), 2)
+
     def test_no_cadence_reads_nothing(self):
         self.claim(0, launched=True)
         self.assertEqual(registry.launch_records({'accounts': {ACCOUNT: {}}}, NOW, path=self.path), [])
@@ -260,13 +303,13 @@ class NamedRoutesReachPastTheCadence(unittest.TestCase):
         values.update(flags)
         return argparse.Namespace(**values)
 
-    def record(self, account, task_id='named'):
+    def record(self, account, task_id='named', constraint='user_override'):
         import usage_reading
         task = self.task(task_id)
         path = self.root / f'{task_id}.json'
         path.write_text(self.json.dumps({'task': task}), encoding='utf-8')
         with patch.object(usage_reading, 'usage_snapshot', return_value=self.usage):
-            return self.router.record_constraint(self.args(account, input=path)), task
+            return self.router.record_constraint(self.args(account, input=path, constraint=constraint)), task
 
     def cadence_warnings(self, answer):
         return [w for w in answer.get('warnings') or () if 'cadence window' in w]
@@ -286,6 +329,22 @@ class NamedRoutesReachPastTheCadence(unittest.TestCase):
         # The router by itself would not choose it: the automatic plan of the same task excludes the account.
         import candidate_eval
         self.assertIn(candidate_eval.OVER_CADENCE, result['override_cost']['excluded'])
+        # Two channels, one source: the warning the caller passes on is the alert's own sentence.
+        alert = [a['message'] for a in result['alerts'] if a['code'] == 'advisor_cadence']
+        self.assertEqual([f'{alert[0]}; launched because the user named it in this request'], said)
+
+    def test_the_ledger_marks_a_named_launch_past_the_cadence(self):
+        # Rule (decision_ledger.automatic_routing_marker): `outside_automatic_routing` names the cadence for a launch row
+        # at the limit, from the count the alert reads; below the limit there is nothing to reach past.
+        import decision_ledger as ledger
+        self.fill('chatgpt-web', LIMIT - 1)
+        result, _ = self.record('chatgpt-web', 'below')
+        row = ledger.read_ledger()[-1]
+        self.assertEqual((row['decision_id'], row.get('outside_automatic_routing')), (result['decision_id'], None))
+        # That record row is itself a launch outside roll: the next named one is at the limit.
+        result, _ = self.record('chatgpt-web', 'at-the-limit')
+        row = ledger.read_ledger()[-1]
+        self.assertEqual((row['decision_id'], row.get('outside_automatic_routing')), (result['decision_id'], ['cadence']))
 
     def test_a_named_paseo_route_is_prepared_with_the_warning_and_an_automatic_one_is_not(self):
         import candidate_eval
@@ -319,10 +378,35 @@ class NamedRoutesReachPastTheCadence(unittest.TestCase):
         said = self.cadence_warnings(result)
         self.assertEqual(len(said), 1, result.get('warnings'))
         self.assertTrue(said[0].endswith("the turn goes to worker 'worker-a' because --resume named it"), said[0])
+        import decision_ledger as ledger
+        self.assertEqual(ledger.read_ledger()[-1].get('outside_automatic_routing'), ['cadence'])
         launch = {'title': 'Fixture', 'initialPrompt': 'Read the brief', 'cwd': str(self.root)}
         row = registry.prepare(result['decision_id'], task, launch, self.usage, self.fleet,
                                resume_agent_id='worker-a', resume_bundle=bundle, explicit_resume=True)
         self.assertEqual(row['bundle']['account'], 'claude')
+
+    def test_a_project_rule_is_refused_by_record_at_the_limit_and_recorded_below_it(self):
+        # Rule (router-internals.md, Pins): a project rule does not reach past a pace of automatic routing. At the limit
+        # `record` refuses it, as it refuses one on an unchecked model, and writes nothing; below the limit it records.
+        import decision_ledger as ledger
+        for account in ('chatgpt-web', 'claude'):
+            for constraint in ('hard_constraint', 'dot_closed_loop'):
+                with self.subTest(account=account, constraint=constraint):
+                    (self.root / 'ledger.jsonl').unlink(missing_ok=True)
+                    self.fill(account, LIMIT - 1)
+                    result, _ = self.record(account, f'{account}-{constraint}-below', constraint)
+                    self.assertEqual(result['choice'], 'constraint')
+                    self.assertEqual(self.cadence_warnings(result), [])
+                    self.assertTrue(registry.decision_record(result['decision_id'])['dispatchable'])
+                    rows = ledger.read_ledger()               # the record row above is the fifth launch
+                    with self.assertRaises(ValueError) as refused:
+                        self.record(account, f'{account}-{constraint}-at', constraint)
+                    said = str(refused.exception)
+                    self.assertIn(f'{account}: {LIMIT} of {LIMIT} dispatches', said)
+                    self.assertIn('a seat frees in', said)
+                    self.assertIn(f'a {constraint} record does not reach past a pace of automatic routing', said)
+                    self.assertIn('--constraint user_override', said)
+                    self.assertEqual(ledger.read_ledger(), rows)      # no row written
 
     def test_roll_named_to_a_consult_hands_it_over_with_the_warning_once(self):
         import argparse

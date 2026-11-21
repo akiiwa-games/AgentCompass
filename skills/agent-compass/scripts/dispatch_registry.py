@@ -429,34 +429,55 @@ def reservations(now=None, path=None, read_only=False):
     return active
 
 
-def launch_record(row, now):
+def _stored_time(row, key):
+    """`row[key]` read as a time, or None when the row has no such text or holds something that is not a time."""
+    value = row.get(key)
+    if not isinstance(value, str):
+        return None
+    try:
+        return parse(value)
+    except ValueError:
+        return None
+
+
+def launch_record(row, now, since=None):
     """One stored dispatch as the cadence count reads it (quota_pools.cadence_dispatches), whatever its surface or state:
     `at` is when it was launched, or None when it never was. A dispatch is launched from `launched_at` (the Paseo claim,
     a started host CLI, an external runner's launch) unless the host refused its create (`create_failed`: the prompt
     never left); a reservation still holding its lease before launch counts from its creation, as it holds the account's
-    other windows. A row that carries neither time (hand-made or damaged; the registry is derived state) is no launch in
-    any window: no default time is made up for it."""
-    if row.get('launched_at') and row.get('state') != 'create_failed':
+    other windows. The registry is derived state: a row the count cannot place (no object, no `dispatch_id`, a `bundle`
+    that is not an object, a launch time that is not a time, or neither time at all) is no launch in any window, read
+    without a default time and without an exception. None when `since` is given and the row was launched, or else
+    created, before it."""
+    row = row if isinstance(row, dict) else {}
+    launched, created = _stored_time(row, 'launched_at'), _stored_time(row, 'created_at')
+    seen = launched or created
+    if since is not None and seen is not None and seen < since:
+        return None
+    bundle = row.get('bundle') if isinstance(row.get('bundle'), dict) else None
+    lease = _stored_time(row, 'lease_until')
+    if not row.get('dispatch_id') or bundle is None or (row.get('launched_at') and launched is None):
+        at = None
+    elif launched and row.get('state') != 'create_failed':
         at = row['launched_at']
-    elif row.get('state') in ACTIVE and row.get('lease_until') and parse(row['lease_until']) > now:
-        at = row.get('created_at')
+    elif row.get('state') in ACTIVE and created and lease is not None and lease > now:
+        at = row['created_at']
     else:
         at = None
-    return {'stage': 'launch', 'dispatch_id': row['dispatch_id'], 'decision_id': row.get('decision_id'),
-            'bundle': row.get('bundle') or {}, 'at': at}
+    return {'stage': 'launch', 'dispatch_id': row.get('dispatch_id'), 'decision_id': row.get('decision_id'),
+            'bundle': bundle or {}, 'at': at}
 
 
 def launches(stored, accounts, now):
     """The stored dispatches a declared cadence window can still hold (launch_record each): those launched or created
-    since the longest cadence window of `accounts` began, and those carrying no time at all (read as no launch, so their
-    decision is still known to the count). [] when no account declares one."""
+    since the longest cadence window of `accounts` began, and those carrying no readable time (read as no launch, so
+    their decision is still known to the count). [] when no account declares one."""
     import quota_pools
     horizon = quota_pools.cadence_horizon(accounts)
     if horizon is None:
         return []
     since = now - timedelta(seconds=horizon)
-    return [launch_record(r, now) for r in stored
-            if (t := r.get('launched_at') or r.get('created_at')) is None or parse(t) >= since]
+    return [record for r in stored if (record := launch_record(r, now, since)) is not None]
 
 
 def launch_records(accounts, now=None, path=None):

@@ -36,8 +36,10 @@ BASIS_LIMIT = 400      # characters of a record's --basis a row keeps; `record` 
 
 
 def automatic_routing_marker(entry):
-    """`outside_automatic_routing` of a ledger row: the switches (`host_policy.automatic_routing_exclusions`, the switches
-    in effect now) its launch reaches past. Only a row that carries a launch has one: a plan/record row with a
+    """`outside_automatic_routing` of a ledger row: what only automatic routing is held to that its launch reaches past,
+    in a fixed order: the switches in effect now (`host_policy.automatic_routing_exclusions`: `account`, `model`) and
+    `cadence` when the account is at its dispatch cadence's limit at the row's time, by the count its advisor_cadence
+    alert reads (the row itself not yet written). Only a row that carries a launch has one: a plan/record row with a
     chosen bundle that its writer did not refuse (`host_policy_violation`)."""
     bundle = entry.get('bundle')
     if (entry.get('stage') not in LAUNCH_STAGES or entry.get('choice') in (None, 'none', 'self', 'split')
@@ -45,7 +47,15 @@ def automatic_routing_marker(entry):
         return None
     import account_fleet
     import host_policy
-    return host_policy.automatic_routing_exclusions(bundle, account_fleet.load_accounts(), host_policy.load_policy()) or None
+    import quota_pools
+    accounts = account_fleet.load_accounts()
+    marks = host_policy.automatic_routing_exclusions(bundle, accounts, host_policy.load_policy())
+    spec = (accounts.get('accounts') or {}).get(bundle['account']) or {}
+    if quota_pools.cadence_limits(spec) is not None:
+        now = quota_pools.parse_time(entry.get('at')) or datetime.now(timezone.utc)
+        if account_cadence_alert(cadence_records(bundle['account'], spec, now), now, bundle['account'], spec):
+            marks.append('cadence')
+    return marks or None
 
 
 def append_ledger(entry):
@@ -233,9 +243,10 @@ def decision_snapshot(result, task=None):
         return None
 
 
-def finalize(result, started, task=None, records=None):
-    """Attach capacity alerts and write the ledger record. Returns the result unchanged otherwise."""
-    now = datetime.now(timezone.utc)
+def finalize(result, started, task=None, records=None, now=None):
+    """Attach capacity alerts and write the ledger record. Returns the result unchanged otherwise. `records` and `now`
+    are the reading the caller already made (route_judge.cadence_reading), so its alerts are the ones it said."""
+    now = now or datetime.now(timezone.utc)
     usage = result.get('usage') or {}
     alerts = list(result.get('alerts') or [])
     bundle = result.get('selected_bundle') or {}
