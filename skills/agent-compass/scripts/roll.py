@@ -705,11 +705,28 @@ def dot_failure_next(code):
             'accepted, then roll the brief again.')
 
 
-def consult(args, out, prompt_file):
+def consult(args, out, prompt_file, *, task=None, decision=None):
     base = args.brief if args.brief is not None else prompt_file
     target = base.with_name(f'{base.stem}-consult-{time.strftime("%Y%m%d-%H%M%S")}')
     given = ['--prompt', str(prompt_file), '--out', str(target)]
     command = entry.argv('chatgpt-web', *given)
+    if isinstance(decision, dict) and decision.get('decision_id'):
+        # The one command that sends this consultation is handed over here and roll sees no later step, so the registry
+        # records the launch now: the account's dispatch cadence counts it (dispatch_registry.launch_record).
+        try:
+            registry.record_external_launch(
+                'chatgpt-web',
+                decision['decision_id'],
+                decision['decision_id'],
+                decision.get('selected_bundle') or {},
+                parent_id=out.get('parent_id'),
+                task_id=(task or {}).get('task_id'),
+                profile=decision.get('task_profile') or (task or {}).get('profile'),
+                brief_path=(task or {}).get('brief_path'),
+                cwd=None,
+            )
+        except OSError:
+            pass
     # A browser consultation blocks for up to 30 minutes; hand over the one command instead of backgrounding it.
     return dict(out, launched=False, dispatch_mode='chatgpt-web', caller_action='run_next_argv', next_argv=command,
                 next='Run next_argv (blocks until the answer is in <out>/response.md).'), 0
@@ -1682,7 +1699,7 @@ def _run(args, judge):
     if provider == 'dot':
         return dot(args, out, prompt_file, task=task, decision=decision)
     if provider == 'chatgpt-web':
-        return consult(args, out, prompt_file)
+        return consult(args, out, prompt_file, task=task, decision=decision)
     if provider == 'grok-bot':
         return grok_bot(args, out, prompt_file, task, bundle, decision=decision)
     decision_profile = (

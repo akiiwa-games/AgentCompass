@@ -641,8 +641,7 @@ def evaluate_bundle(bundle, task, ctx):
         if not five_window_states and not result['excluded'] and not result.get('data_errors'):
             result['notes'].append('no current capacity observation; unknown is not exhausted')
     elif not spec.get('unlimited'):
-        acct_usage = ctx['usage'].get('accounts', {}).get(bundle['account']) or {}
-        cad_got = quota_pools.cadence_window_state(bundle['account'], spec, acct_usage, ctx.get('records'), now)
+        cad_got = quota_pools.cadence_window_state(bundle['account'], spec, ctx.get('records'), now)
         if cad_got is not None:
             wspec, state, cap_count = cad_got
             result.setdefault('_five_axis_windows', []).append('cadence')

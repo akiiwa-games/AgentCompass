@@ -2108,6 +2108,11 @@ class RollTests(unittest.TestCase):
         self.assertEqual(command[command.index('--prompt') + 1], result['worker_prompt_file'])
         self.assertEqual(command[4], 'chatgpt-web')
         self.assert_worker_prompt(result, parent='parent-a')
+        # The handover is the launch roll sees: the registry holds it, so the account's dispatch cadence counts it.
+        stored = [r for r in registry.read_dispatches() if r.get('dispatch_mode') == 'chatgpt-web']
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(stored[0]['bundle']['account'], 'codex')
+        self.assertIsNotNone(registry.launch_record(stored[0], registry.utcnow())['at'])
 
     def test_named_model_without_user_quote_is_refused(self):
         with self.assertRaisesRegex(ValueError, '--basis'):

@@ -1504,19 +1504,15 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
             {'id': 'usage', 'remaining_pct_before_reset': 100.0 * (1.0 - codex_used), 'seconds_until_reset': codex_reset_h * 3600},
         ]
         if records is None:
-            if seats_used == 0 and cadence_reset_h is not None:
-                usage['accounts'].setdefault('chatgpt-web', {})['windows'] = [
-                    {'id': 'cadence', 'used': 0, 'seconds_until_reset': cadence_reset_h * 3600},
-                ]
-                recs = []
-            else:
-                age_h = 12.0 - cadence_reset_h
-                recs = [
-                    {'stage': 'record', 'dispatch_id': f'cw-{i}', 'choice': 'pro_max',
-                     'bundle': {'account': 'chatgpt-web', 'model': 'gpt-6-pro'},
-                     'at': (NOW - timedelta(hours=age_h) + timedelta(minutes=5 * i)).isoformat()}
-                    for i in range(seats_used)
-                ]
+            # Finished dispatches the registry knows were launched (dispatch_registry.launch_record), the oldest leaving
+            # the 12h window in cadence_reset_h.
+            age_h = 12.0 - cadence_reset_h
+            recs = [
+                {'stage': 'launch', 'dispatch_id': f'cw-{i}', 'decision_id': f'cw-decision-{i}',
+                 'bundle': {'account': 'chatgpt-web', 'model': 'gpt-6-pro'},
+                 'at': (NOW - timedelta(hours=age_h) + timedelta(minutes=5 * i)).isoformat()}
+                for i in range(seats_used)
+            ]
         else:
             recs = records
         profile = {
@@ -1535,8 +1531,10 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
             )
 
     def test_l1_local_research_with_4_of_5_seats_used_does_not_pick_pro_max_and_c_rises_with_used_seats(self):
+        # Seats 1..4 share the oldest dispatch, so the window renews at the same time and only the used share differs. An
+        # empty window has no oldest dispatch and renews a full period from now: not the same window state.
         costs = []
-        for seats in range(5):
+        for seats in range(1, 5):
             d = self._plan(claude_plan='pro', codex_plan='plus', claude_used=0.35, codex_used=0.35,
                            seats_used=seats, cadence_reset_h=9.0, creativity=1, hours=0.3, local_only=True)
             cw = window_reports(d)['chatgpt-web/cadence']
@@ -1550,7 +1548,7 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
         # raises its rank. Asserted as a property, not as which bundle wins.
         for cl_plan, cx_plan, used in (('pro', 'plus', 0.10), ('pro', 'plus', 0.35), ('max_20x', 'pro', 0.10)):
             prev = None
-            for seats in range(5):
+            for seats in range(1, 5):
                 d = self._plan(claude_plan=cl_plan, codex_plan=cx_plan, claude_used=used, codex_used=used,
                                seats_used=seats, cadence_reset_h=9.0, creativity=1, hours=0.3, local_only=True)
                 ids = [c['id'] for c in eligible(d)]
@@ -1568,14 +1566,24 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
         self.assertEqual(dot_row['components']['opportunity_cost'], 0.0)
         self.assertNotIn('dot/cadence', window_reports(d_remote))
 
-    def test_zero_of_five_used_near_end_of_cadence_period_follows_expiring_quota_speed_rule(self):
-        # 10 minutes left in the 12h cadence period with 0 of 5 seats used: C(pro_max) is near zero (~0).
+    def test_the_cadence_excludes_at_its_limit_and_not_below(self):
+        # accounts.json: at most `limit` dispatches per window. One seat left starts now; none left waits for the oldest
+        # dispatch to leave the window.
+        cadence_note = 'cadence has 0 of'
+        for seats in range(7):
+            d = self._plan(seats_used=seats, cadence_reset_h=9.0)
+            notes = ' '.join(next(c for c in d['ranking'] if c['id'] == 'pro_max' and not c['bundle'].get('fast'))['excluded'])
+            with self.subTest(seats=seats):
+                self.assertEqual(cadence_note in notes, seats >= 5, notes)
+
+    def test_one_seat_used_leaving_the_window_soon_follows_expiring_quota_speed_rule(self):
+        # 1 of 5 seats used and it leaves the 12h window in 10 minutes: C(pro_max) is near zero (~0).
         # When local quota is also expiring (2h to weekly reset, C ≈ 0), the candidates' N differ by C alone (N is never
         # rounded), and where N ties the documented order breaks the tie by completion_hours (AA Time/Task, +fast where
         # available), asserted pairwise on the two candidates.
         d_tie = self._plan(claude_plan='max_20x', codex_plan='pro', claude_used=0.50, codex_used=0.50,
                            claude_reset_h=2.0, codex_reset_h=84.0,
-                           seats_used=0, cadence_reset_h=1 / 6, creativity=1, hours=0.3, local_only=True)
+                           seats_used=1, cadence_reset_h=1 / 6, creativity=1, hours=0.3, local_only=True)
         pro_tie = row(d_tie, 'pro_max')
         opus_fast = row(d_tie, 'opus55_medium', fast=True)
         self.assertLess(pro_tie['components']['opportunity_cost'], 5e-5)

@@ -170,8 +170,17 @@ not in `plan-templates.json`, the account enters Mode B (`capacity_unknown` with
 notes and on the tray quota card). An unrecognized Claude or Codex plan is priced at that family's smallest paid plan with a
 warning (`plan_unknown`, `plan_priced_as`). Unknown quota is distinct from unlimited access. Intrinsically unmetered services (OpenCode
 free models, Dot, the ChatGPT Pro web bridge) are marked so in the template; observed
-telemetry retains its source and freshness. Optional account `cadence` state
-(`window_seconds`, `limit`) measures dispatch frequency and never proves remaining quota.
+telemetry retains its source and freshness. An optional account `cadence` (`window_seconds`, `limit`) allows at most
+`limit` dispatches on the account per `window_seconds`; it measures dispatch frequency and never proves remaining quota. A
+dispatch counts once, from its launch until the window has passed over that moment, whoever chose the route and whether
+or not it has ended (`quota_pools.cadence_dispatches`). The launches are the rows of `dispatch.sqlite3`
+(`dispatch_registry.launch_record`: `launched_at`, unless the host refused the create; a reservation still holding its
+lease counts from its creation). A `--resume` turn is a row of its own and counts, as each turn is a request the vendor
+counts. A `record` row stands for its launch only when the registry holds no dispatch of its decision (a named route
+launched outside `roll`). A plan row is not a dispatch. ChatGPT Web's consultation is recorded as launched when `roll`
+hands over its `next_argv`, the last step `roll` sees. The plan's cadence window (one dispatch's share left starts now;
+none left excludes the account until its oldest dispatch leaves the window) and the ledger's `advisor_cadence` alert (at
+`limit` or more) read this one count.
 A local `capability_policy.remote_reroute_guard.enabled` may retain a remote adapter's
 reroute policy; the public catalogue does not enable a remote-first loop.
 

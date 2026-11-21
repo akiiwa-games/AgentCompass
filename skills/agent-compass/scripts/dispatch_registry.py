@@ -429,6 +429,51 @@ def reservations(now=None, path=None, read_only=False):
     return active
 
 
+def launch_record(row, now):
+    """One stored dispatch as the cadence count reads it (quota_pools.cadence_dispatches), whatever its surface or state:
+    `at` is when it was launched, or None when it never was. A dispatch is launched from `launched_at` (the Paseo claim,
+    a started host CLI, an external runner's launch) unless the host refused its create (`create_failed`: the prompt
+    never left); a reservation still holding its lease before launch counts from its creation, as it holds the account's
+    other windows."""
+    if row.get('launched_at') and row.get('state') != 'create_failed':
+        at = row['launched_at']
+    elif row.get('state') in ACTIVE and parse(row['lease_until']) > now:
+        at = row['created_at']
+    else:
+        at = None
+    return {'stage': 'launch', 'dispatch_id': row['dispatch_id'], 'decision_id': row.get('decision_id'),
+            'bundle': row.get('bundle') or {}, 'at': at}
+
+
+def launches(stored, accounts, now):
+    """The stored dispatches a declared cadence window can still hold (launch_record each): those launched or created
+    since the longest cadence window of `accounts` began. [] when no account declares one."""
+    import quota_pools
+    horizon = quota_pools.cadence_horizon(accounts)
+    if horizon is None:
+        return []
+    since = now - timedelta(seconds=horizon)
+    return [launch_record(r, now) for r in stored if parse(r.get('launched_at') or r['created_at']) >= since]
+
+
+def launch_records(accounts, now=None, path=None):
+    """launches() of the registry, read without writing or creating the file."""
+    import quota_pools
+    target = Path(path or db_path())
+    if quota_pools.cadence_horizon(accounts) is None or not target.exists():
+        return []
+    connection = _read_only(target)
+    try:
+        stored = rows(connection, 'dispatches')
+    except sqlite3.OperationalError as exc:
+        if 'no such table' in str(exc):
+            return []
+        raise
+    finally:
+        connection.close()
+    return launches(stored, accounts, now or utcnow())
+
+
 def paseo_agent_record(agent_id, paseo_home=None):
     """Read local Paseo agent JSON for agent_id if present on disk; None when absent."""
     if not isinstance(agent_id, str) or not agent_id.strip():
@@ -1418,7 +1463,8 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             route['user_named_bundle'] = bundle['bundle_id']
         if decision.get('constraint') == 'user_override' and resume_bundle is None:
             route['pinned_bundle'] = bundle['bundle_id']
-        plan = allocator.plan(alloc_task, usage, now, records=active_records(connection, now), accounts=accounts,
+        records = active_records(connection, now) + launches(rows(connection, 'dispatches'), accounts, now)
+        plan = allocator.plan(alloc_task, usage, now, records=records, accounts=accounts,
                               named_accounts={bundle['account']} if named else (), route=route)
         # A fast route with no fast variant in the ranking is answered by its plain row: its exclusions (the fast-mode
         # refusal among them) say why, not "no longer matches".

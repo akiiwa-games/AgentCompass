@@ -1,6 +1,7 @@
 """Quota windows and pools: which windows a bundle draws, their state, and the launch blockers they raise."""
 
 from datetime import datetime, timedelta, timezone
+import math
 import re
 
 import window_scope
@@ -470,75 +471,75 @@ def after_reset(state, hours):
                 expiry_hours=left)
 
 
-def cadence_window_state(account, spec, acct_usage, records, now):
-    """(wspec, state, limit_count) for an account-configured dispatch cadence window (e.g. ChatGPT Web 5 per 12h),
-    or None when the account declares no `cadence`. Priced on current-period used dispatches and remaining period hours."""
+def cadence_limits(spec):
+    """(window_seconds, limit) of an account-declared dispatch cadence (e.g. ChatGPT Web 5 per 12h), or None when the
+    account declares none or the declaration is not two finite positive numbers."""
     cad = (spec or {}).get('cadence')
     if not isinstance(cad, dict):
         return None
-    win_sec, cap_raw = cad.get('window_seconds'), cad.get('limit')
-    if (isinstance(win_sec, bool) or not isinstance(win_sec, (int, float)) or win_sec <= 0
-            or isinstance(cap_raw, bool) or not isinstance(cap_raw, (int, float)) or cap_raw <= 0):
+    win_sec, cap = cad.get('window_seconds'), cad.get('limit')
+    if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0 for v in (win_sec, cap)):
         return None
-    win_sec, cap = float(win_sec), float(cap_raw)
-    period_h = win_sec / 3600.0
-    wspec = {'hours': period_h}
-    usage_row = acct_usage if isinstance(acct_usage, dict) else {}
-    acct_stale = usage_row.get('status') == 'stale' or usage_row.get('stale') is True
-    raw_windows = usage_row.get('windows')
-    raw_obs = None
-    if isinstance(raw_windows, list):
-        raw_obs = next((w for w in raw_windows if isinstance(w, dict) and w.get('id') == 'cadence'), None)
-    elif isinstance(raw_windows, dict) and isinstance(raw_windows.get('cadence'), dict):
-        raw_obs = raw_windows['cadence']
-    obs = cycle_observation(wspec, raw_obs, usage_row, now, read_failed_ok=True) if raw_obs is not None else None
-    if obs is not None:
-        rem_pct = None
-        if obs.get('used') is not None and not isinstance(obs.get('used'), bool):
-            rem_pct = clamp(100.0 * (cap - float(obs['used'])) / cap, 0.0, 100.0)
-        elif obs.get('used_count') is not None and not isinstance(obs.get('used_count'), bool):
-            rem_pct = clamp(100.0 * (cap - float(obs['used_count'])) / cap, 0.0, 100.0)
-        elif obs.get('remaining_count') is not None and not isinstance(obs.get('remaining_count'), bool):
-            rem_pct = clamp(100.0 * float(obs['remaining_count']) / cap, 0.0, 100.0)
+    return float(win_sec), float(cap)
+
+
+def cadence_horizon(accounts):
+    """Seconds back that any declared cadence window reaches, or None when no account declares one."""
+    windows = [found[0] for spec in ((accounts or {}).get('accounts') or {}).values() if (found := cadence_limits(spec))]
+    return max(windows, default=None)
+
+
+def cadence_dispatches(account, records, now, win_sec):
+    """When each dispatch on `account` inside the cadence window was launched, each dispatch once, oldest first.
+
+    A dispatch counts from its launch until the window has passed over that moment, whoever chose the route and whether
+    or not it has ended. The registry's rows (`stage: launch`, dispatch_registry.launch_records) say which dispatches
+    were launched and when; `at` is None for one that never was. A `record` row (a route the user named) stands for its
+    launch only when the registry holds no dispatch of its decision: a launch outside roll leaves no other row. A plan
+    row, a live reservation row (`stage: dispatch`) or anything else is not a dispatch of its own."""
+    def inside(value):
+        t = parse_time(value)
+        return None if t is None or (now - t).total_seconds() >= win_sec else min(t, now)
+
+    rows = [r for r in records or () if isinstance(r, dict)]
+    registered = {r.get('decision_id') for r in rows if r.get('stage') == 'launch' and r.get('decision_id')}
+    found = {}
+    for i, r in enumerate(rows):
+        if (r.get('bundle') or {}).get('account') != account:
+            continue
+        if r.get('stage') == 'launch':
+            key = ('launch', r.get('dispatch_id') or i)
+        elif (r.get('stage') == 'record' and r.get('choice') not in (None, 'none')
+              and r.get('decision_id') not in registered):
+            key = ('record', r.get('decision_id') or i)
         else:
-            rem_pct = obs.get('remaining_pct_before_reset')
-            if rem_pct is None:
-                rem_pct = obs.get('observed_remaining_pct')
-            if rem_pct is None and obs.get('used_pct') is not None:
-                rem_pct = clamp(100.0 - float(obs['used_pct']), 0.0, 100.0)
-        seconds = obs.get('seconds_until_reset')
-        if seconds is None and (natural_reset := parse_time(obs.get('resets_at'))) is not None:
-            seconds = (natural_reset - now).total_seconds()
-        unstarted = bool(obs.get('unstarted'))
-        if seconds is None and rem_pct is not None:
-            seconds = win_sec
-            if rem_pct >= 100.0 - 1e-9:
-                unstarted = True
-        if rem_pct is not None and seconds is not None and float(seconds) > 0:
-            fetched = parse_time(usage_row.get('fetched_at'))
-            active_ids = set()
-            for r in live_dispatch_holds(records):
-                if not isinstance(r, dict) or r.get('stage') != 'dispatch' or not r.get('dispatch_id'):
-                    continue
-                if (r.get('bundle') or {}).get('account') != account:
-                    continue
-                exp = parse_time(r.get('lease_until'))
-                if r.get('state') not in ('prepared', 'launching', 'launched', 'started') or exp is None or exp <= now:
-                    continue
-                t_rec = parse_time(r.get('at') or r.get('created_at') or r.get('updated_at'))
-                if fetched is not None and t_rec is not None and t_rec <= fetched:
-                    continue
-                active_ids.add(r['dispatch_id'])
-            if active_ids:
-                rem_pct = max(0.0, float(rem_pct) - 100.0 * len(active_ids) / cap)
-            reset_h = float(seconds) / 3600.0
-            state = {
-                'id': 'cadence', 'hours': period_h, 'short': False, 'known': True, 'stale': acct_stale,
-                'full': 100.0, 'remaining': float(rem_pct), 'reset_hours': reset_h, 'end_hours': reset_h,
-                'expiry_hours': None, 'target_remaining': 100.0 * min(1.0, reset_h / period_h),
-                'reset_at': obs.get('resets_at'), 'unstarted': unstarted and float(rem_pct) >= 100.0 - 1e-9,
-            }
-            return wspec, state, cap
+            continue
+        t = inside(r.get('at'))
+        if t is not None:
+            found[key] = t if key not in found else min(found[key], t)
+    return sorted(found.values())
+
+
+def cadence_window_state(account, spec, records, now):
+    """(wspec, state, limit_count) for an account-declared dispatch cadence window, or None when the account declares no
+    `cadence`. Priced on the dispatches launched inside the window (cadence_dispatches) and the time until the oldest
+    of them leaves it."""
+    limits = cadence_limits(spec)
+    if limits is None:
+        return None
+    win_sec, cap = limits
+    period_h = win_sec / 3600.0
+    events = cadence_dispatches(account, records, now, win_sec)
+    rem_pct = clamp(100.0 * (cap - len(events)) / cap, 0.0, 100.0)
+    seconds = max(1e-6, win_sec - (now - events[0]).total_seconds()) if events else win_sec
+    reset_h = seconds / 3600.0
+    state = {
+        'id': 'cadence', 'hours': period_h, 'short': False, 'known': True, 'stale': False,
+        'full': 100.0, 'remaining': rem_pct, 'reset_hours': reset_h, 'end_hours': reset_h,
+        'expiry_hours': None, 'target_remaining': 100.0 * min(1.0, reset_h / period_h),
+        'reset_at': None, 'unstarted': not events,
+    }
+    return {'hours': period_h}, state, cap
     by_dispatch = {}
     anon_times = []
     for r in live_dispatch_holds(records):

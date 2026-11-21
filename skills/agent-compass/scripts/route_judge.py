@@ -505,13 +505,14 @@ def _compare_with_router(result, task, usage, now, chosen, fast_requested, class
         result.update({'router_choice': None, 'agrees': None, 'classifier_skipped': True})
     elif task:
         try:
+            loaded_accounts = account_fleet.load_accounts()
             has_cadence = any(
                 isinstance((spec or {}).get('cadence'), dict)
-                for spec in (account_fleet.load_accounts().get('accounts') or {}).values()
+                for spec in (loaded_accounts.get('accounts') or {}).values()
             )
-            plan_records = (dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES)
-                            if not ((task.get('chain') or {}).get('id') or has_cadence) else
-                            decision_ledger.read_ledger() + dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES))
+            plan_records = ((decision_ledger.read_ledger() if (task.get('chain') or {}).get('id') or has_cadence else [])
+                            + dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES)
+                            + dispatch_registry.launch_records(loaded_accounts, now))
             plan = allocator.plan(task, usage, now, records=plan_records,
                                   route={'force_fast': True} if fast_requested else None)
         except (ValueError, KeyError, TypeError) as exc:
@@ -804,7 +805,8 @@ def plan_stage(document, args):
                    or bool(guard_cfg.get('enabled') is True and isinstance(guard_cfg.get('bundle_id'), str)
                            and guard_cfg.get('bundle_id') in unavailable))
     records = ((decision_ledger.read_ledger() if need_ledger else [])
-               + dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES))
+               + dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES)
+               + dispatch_registry.launch_records(loaded_accounts, now))
     extra_alerts, scorer = [], None
     hours_estimate = None
     fatal_gap = bool((readiness_gap(loaded_accounts, usage) or {}).get('fatal'))

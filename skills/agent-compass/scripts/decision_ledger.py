@@ -199,18 +199,18 @@ def capacity_alerts(usage, carrying, records, now, model='', account_specs=None)
 
 
 def account_cadence_alert(records, now, account, spec):
-    """Optional account-configured dispatch cadence; no implied quota knowledge."""
-    cadence = spec.get('cadence') or {}
-    seconds, limit = cadence.get('window_seconds'), cadence.get('limit')
-    if not usage_reading.finite_number(seconds, 1, 365 * 86400) or not usage_reading.finite_number(limit, 1, 1000000):
+    """Optional account-declared dispatch cadence, at its limit: the same count the plan's cadence window reads
+    (quota_pools.cadence_dispatches). No implied quota knowledge."""
+    import quota_pools
+    limits = quota_pools.cadence_limits(spec)
+    if limits is None:
         return None
-    recent = [r for r in records if (r.get('bundle') or {}).get('account') == account
-              and r.get('stage') == 'record' and r.get('choice') not in (None, 'none')
-              and (t := usage_reading.timestamp(r.get('at'))) and 0 <= (now - t).total_seconds() <= seconds]
-    if len(recent) < limit:
+    seconds, limit = limits
+    count = len(quota_pools.cadence_dispatches(account, records, now, seconds))
+    if count < limit:
         return None
     return {'code': 'advisor_cadence', 'severity': 'info', 'account': account,
-            'message': f'{len(recent)} dispatches in the configured {seconds / 3600:g}h cadence window; '
+            'message': f'{count} dispatches in the configured {seconds / 3600:g}h cadence window; '
                        'dispatch frequency does not measure remaining quota.'}
 
 
@@ -228,7 +228,6 @@ def decision_snapshot(result, task=None):
 def finalize(result, started, task=None, records=None):
     """Attach capacity alerts and write the ledger record. Returns the result unchanged otherwise."""
     now = datetime.now(timezone.utc)
-    records = read_ledger() if records is None else records
     usage = result.get('usage') or {}
     alerts = list(result.get('alerts') or [])
     bundle = result.get('selected_bundle') or {}
@@ -238,6 +237,8 @@ def finalize(result, started, task=None, records=None):
             spec = account_fleet.load_accounts().get('accounts', {}).get(bundle['account']) or {}
         except (OSError, ValueError):
             spec = {}
+        if records is None:
+            records = read_ledger() + dispatch_registry.launch_records({'accounts': {bundle['account']: spec}}, now)
         alerts += capacity_alerts(usage, [bundle['account']], records, now, bundle.get('model', ''),
                                   {bundle['account']: spec})
         cadence = account_cadence_alert(records, now, bundle['account'], spec)
