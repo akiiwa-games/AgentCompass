@@ -103,8 +103,8 @@ class ReadLog(argparse.Namespace):
 
 
 class StageTableTests(RecordCli):
-    """Every flag a stage reads is in its row of `stage_help.STAGES`, every flag in a row is read by the stage on some
-    path, and every stage's answer names a given flag it does not read."""
+    """Every flag a stage reads is in `stage_help.reads` (its row of `STAGES` and `UNLISTED`), every flag there is read
+    by the stage on some path, and every stage's answer names a given flag it does not read."""
 
     def setUp(self):
         super().setUp()
@@ -219,8 +219,7 @@ class StageTableTests(RecordCli):
                     got, answer = self.reads_of(argv, env)
                     read |= got
                     answers.append(answer)
-                _, _, basic, extra = stage_help.STAGES[stage]
-                listed = {*basic, *extra}
+                listed = set(stage_help.reads(stage))
                 self.assertEqual(read - listed - set(route_judge.ALWAYS_READ), set(),
                                  f'{stage} reads flags its row does not list')
                 self.assertEqual(listed - read - ENTRY_READS.get(stage, set()), set(),
@@ -229,8 +228,7 @@ class StageTableTests(RecordCli):
     def test_every_stage_names_a_given_flag_it_does_not_read(self):
         for stage, runs in self.scenarios().items():
             argv, env = runs[0]
-            _, _, basic, extra = stage_help.STAGES[stage]
-            dest = next(d for d in ('boost', 'hours', 'workspace') if d not in {*basic, *extra})
+            dest = next(d for d in ('boost', 'hours', 'workspace') if d not in stage_help.reads(stage))
             action = next(a for a in route_judge.build_parser()._actions if a.dest == dest)
             with self.subTest(stage=stage):
                 code, answer = self.run_main(argv + [action.option_strings[0], '1' if action.type is float else 'x'],

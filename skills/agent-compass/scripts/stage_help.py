@@ -1,8 +1,9 @@
 """Per-stage help for `agentcompass <stage> -h`: only that stage's options, the few that matter first.
 
-route_judge.py keeps one flat option set (existing automation passes any of them to any stage). `STAGES` is what each
-stage reads: its help shows those options (`--help-all` still prints every option), and `route_judge.unread_flags` names a
-given flag the stage's row does not list, in a note of the stage's result. A flag listed for a stage is read by it.
+route_judge.py keeps one flat option set (existing automation passes any of them to any stage). A stage's row of `STAGES`
+is what its help shows (`--help-all` still prints every option). What a stage reads is `reads(stage)`: its row and the
+options of `UNLISTED`, which it reads and its help leaves to `--help-all` so that the help stays the few a caller sets.
+`route_judge.unread_flags` names a given flag outside `reads(stage)` in a note of the stage's result.
 """
 import argparse
 
@@ -14,9 +15,7 @@ STAGES = {
              'roll (--task TEXT | --task - | --brief FILE)',
              ('task', 'brief'),
              ('hours', 'local_only', 'can_wait_hours', 'keep_whole', 'file', 'apply_to', 'fast', 'resume', 'new_worker', 'workspace',
-              'access', 'title', 'task_id', 'verbose', 'dry_run', 'no_score', 'score', 'score_timeout', 'usage_cache',
-              'provider', 'account', 'model', 'effort', 'basis', 'reason_category', 'specialty', 'trigger', 'accounts',
-              'parent_id', 'parent_host', 'parent_address')),
+              'provider', 'account', 'model', 'effort', 'basis')),
     'plan': ('Rank the signed-in model x effort bundles for a task file without launching anything (write no ledger row with --dry-run).',
              'plan --input TASK.json [--dry-run]   |   plan --demo --dry-run',
              ('input',),
@@ -46,6 +45,18 @@ STAGES = {
                'launch --dispatch-id ID --parent-id ID', ('dispatch_id', 'parent_id'),
                ('watch_seconds', 'poll_seconds')),
 }
+
+# Options a stage reads that its help does not show: placement, addressing and tooling a delegating caller rarely sets.
+UNLISTED = {
+    'roll': ('access', 'title', 'task_id', 'verbose', 'dry_run', 'no_score', 'score', 'score_timeout', 'usage_cache',
+             'reason_category', 'specialty', 'trigger', 'accounts', 'parent_id', 'parent_host', 'parent_address'),
+}
+
+
+def reads(stage):
+    """The options `stage` reads: the ones its help shows and the ones it leaves to `--help-all`."""
+    summary, usage, basic, extra = STAGES[stage]
+    return (*basic, *extra, *UNLISTED.get(stage, ()))
 
 
 def overview():

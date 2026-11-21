@@ -1194,16 +1194,16 @@ def given_flags(args):
 
 def unread_flags(args):
     """The flags the caller gave that `args.stage` does not read, as spelled on the command line, in the parser's order.
-    What a stage reads is its row of `stage_help.STAGES`."""
-    summary, usage, basic, extra = stage_help.STAGES[args.stage]
-    listed = {*basic, *extra, *ALWAYS_READ}
+    What a stage reads is `stage_help.reads`."""
+    listed = {*stage_help.reads(args.stage), *ALWAYS_READ}
     return [action.option_strings[0] for action in given_flags(args) if action.dest not in listed]
 
 
 def unread_flag_note(stage, flags):
     """The note a result carries for flags its stage did not read (a note, not a refusal: the stage ran without them)."""
     return (f"{', '.join(flags)} {'is' if len(flags) == 1 else 'are'} not read by {stage} and had no effect "
-            f'(`{router_command()} {stage} -h` lists what {stage} reads).')
+            f'(`{router_command()} {stage} -h` lists what {stage} reads'
+            + ('; its tooling options are under `--help-all`).' if stage_help.UNLISTED.get(stage) else ').'))
 
 
 def roll_path_notes(args):
