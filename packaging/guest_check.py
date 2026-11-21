@@ -863,6 +863,9 @@ def g_installer():
     check("the per-user Add/Remove Programs entry exists", registered)
     xml = schtasks_xml("AgentCompass") or ""
     check("scheduled task 'AgentCompass' exists, logon trigger, runs the installed exe", "LogonTrigger" in xml and str(exe).lower() in xml.lower().replace("&amp;", "&"), xml[:600])
+    # Task Scheduler's default stops a task after 72 hours: the installer's task must carry the product's own settings.
+    limit = re.search(r"<ExecutionTimeLimit>([^<]*)</ExecutionTimeLimit>", xml)
+    check("the scheduled task has no execution time limit", bool(limit) and limit.group(1) == "PT0S", limit.group(1) if limit else "no ExecutionTimeLimit element")
 
     run_task = run(["schtasks", "/Run", "/TN", "AgentCompass"], label="task-run")
     started = wait_for(lambda: tray_processes(), 40)
