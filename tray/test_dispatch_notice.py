@@ -1561,7 +1561,11 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
             return []
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
-    def wait_until(self, predicate, timeout: float = 20.0, step: float = 0.1):
+    # A wait returns as soon as its condition holds. The bound only ends a run that hangs, so it is far above what a loaded
+    # runner needs to start the node watcher and the router's Python (25 s was too short on the CI runner, 2026-11-22).
+    WAIT = 120.0
+
+    def wait_until(self, predicate, timeout: float = WAIT, step: float = 0.1):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             value = predicate()
@@ -1575,7 +1579,7 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
         self.assertTrue(started, "expected dispatch_notice_tick to start a reconcile pass")
         proc = services._dispatch_notice["proc"]
         self.assertIsNotNone(proc)
-        code = proc.wait(timeout=30)
+        code = proc.wait(timeout=self.WAIT)
         self.assertEqual(
             code,
             0,
@@ -1761,7 +1765,7 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
                 self.fail(f"expected no notice before fallback finished, got: {early}")
             return self.read_jsonl("created_agents.jsonl")
 
-        created = self.wait_until(created_without_early_error, timeout=20.0)
+        created = self.wait_until(created_without_early_error)
         self.assertEqual(len(created), 1)
         second_id = created[0]["id"]
         self.assertNotEqual(second_id, first_id)
@@ -1774,7 +1778,6 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
                     json.loads((self.state_dir / "paseo-notifications" / f"{first_id}.json").read_text(encoding="utf-8")).get("pid", -1)
                 )
             ),
-            timeout=20.0,
         )
         second_watcher_pid = json.loads(
             (self.state_dir / "paseo-notifications" / f"{second_id}.json").read_text(encoding="utf-8")
@@ -1792,14 +1795,13 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
         ]
         self.write_host_state(host_state)
 
-        msgs = self.wait_until(lambda: self.read_jsonl("messages.jsonl"), timeout=20.0)
+        msgs = self.wait_until(lambda: self.read_jsonl("messages.jsonl"))
         self.wait_until(
             lambda: (
                 registry.inspect(second_id, self.db_path)["state"] == "completed"
                 and (registry.inspect(second_id, self.db_path).get("end_notice") or {}).get("state") == "sent"
                 and not psutil.pid_exists(second_watcher_pid)
             ),
-            timeout=20.0,
         )
         self.assertEqual(len(msgs), 1)
         self.assertIn("State: finished", msgs[0]["text"])
@@ -1912,7 +1914,7 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
                     self.fail(f"expected no notice before scheduled retry finished, got: {early}")
                 return self.read_jsonl("created_agents.jsonl")
 
-            created = self.wait_until(created_without_early_error, timeout=25.0)
+            created = self.wait_until(created_without_early_error)
             self.assertEqual(len(created), 1)
             second_id = created[0]["id"]
             self.assertNotEqual(second_id, first_id)
@@ -1923,7 +1925,6 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
                     (registry.inspect(first_id, self.db_path).get("end_notice") or {}).get("source") == "relaunched"
                     and not psutil.pid_exists(restarted_pid)
                 ),
-                timeout=20.0,
             )
             second_watcher_pid = json.loads(
                 (self.state_dir / "paseo-notifications" / f"{second_id}.json").read_text(encoding="utf-8")
@@ -1941,14 +1942,13 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
             ]
             self.write_host_state(host_state)
 
-            msgs = self.wait_until(lambda: self.read_jsonl("messages.jsonl"), timeout=20.0)
+            msgs = self.wait_until(lambda: self.read_jsonl("messages.jsonl"))
             self.wait_until(
                 lambda: (
                     registry.inspect(second_id, self.db_path)["state"] == "completed"
                     and (registry.inspect(second_id, self.db_path).get("end_notice") or {}).get("state") == "sent"
                     and not psutil.pid_exists(second_watcher_pid)
                 ),
-                timeout=20.0,
             )
             self.assertEqual(len(msgs), 1)
             self.assertIn("State: finished", msgs[0]["text"])
@@ -2295,7 +2295,7 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
                     )
                     # First pass starts the `count` live watchers.
                     self.assertTrue(services.dispatch_notice_tick(force=True))
-                    rc = services._dispatch_notice["proc"].wait(timeout=30)
+                    rc = services._dispatch_notice["proc"].wait(timeout=self.WAIT)
                     self.assertEqual(rc, 0)
                     watcher_pids = [
                         json.loads((state_dir / "paseo-notifications" / f"d-live-{count}-{i}.json").read_text(encoding="utf-8"))["pid"]
@@ -2376,7 +2376,7 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
 
         self.assertTrue(services.dispatch_notice_tick(force=True))
         pass_proc = services._dispatch_notice["proc"]
-        slow_entries = self.wait_until(lambda: self.read_jsonl("slow_bridge.jsonl"), timeout=15.0)
+        slow_entries = self.wait_until(lambda: self.read_jsonl("slow_bridge.jsonl"))
         bridge_pid = slow_entries[0]["pid"]
         hermetic_run._started.add(bridge_pid)
         for desc in psutil.Process(pass_proc.pid).children(recursive=True):
