@@ -416,6 +416,7 @@ class WatchTests(TrayTestCase):
         self.order = order = mock.Mock()
         with mock.patch.object(app.threading, "Event", event), mock.patch.object(app.services, "capacity_tick", order.capacity), \
                 mock.patch.object(app.services, "usage_collect_tick", order.usage), \
+                mock.patch.object(app.services, "dispatch_notice_tick", order.dispatch_notice), \
                 mock.patch.object(app, "refresh"), mock.patch.object(app.services, "maintain_subscription",
                                                                      return_value=None) as renew, \
                 mock.patch.object(app.threading, "Thread") as thread, mock.patch.object(app.time, "monotonic",
@@ -426,7 +427,21 @@ class WatchTests(TrayTestCase):
 
     def test_each_watch_pass_collects_usage_before_the_capacity_statistics(self):
         self.run_watch_once()
-        self.assertEqual([call[0] for call in self.order.mock_calls], ["usage", "capacity"])
+        self.assertEqual([call[0] for call in self.order.mock_calls], ["usage", "capacity", "dispatch_notice"])
+
+    def test_quit_stops_periodic_children_including_dispatch_notice(self):
+        icon = mock.Mock()
+        with mock.patch.object(app.services, "stop_usage_collect") as stop_usage, \
+                mock.patch.object(app.services, "stop_capacity") as stop_cap, \
+                mock.patch.object(app.services, "stop_dispatch_notice") as stop_notice, \
+                mock.patch.object(app.updates, "abandon_usage_float_mpv"), \
+                mock.patch.object(app, "release_single_instance"), \
+                mock.patch.object(app, "log_info"):
+            self.by_text()["退出"](icon)
+        stop_usage.assert_called_once_with()
+        stop_cap.assert_called_once_with()
+        stop_notice.assert_called_once_with()
+        icon.stop.assert_called_once_with()
 
     def test_renewal_and_reconnect_run_only_while_dot2api_is_enabled(self):
         renew, thread = self.run_watch_once()

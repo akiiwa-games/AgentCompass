@@ -251,6 +251,7 @@ def watch(icon: pystray.Icon) -> None:
         try:
             services.usage_collect_tick()
             services.capacity_tick()
+            services.dispatch_notice_tick()
             refresh(icon)
             now = time.monotonic()
             if now - checked >= 60:
@@ -406,6 +407,7 @@ def build_menu() -> Menu:
         log_info("tray quit requested from menu")
         services.stop_usage_collect()
         services.stop_capacity()
+        services.stop_dispatch_notice()
         updates.abandon_usage_float_mpv()
         release_single_instance()
         icon.stop()

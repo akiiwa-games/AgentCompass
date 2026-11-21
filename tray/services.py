@@ -5,10 +5,12 @@ from __future__ import annotations
 from i18n import translate as _tr
 
 import csv
+from datetime import datetime, timezone
 import io
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -921,3 +923,175 @@ def stop_usage_collect() -> None:
     proc = _usage_collect["proc"]
     if proc is not None and proc.poll() is None:
         kill_pid(proc.pid)
+
+
+# Dispatch notice recovery: restarts killed Paseo watchers (e.g. Antigravity's Windows job object) and sends due end notices.
+DISPATCH_NOTICE_INTERVAL = 30
+_DISPATCH_NOTICE_ACTIVE = ("launching", "launched", "started")
+_DISPATCH_END_NOTICE_STATES = ("completed", "failed", "canceled", "create_failed")
+_dispatch_notice: dict = {"proc": None, "started": None}
+
+
+def _dispatch_state_dir() -> Path:
+    return Path(os.environ["ROUTER_STATE_DIR"]) if os.environ.get("ROUTER_STATE_DIR") else STATE_DIR
+
+
+def _dispatch_db_path() -> Path:
+    return Path(os.environ["ROUTER_DISPATCH_DB"]) if os.environ.get("ROUTER_DISPATCH_DB") else _dispatch_state_dir() / "dispatch.sqlite3"
+
+
+def _iso_after(stamp: object, now: datetime) -> bool:
+    if not isinstance(stamp, str) or not stamp:
+        return False
+    try:
+        return datetime.fromisoformat(stamp.replace("Z", "+00:00")) > now
+    except ValueError:
+        return False
+
+
+def _fallback_guard_active(row: dict, now: datetime) -> bool:
+    guard = row.get("fallback")
+    if not isinstance(guard, dict):
+        return False
+    if guard.get("state") in ("retrying", "relaunching") and _iso_after(guard.get("until"), now):
+        return True
+    handled = guard.get("handled")
+    if isinstance(handled, dict):
+        for item in handled.values():
+            if isinstance(item, dict) and item.get("action") == "pending" and _iso_after(item.get("until"), now):
+                return True
+    return False
+
+
+def _paseo_daemon_configured() -> bool:
+    paseo_home = Path(os.environ["PASEO_HOME"]) if os.environ.get("PASEO_HOME") else Path.home() / ".paseo"
+    try:
+        cfg = json.loads((paseo_home / "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(cfg, dict) and "daemon" in cfg
+
+
+def _safe_dispatch_id(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= 128
+        and value[0].isalnum()
+        and all(ch.isalnum() or ch in "-_" for ch in value)
+    )
+
+
+def dispatch_notice_needed(now: datetime | None = None) -> bool:
+    """True only when dispatch.sqlite3 has a launched open Paseo dispatch or a deliverable due end notice."""
+    db = _dispatch_db_path()
+    if not db.is_file():
+        return False
+    try:
+        conn = sqlite3.connect(f"{db.resolve().as_uri()}?mode=ro", uri=True, timeout=0.5)
+    except sqlite3.Error:
+        return True
+    try:
+        raw_rows = conn.execute("SELECT data FROM dispatches").fetchall()
+    except sqlite3.OperationalError as exc:
+        return "no such table" not in str(exc).lower()
+    except sqlite3.Error:
+        return True
+    finally:
+        conn.close()
+
+    current = now or datetime.now(timezone.utc)
+    state_dir = _dispatch_state_dir()
+    daemon_configured: bool | None = None
+    for (raw,) in raw_rows:
+        try:
+            row = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(row, dict):
+            continue
+        if row.get("dispatch_mode", "paseo") == "paseo":
+            state = row.get("state")
+            if state in _DISPATCH_NOTICE_ACTIVE and bool(row.get("launched_at")):
+                return True
+            if state == "expired" and bool(row.get("launched_at")) and _iso_after(row.get("hard_until"), current):
+                return True
+            if _fallback_guard_active(row, current):
+                return True
+        notice = row.get("end_notice")
+        if row.get("state") in _DISPATCH_END_NOTICE_STATES and isinstance(notice, dict) and notice.get("state") == "due":
+            dispatch_id = row.get("dispatch_id")
+            if not _safe_dispatch_id(dispatch_id):
+                continue
+            if not (state_dir / "paseo-notifications" / f"{dispatch_id}.json").is_file():
+                continue
+            if daemon_configured is None:
+                daemon_configured = _paseo_daemon_configured()
+            if daemon_configured:
+                return True
+    return False
+
+
+def dispatch_reconcile_command() -> list[str] | None:
+    """argv for `agentcompass dispatch --dispatch-action reconcile` using the console CLI, never the windowed tray."""
+    if component_launch.frozen():
+        cli = Path(sys.executable).resolve().parent / "cli" / ("agentcompass.exe" if os.name == "nt" else "agentcompass")
+        if cli.is_file():
+            return [str(cli), "dispatch", "--dispatch-action", "reconcile"]
+        found = shutil.which("agentcompass")
+        return [found, "dispatch", "--dispatch-action", "reconcile"] if found else None
+    scripts = component_launch.skill_scripts()
+    if scripts is None:
+        return None
+    python = Path(sys.executable)
+    if os.name == "nt" and python.name.lower() == "pythonw.exe":
+        console = python.with_name("python.exe")
+        if console.is_file():
+            python = console
+    checkout_pkg = scripts.parents[2] / "agentcompass"
+    if (checkout_pkg / "__main__.py").is_file() and (scripts.parents[2] / "pyproject.toml").is_file():
+        return [str(python), "-X", "utf8", str(checkout_pkg), "dispatch", "--dispatch-action", "reconcile"]
+    installed_pkg = scripts.parents[3] if len(scripts.parents) > 3 else None
+    if installed_pkg is not None and installed_pkg.name == "agentcompass" and (installed_pkg / "__main__.py").is_file():
+        return [str(python), "-X", "utf8", str(installed_pkg), "dispatch", "--dispatch-action", "reconcile"]
+    return [str(python), "-I", "-X", "utf8", str(scripts / "route_judge.py"), "dispatch", "--dispatch-action", "reconcile"]
+
+
+def dispatch_notice_tick(force: bool = False) -> bool:
+    """Run one low-priority reconcile pass when an open Paseo dispatch or due end notice exists."""
+    proc = _dispatch_notice["proc"]
+    if proc is not None and proc.poll() is None:
+        return False
+    started = _dispatch_notice["started"]
+    if not force and started is not None and time.monotonic() - started < DISPATCH_NOTICE_INTERVAL:
+        return False
+    if not dispatch_notice_needed():
+        return False
+    cmd = dispatch_reconcile_command()
+    if cmd is None:
+        return False
+    _dispatch_notice["started"] = time.monotonic()
+    state_dir = _dispatch_state_dir()
+    env = os.environ.copy()
+    default_state = Path.home() / ".agent-compass"
+    if state_dir != default_state:
+        env.setdefault("ROUTER_STATE_DIR", str(state_dir))
+        env.setdefault("ROUTER_DISPATCH_DB", str(_dispatch_db_path()))
+    child_cwd = Path(sys.executable).resolve().parent if component_launch.frozen() else ROOT
+    _dispatch_notice["proc"] = hidden_popen(
+        cmd,
+        env,
+        child_cwd,
+        state_dir / "dispatch-notice.log",
+        BELOW_NORMAL_PRIORITY_CLASS,
+    )
+    return True
+
+
+def stop_dispatch_notice() -> None:
+    """Terminate an in-flight reconcile pass without tree-killing detached watchers it started."""
+    proc = _dispatch_notice["proc"]
+    if proc is not None and proc.poll() is None:
+        try:
+            proc.terminate()
+        except OSError:
+            pass
