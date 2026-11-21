@@ -6,6 +6,7 @@ from i18n import translate as _tr
 
 import csv
 from datetime import datetime, timedelta, timezone
+import importlib
 import io
 import json
 import os
@@ -37,8 +38,6 @@ if str(ROOT) not in sys.path:
 _SKILL_SCRIPTS = ROOT / "skills" / "agent-compass" / "scripts"
 if str(_SKILL_SCRIPTS) not in sys.path:
     sys.path.append(str(_SKILL_SCRIPTS))
-import dispatch_flow  # noqa: E402
-import dispatch_registry  # noqa: E402
 DOT_ROOT = plugins.plugin_root("dot2api")
 CHATGPT_ROOT = plugins.plugin_root("chatgpt-web")
 CHATGPT_LAUNCHER = CHATGPT_ROOT / "launcher"
@@ -995,11 +994,16 @@ def _parse_iso(stamp: object) -> datetime | None:
         return None
 
 
+def _router(name: str):
+    """A router module, imported on first use: every tray helper imports this module and only the notice gate reads the router."""
+    return importlib.import_module(name)
+
+
 def _in_create_send_window(row: dict | None, now: datetime) -> bool:
     if not isinstance(row, dict) or row.get("state") != "launching" or row.get("observed_at"):
         return False
     launched_at = _parse_iso(row.get("launched_at"))
-    return launched_at is not None and now < launched_at + timedelta(seconds=dispatch_registry.CREATE_SEND_WINDOW)
+    return launched_at is not None and now < launched_at + timedelta(seconds=_router("dispatch_registry").CREATE_SEND_WINDOW)
 
 
 def _sqlite_locked(exc: sqlite3.Error) -> bool:
@@ -1011,7 +1015,7 @@ def _sqlite_locked(exc: sqlite3.Error) -> bool:
 
 
 def _paseo_daemon_configured() -> bool:
-    return "daemon" in dispatch_flow.paseo_config()
+    return "daemon" in _router("dispatch_flow").paseo_config()
 
 
 def _safe_dispatch_id(value: object) -> bool:
@@ -1081,6 +1085,7 @@ def _watcher_restartable(dispatch_id: object, state_dir: Path) -> bool:
 
 def _receipt_proves_ending(row: dict, dispatch_id: object, state_dir: Path) -> bool:
     """True when `row` is not a parent follow-up and its readable receipt already proves an ending to the registry."""
+    dispatch_registry = _router("dispatch_registry")
     if dispatch_registry.followed_up(row):
         return False
     record = _readable_receipt(dispatch_id, state_dir)
@@ -1094,6 +1099,7 @@ def _local_dispatch_notice_reasons(now: datetime | None = None) -> frozenset[tup
     db = _dispatch_db_path()
     if not db.is_file():
         return frozenset()
+    dispatch_registry = _router("dispatch_registry")
     current = now or dispatch_registry.utcnow()
     try:
         stored = dispatch_registry.read_dispatches(path=db, timeout=0.5)
@@ -1188,7 +1194,7 @@ def dispatch_notice_reasons(now: datetime | None = None) -> frozenset[tuple[str,
     local = _local_dispatch_notice_reasons(now=now)
     if not local:
         return frozenset()
-    if not dispatch_flow.paseo_reachable(timeout=PASEO_REACHABLE_TIMEOUT):
+    if not _router("dispatch_flow").paseo_reachable(timeout=PASEO_REACHABLE_TIMEOUT):
         return frozenset()
     return local
 

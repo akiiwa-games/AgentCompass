@@ -388,11 +388,19 @@ def g_herdr():
         check("[blocked] cleanup removes the terminal and the waiting provider process with it", parse(cleaned.stdout).get("status") == "cleaned" and bool(gone_blocked), cleaned.stdout[:200])
         # Unknown delivery. The only fault is at the external boundary: a wrapper in front of the real `hc` lets `hc run` do its work
         # (the terminal is created, the provider starts) and then loses the answer (exit 7, empty). The product is not touched.
+        # The wrapper is a launcher of the shape the product starts without cmd.exe (a program, a script, `%*`), as an npm shim is;
+        # the fault itself is in the script it runs.
         faulty = BASE / "faulty-hc"
         faulty.mkdir(exist_ok=True)
         real = BASE / "hc" / "hc.exe"
-        (faulty / "hc.cmd").write_text("@echo off\r\nif /I \"%~1\"==\"run\" goto lose\r\n\"" + str(real) + "\" %*\r\nexit /b %errorlevel%\r\n:lose\r\n\""
-                                       + str(real) + "\" %* >nul 2>nul\r\nexit /b 7\r\n", encoding="utf-8")
+        lossy = faulty / "lossy_hc.py"
+        lossy.write_text("import subprocess, sys\n"
+                         f"real = {str(real)!r}\n"
+                         "if sys.argv[1:2] == ['run']:\n"
+                         "    subprocess.run([real, *sys.argv[1:]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+                         "    sys.exit(7)\n"
+                         "sys.exit(subprocess.run([real, *sys.argv[1:]]).returncode)\n", encoding="utf-8", newline="\n")
+        (faulty / "hc.cmd").write_text(f'@"{python}" "{lossy}" %*\r\n', encoding="utf-8", newline="")
         lose_env = base_env(HC_SESSION="guest-session", HC_TERMINAL_ID=parent, PATH=str(faulty) + os.pathsep + os.environ["PATH"])
         lost_task = TASK + " [guest-lost-reply]\nFIXTURE-SCENARIO: slow\n"
         starts = len([r for r in worker_records() if r["scenario"] == "slow"])
