@@ -240,6 +240,37 @@ class PublicationHistoryTests(unittest.TestCase):
         self.assertIn('changed since HEAD', public_data.check_frozen(root / 'published', since='HEAD'))
 
 
+# Keys of accounts.json `scoring` this code does not read that released readers of a data schema still index: a set published for
+# that schema keeps them, and they go with the next schema. Key -> (that schema, the released readers and how they read it).
+RELEASED_READER_KEYS = {
+    'needs_judgment_margin': (8, "v0.7.1 to v0.7.3, whose allocator.plan indexes policy['needs_judgment_margin'] "
+                                 "(KeyError once two models are eligible)"),
+}
+
+
+class ReleasedReaderKeyTests(unittest.TestCase):
+    """Rule (calibration/README.md, When to bump SCHEMA_VERSION): a key a released reader of the current schema indexes
+    stays in references/accounts.json `scoring`, which is what `data publish` publishes for that schema, until the schema moves."""
+
+    def test_keys_only_released_readers_index_stay_until_the_schema_moves(self):
+        scoring = read_json(public_data.BUNDLED / 'accounts.json')['scoring']
+        scripts = Path(public_data.__file__).resolve().parent
+        for key, (schema, readers) in RELEASED_READER_KEYS.items():
+            with self.subTest(key):
+                self.assertEqual(public_data.SCHEMA_VERSION, schema,
+                                 f'the data schema moved from {schema} to {public_data.SCHEMA_VERSION}: no reader of the '
+                                 f'current schema reads {key!r} any more; remove it from references/accounts.json and '
+                                 f'from RELEASED_READER_KEYS')
+                self.assertTrue(key in scoring,
+                              f'{key!r} is read by released versions that fetch published sets of schema {schema} '
+                              f'({readers}), not by this code; it stays in references/accounts.json `scoring` until the data '
+                              f'schema moves')
+                readers_here = [f.name for f in scripts.glob('*.py')
+                                if not f.name.startswith('test_') and key in f.read_text(encoding='utf-8')]
+                self.assertEqual(readers_here, [], f'{key!r} is declared read only by released versions, but this code '
+                                                   f'reads it in {readers_here}')
+
+
 def unchecked_manifest_of(directory, names):
     return {'files': {n: {'sha256': public_data.sha256_bytes((directory / n).read_bytes())} for n in names}}
 

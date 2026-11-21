@@ -440,6 +440,10 @@ interprets differently, so that judgement is the maintainer's. After a bump, `da
 installs of the older schema keep reading `published/<old>/`. A release prepared on `main` under a new schema publishes
 its own set first, so `--check --release` holds when it is tagged.
 
+`accounts.json` keeps `scoring.needs_judgment_margin`, which this code does not read: the released versions that fetch published
+sets of the current schema index it, so it goes with the next schema (`test_public_data.py` `RELEASED_READER_KEYS` fails
+when it is removed before, and says it can go once the schema moves).
+
 ## Rules the data follows
 
 - The anchor tiers are the user's judgment. The scripts report contradictions with them and never change them.
