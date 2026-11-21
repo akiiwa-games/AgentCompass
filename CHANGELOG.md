@@ -2,6 +2,17 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass/releases) page.
 
+## v0.7.4 - 2026-11-21
+
+- An answer that refuses, defers or does nothing names what decided it and a way out: `roll`, `plan`, `record`, `dispatch`, the Paseo bridge (`condition` beside `error`) and the gate (what it denied on, and which check it could not make). A flag a stage does not read is said; a plan says when the user's own local settings kept the closest candidates out.
+- The stages `select` and `delegate`, `subscription_judge.py` and the flags `--judge` and `--timeout` are removed. A plan decides a near tie by its documented order. `references/judge-workflow.md` is now `references/task-classifier.md`.
+- A dispatch cadence is counted from the dispatches that launched, finished ones included, and is priced as a rolling limit. Automatic routing is held to it on every account that declares one; a route the user names launches past it with one warning; a project rule is refused at the limit.
+- `roll --resume <id>` resumes a named worker whatever the age of its last dispatch. An account's `cwd_regex` is matched against the directory the worker runs in; an explicit `--resume` of a worker whose directory is unknown on such an account is refused.
+- Pi's ChatGPT usage window is named by its length and read by the launch check. Antigravity's three Orchestrator options are scored between their planner and Gemini 4 Hydrogen.
+- Nine maintainer scores set to the level the public boards measure (published 2026-11-21; data schema 8).
+- Fixed: a store's lock file is no longer written to, so two first users cannot deny each other on Windows; a collection error after completion no longer leaves a dispatch open; `roll --resume --dry-run` answers instead of raising.
+- Exit codes that moved: `record --basis` over 400 characters and `record --trigger workflow` without `user_override` exit 1; `record` with a project rule outside `allowed_accounts` is `blocked`, exit 2; `--account` alone is refused; `roll` with route flags refuses a `--constraint` other than `user_override`; a Dot runner's exit 3 with no task id is an error.
+
 ## v0.7.3 - 2026-11-20
 
 - A model you name reaches the bundle you named. A bare name (`gpt-5.5`) names that model on every account, whatever prefix an account lists it under; one account being unavailable never blocks another. A name with a prefix (`openai/gpt-5.5`) is obeyed: it names only the bundles that prefix names (the listed spelling, or the account, provider, serving provider or Magpie preset of that id) and is never replaced by the same model elsewhere; when they cannot run, the answer lists each with its reason. A prefix that names no account or provider of your fleet is ignored and the rest is read as the name. Changed against v0.7.2: `openai/gpt-5.5` no longer launches another account's bare `gpt-5.5` while an `openai/gpt-5.5` bundle exists and cannot run; write the bare name when any account will do. Fixed: naming `opencode/deepseek-v4-flash` could launch `deepseek/deepseek-v4-flash` beside it, and `record` rewrote the named model onto the other row.
