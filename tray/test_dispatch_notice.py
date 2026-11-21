@@ -23,7 +23,12 @@ from tk_test_support import require_windows
 
 require_windows("psutil")
 
+import allocator
+import account_fleet
+import dispatch_fallback
 import dispatch_registry as registry
+import provider_inventory
+import usage_reading
 
 
 FAKE_SDK_CLIENT = r"""
@@ -40,6 +45,13 @@ function readState() {
   } catch {
     return {};
   }
+}
+
+function writeState(state) {
+  const target = statePath();
+  const tmp = `${target}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(state));
+  fs.renameSync(tmp, target);
 }
 
 function appendJsonl(name, entry) {
@@ -98,6 +110,36 @@ exports.DaemonClient = class {
     const state = readState();
     const entries = (state.timelines && state.timelines[agentId]) || [];
     return {entries, hasOlder: false};
+  }
+  async listWorkspaces() {
+    return {workspaces: []};
+  }
+  async createAgent(options) {
+    const state = readState();
+    const agents = state.agents || {};
+    const nowIso = new Date().toISOString();
+    const agent = {
+      id: options.agentId,
+      provider: options.provider,
+      model: options.model,
+      status: state.created_agent_status || 'running',
+      currentModeId: options.modeId,
+      effectiveThinkingOptionId: options.thinkingOptionId,
+      labels: options.labels,
+      updatedAt: nowIso,
+      lastUserMessageAt: nowIso,
+    };
+    agents[agent.id] = agent;
+    state.agents = agents;
+    writeState(state);
+    appendJsonl('created_agents.jsonl', {
+      pid: process.pid,
+      id: agent.id,
+      provider: agent.provider,
+      model: agent.model,
+      at: Date.now(),
+    });
+    return agent;
   }
   async sendCorrelatedSessionRequest(request) {
     const state = readState();
@@ -350,8 +392,9 @@ class DispatchNoticeUnitTests(unittest.TestCase):
         db_fb = self.root / "fallback.sqlite3"
         with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_fb)}):
             fb_row = base_paseo_row("d-fb", state="failed", now=now)
-            fb_row["fallback"] = {"state": "retrying", "until": (now + timedelta(seconds=60)).isoformat()}
+            fb_row["observed_at"] = fb_row["launched_at"]
             seed_dispatch_row(db_fb, fb_row)
+            self.assertEqual(registry.needs_reader(path=db_fb, now=now)["observe"], ["d-fb"])
             self.assertTrue(services.dispatch_notice_needed(now=now))
 
         db_due = self.root / "due.sqlite3"
@@ -368,6 +411,171 @@ class DispatchNoticeUnitTests(unittest.TestCase):
                 ),
             )
             self.assertTrue(services.dispatch_notice_needed(now=now))
+
+    def test_three_waiting_resend_notices_start_zero_processes_across_ticks_until_next_at(self):
+        now = datetime(2026, 11, 21, 12, 0, 0, tzinfo=timezone.utc)
+        self.configure_paseo_daemon()
+        # Three due notices waiting on `RESEND_AFTER_SECONDS`: two at attempt 0 (15 min), one at attempt 1 (60 min).
+        specs = (
+            ("d-wait-1", now, 0),
+            ("d-wait-2", now + timedelta(seconds=45), 0),
+            ("d-wait-3", now, 1),
+        )
+        for did, sent_at, attempt in specs:
+            seed_dispatch_row(
+                self.db_path,
+                base_paseo_row(
+                    did,
+                    state="completed",
+                    agent_id=f"w-{did}",
+                    now=now,
+                    end_notice={"state": "due", "message_id": registry.end_notice_message_id(did)},
+                ),
+            )
+            self.write_receipt(
+                did,
+                status="delivery_failed",
+                pending={
+                    "key": "terminal",
+                    "text": f"Notice for {did}",
+                    "saved_at": sent_at.isoformat(),
+                    "sent_at": sent_at.isoformat(),
+                    "unknown": True,
+                    **({"attempt": attempt} if attempt else {}),
+                },
+            )
+
+        initial = registry.needs_reader(path=self.db_path, now=now)
+        self.assertFalse(initial["needed"])
+        self.assertEqual(initial["due"], [])
+        self.assertEqual(initial["observe"], [])
+        next_at = registry.parse(initial["next_at"])
+        self.assertEqual(next_at, now + timedelta(seconds=registry.RESEND_AFTER_SECONDS[0]))
+
+        mono = [1000.0]
+        wall = [now]
+        with mock.patch.object(services.time, "monotonic", side_effect=lambda: mono[0]), \
+                mock.patch.object(registry, "utcnow", side_effect=lambda: wall[0]), \
+                mock.patch.object(services, "hidden_popen", return_value=self.child(False)) as popen:
+            for offset_s in (0, 35, 120, 600, registry.RESEND_AFTER_SECONDS[0] - 1):
+                wall[0] = now + timedelta(seconds=offset_s)
+                mono[0] += services.DISPATCH_NOTICE_INTERVAL + 5
+                self.assertFalse(services.dispatch_notice_needed(now=wall[0]))
+                self.assertFalse(services.dispatch_notice_tick())
+            popen.assert_not_called()
+
+            # Once `next_at` arrives, the earliest waiting notice can move and the gate starts a pass.
+            wall[0] = next_at
+            mono[0] += services.DISPATCH_NOTICE_INTERVAL + 5
+            self.assertTrue(services.dispatch_notice_needed(now=wall[0]))
+            self.assertTrue(services.dispatch_notice_tick())
+            popen.assert_called_once()
+
+    def test_gate_delegates_fallback_chains_and_later_turns_to_needs_reader(self):
+        now = datetime(2026, 11, 21, 12, 0, 0, tzinfo=timezone.utc)
+        self.configure_paseo_daemon()
+
+        # 1. A failed attempt whose retry is `scheduled` waits until the guard (`until`): neither `end_notice` nor
+        #    `fallback_guard` starts a pass before `next_at`.
+        db_sched = self.root / "sched.sqlite3"
+        retry_at = (now + timedelta(seconds=180)).isoformat()
+        guard_until = (now + timedelta(seconds=1800)).isoformat()
+        sched_row = base_paseo_row(
+            "d-sched",
+            state="failed",
+            agent_id="w-sched",
+            now=now,
+            end_notice={"state": "due", "message_id": registry.end_notice_message_id("d-sched")},
+        )
+        sched_row["observed_at"] = sched_row["launched_at"]
+        sched_row["fallback"] = {
+            "state": "retrying",
+            "current": "d-sched",
+            "retry_of": "d-sched",
+            "retry_at": retry_at,
+            "until": guard_until,
+            "handled": {"d-sched": {"action": "scheduled", "retry_at": retry_at}},
+        }
+        seed_dispatch_row(db_sched, sched_row)
+        self.write_receipt("d-sched", status="delivery_failed")
+        with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_sched)}):
+            self.assertFalse(registry.needs_reader(path=db_sched, now=now)["needed"])
+            self.assertFalse(services.dispatch_notice_needed(now=now))
+            self.assertTrue(services.dispatch_notice_needed(now=registry.parse(guard_until)))
+
+        # 2. A completed attempt whose worker has an in-flight `resume` of the same parent waits (`_later_turn` pending),
+        #    while the new resume itself is inside `CREATE_SEND_WINDOW`.
+        db_later = self.root / "later.sqlite3"
+        first_row = base_paseo_row(
+            "d-first",
+            state="completed",
+            agent_id="w-shared",
+            now=now - timedelta(seconds=60),
+            end_notice={"state": "due", "message_id": registry.end_notice_message_id("d-first")},
+        )
+        later_row = base_paseo_row("d-later", state="launching", agent_id="w-shared", now=now)
+        later_row["operation"] = "resume"
+        later_row["launched_at"] = (now - timedelta(seconds=5)).isoformat()
+        seed_dispatch_row(db_later, first_row)
+        seed_dispatch_row(db_later, later_row)
+        self.write_receipt("d-first", status="delivery_failed")
+        with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_later)}):
+            self.assertFalse(registry.needs_reader(path=db_later, now=now)["needed"])
+            self.assertFalse(services.dispatch_notice_needed(now=now))
+
+        # 3. An unhandled covered failure settled by a non-reconcile reader (`_awaits_fallback` -> `needs_reader['observe']`)
+        #    starts a pass even without `end_notice` / daemon config when its watcher is dead, and does not when its
+        #    `--watch` process is already healthy.
+        db_await = self.root / "await.sqlite3"
+        await_row = base_paseo_row("d-await", state="failed", agent_id="w-await", now=now)
+        await_row["observed_at"] = await_row["launched_at"]
+        seed_dispatch_row(db_await, await_row)
+        (self.paseo_home / "config.json").unlink(missing_ok=True)
+        bridge = str(services.ROOT / "setup" / "paseo_dispatch_bridge.mjs")
+        live_proc = mock.Mock()
+        live_proc.is_running.return_value = True
+        live_proc.cmdline.return_value = ["node", bridge, "--watch", "d-await", "parent-1", "w-await", ""]
+        with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_await)}):
+            self.assertEqual(registry.needs_reader(path=db_await, now=now)["observe"], ["d-await"])
+            self.assertTrue(services.dispatch_notice_needed(now=now))
+            self.write_receipt("d-await", status="watching", pid=4242)
+            with mock.patch.object(services.psutil, "Process", return_value=live_proc):
+                self.assertFalse(services.dispatch_notice_needed(now=now))
+
+    def test_due_notice_from_needs_reader_without_paseo_daemon_starts_no_pass_across_ticks(self):
+        now = datetime(2026, 11, 21, 12, 0, 0, tzinfo=timezone.utc)
+        seed_dispatch_row(
+            self.db_path,
+            base_paseo_row(
+                "d-nodaemon",
+                state="completed",
+                now=now,
+                end_notice={"state": "due", "message_id": registry.end_notice_message_id("d-nodaemon")},
+            ),
+        )
+        self.write_receipt("d-nodaemon", status="delivery_failed")
+        self.assertEqual(registry.needs_reader(path=self.db_path, now=now)["due"], ["d-nodaemon"])
+
+        mono = [1000.0]
+        for cfg in (None, {}):
+            if cfg is None:
+                (self.paseo_home / "config.json").unlink(missing_ok=True)
+            else:
+                self.paseo_home.mkdir(parents=True, exist_ok=True)
+                (self.paseo_home / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+            with mock.patch.object(services.time, "monotonic", side_effect=lambda: mono[0]), \
+                    mock.patch.object(services, "hidden_popen", return_value=self.child(False)) as popen:
+                for _ in range(4):
+                    mono[0] += services.DISPATCH_NOTICE_INTERVAL + 5
+                    self.assertFalse(services.dispatch_notice_needed(now=now))
+                    self.assertFalse(services.dispatch_notice_tick())
+                popen.assert_not_called()
+
+        self.configure_paseo_daemon()
+        with mock.patch.object(services, "hidden_popen", return_value=self.child(False)) as popen:
+            self.assertTrue(services.dispatch_notice_needed(now=now))
+            self.assertTrue(services.dispatch_notice_tick(force=True))
+            popen.assert_called_once()
 
     def test_launching_row_inside_create_send_window_starts_no_pass_until_window_elapses(self):
         now = datetime.now(timezone.utc)
@@ -663,21 +871,63 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
         (self.paseo_home / "local-credential").write_text("fixture-token\n", encoding="utf-8")
         self.db_path = self.state_dir / "dispatch.sqlite3"
         self.sdk_root = write_fake_sdk(self.root)
+        self.bin_dir = self.root / "bin"
+        self.bin_dir.mkdir(parents=True, exist_ok=True)
+        (self.bin_dir / "claude.cmd").write_text("@echo off\r\nexit /b 0\r\n", encoding="utf-8")
+        self.claude_home = self.root / ".claude"
+        self.claude_home.mkdir(parents=True, exist_ok=True)
+        auth_doc = {"claudeAiOauth": {"accessToken": "fixture-claude-token", "subscriptionType": "max"}}
+        (self.claude_home / ".credentials.json").write_text(json.dumps(auth_doc), encoding="utf-8")
+        cred_key = provider_inventory.auth_facts("claude", auth_doc, self.claude_home)["credential_key"]
+        now_dt = datetime.now(timezone.utc)
+        now_iso = now_dt.isoformat()
+        resets_5h = (now_dt + timedelta(hours=4)).isoformat()
+        resets_7d = (now_dt + timedelta(days=5)).isoformat()
+        (self.state_dir / "usage-cache.json").write_text(
+            json.dumps(
+                {
+                    "providers": {
+                        "claude": {
+                            "provider_id": "claude",
+                            "display_name": "claude",
+                            "available": True,
+                            "stale": False,
+                            "plan_label": "max5",
+                            "plan_source": "profile_api",
+                            "credential_key": cred_key,
+                            "fetched_at": now_iso,
+                            "windows": [
+                                {"id": "five_hour", "label": "5h", "used_pct": 10.0, "resets_at": resets_5h},
+                                {"id": "seven_day", "label": "7d", "used_pct": 10.0, "resets_at": resets_7d},
+                                {"id": "weekly_fable", "label": "7d-fable", "used_pct": 10.0, "resets_at": resets_7d},
+                            ],
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
         env_patch = mock.patch.dict(
             os.environ,
             {
                 "HOME": str(self.root),
                 "USERPROFILE": str(self.root),
+                "CLAUDE_CONFIG_DIR": str(self.claude_home),
+                "ROUTER_PROVIDER_HOME": str(self.root),
                 "ROUTER_STATE_DIR": str(self.state_dir),
                 "ROUTER_DISPATCH_DB": str(self.db_path),
                 "PASEO_HOME": str(self.paseo_home),
                 "ROUTER_PASEO_SDK_ROOT": str(self.sdk_root),
-                "AGENTCOMPASS_ROLL_FALLBACK": "off",
                 "ROUTER_PROVIDER_RETRY": "off",
+                "AGENTCOMPASS_PUBLIC_DATA": "off",
+                "AGENTCOMPASS_ANTIGRAVITY_PLAN": "off",
+                "AGENTCOMPASS_LIVE_MODELS": "off",
+                "PATH": str(self.bin_dir) + os.pathsep + os.environ.get("PATH", ""),
             },
         )
         env_patch.start()
         self.addCleanup(env_patch.stop)
+        os.environ.pop("AGENTCOMPASS_ROLL_FALLBACK", None)
         state_patch = mock.patch.object(services, "STATE_DIR", self.state_dir)
         state_patch.start()
         self.addCleanup(state_patch.stop)
@@ -876,10 +1126,176 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
         self.wait_until(lambda: not psutil.pid_exists(watcher_pid))
         self.assertFalse(services.dispatch_notice_needed())
 
-    def test_worker_already_failed_or_removed_while_watcher_was_dead_notifies_once(self):
+    def seed_routed_started_dispatch(self, task_id: str, agent_id: str, *, parent_id: str = "parent-1") -> dict:
+        now = registry.utcnow()
+        task = {
+            "task_id": task_id,
+            "parent_agent_id": parent_id,
+            "expected_hours": 0.5,
+            "profile": {
+                "work_kind": "code_implementation",
+                "primary_level": 2,
+                "secondary_kind": "none",
+                "secondary_level": 0,
+                "needs_visual": False,
+                "local_only": False,
+                "wants_fast": False,
+                "access": "write",
+                "expected_hours": 0.5,
+                "task_count": "1",
+                "reason": "integration fixture task",
+            },
+        }
+        accounts = account_fleet.load_accounts()
+        usage = usage_reading.usage_snapshot(None)
+        planned = allocator.plan(task, usage, now, accounts=accounts)
+        decision = {**planned, **registry.issue(planned, task, now=now, path=self.db_path)}
+        prepared = registry.prepare(
+            decision["decision_id"],
+            task,
+            {"title": f"Task {task_id}", "initialPrompt": "Run fixture task"},
+            usage,
+            accounts=accounts,
+            now=now,
+            path=self.db_path,
+        )
+        claimed = registry.claim(prepared["request"], now=now, path=self.db_path)
+        provider, _, model = claimed["request"]["provider"].partition("/")
+        settings = claimed["request"].get("settings") or {}
+        snap = {
+            "id": agent_id,
+            "provider": provider,
+            "model": model,
+            "status": "running",
+            "currentModeId": settings.get("modeId"),
+            "effectiveThinkingOptionId": settings.get("thinkingOptionId"),
+            "labels": claimed["request"]["labels"],
+            "updatedAt": (now + timedelta(seconds=1)).isoformat(),
+        }
+        return registry.observe(claimed["dispatch_id"], snap, now=now + timedelta(seconds=1), path=self.db_path)
+
+    def test_worker_failed_while_watcher_was_dead_relaunches_by_default_and_sends_one_notice_for_the_brief(self):
+        self.assertTrue(dispatch_fallback.enabled())
+        first_row = self.seed_routed_started_dispatch("t-fb-brief", "w-fb-1")
+        first_id = first_row["dispatch_id"]
+        self.write_dead_watcher_receipt(first_id, agent_id="w-fb-1")
+        provider_1, _, model_1 = first_row["request"]["provider"].partition("/")
+        failed_agent = {
+            "id": "w-fb-1",
+            "status": "error",
+            "attentionReason": "error",
+            "provider": provider_1,
+            "model": model_1,
+            "labels": first_row["request"]["labels"],
+            "updatedAt": datetime.now(timezone.utc).isoformat(),
+        }
+        self.write_host_state({"parent_id": "parent-1", "agents": {"w-fb-1": failed_agent}, "timelines": {}})
+
+        # 1. Pass runs reconcile: settles attempt 1 as failed, sends NO error notice (fallback holds it), and restarts
+        #    attempt 1's watcher, which runs fallback and creates attempt 2 (`created_agents.jsonl`).
+        self.run_pass_and_wait(force=True)
+
+        def created_without_early_error():
+            early = self.read_jsonl("messages.jsonl")
+            if early:
+                self.fail(f"expected no notice before fallback finished, got: {early}")
+            return self.read_jsonl("created_agents.jsonl")
+
+        created = self.wait_until(created_without_early_error, timeout=20.0)
+        self.assertEqual(len(created), 1)
+        second_id = created[0]["id"]
+        self.assertNotEqual(second_id, first_id)
+
+        # Wait for attempt 1's watcher to record `relaunched`, settle, and exit — still zero messages to `parent-1`.
+        self.wait_until(
+            lambda: (
+                (registry.inspect(first_id, self.db_path).get("end_notice") or {}).get("source") == "relaunched"
+                and not psutil.pid_exists(
+                    json.loads((self.state_dir / "paseo-notifications" / f"{first_id}.json").read_text(encoding="utf-8")).get("pid", -1)
+                )
+            ),
+            timeout=20.0,
+        )
+        second_watcher_pid = json.loads(
+            (self.state_dir / "paseo-notifications" / f"{second_id}.json").read_text(encoding="utf-8")
+        )["pid"]
+        hermetic_run._started.add(second_watcher_pid)
+        self.assertEqual(self.read_jsonl("messages.jsonl"), [])
+
+        # 2. The relaunched attempt finishes; its watcher sends the single notice for the brief.
+        host_state = json.loads((self.state_dir / "fake-paseo-host.json").read_text(encoding="utf-8"))
+        done_at = datetime.now(timezone.utc).isoformat()
+        host_state["agents"][second_id].update(status="idle", attentionReason="finished", updatedAt=done_at)
+        host_state.setdefault("timelines", {})[second_id] = [
+            {"timestamp": first_row["created_at"], "item": {"type": "user_message", "text": "Run fixture task"}},
+            {"timestamp": done_at, "item": {"type": "assistant_message", "text": "Recovered on fallback candidate."}},
+        ]
+        self.write_host_state(host_state)
+
+        msgs = self.wait_until(lambda: self.read_jsonl("messages.jsonl"), timeout=20.0)
+        self.wait_until(
+            lambda: (
+                registry.inspect(second_id, self.db_path)["state"] == "completed"
+                and (registry.inspect(second_id, self.db_path).get("end_notice") or {}).get("state") == "sent"
+                and not psutil.pid_exists(second_watcher_pid)
+            ),
+            timeout=20.0,
+        )
+        self.assertEqual(len(msgs), 1)
+        self.assertIn("State: finished", msgs[0]["text"])
+        self.assertNotIn("State: error", msgs[0]["text"])
+        self.assertIn("Recovered on fallback candidate.", msgs[0]["text"])
+        self.assertIn(f"Dispatch: {first_id}", msgs[0]["text"])
+        expected_second_msg_id = registry.end_notice_message_id(second_id)
+        raw = [m["options"]["messageId"] for m in self.read_jsonl("raw_sends.jsonl")]
+        self.assertEqual(raw, [expected_second_msg_id])
+        self.assertFalse(services.dispatch_notice_needed())
+        self.assertFalse(services.dispatch_notice_tick(force=True))
+
+    def test_worker_removed_or_failed_with_fallback_off_notifies_once(self):
         now = datetime.now(timezone.utc)
-        # Case A: worker already failed while watcher was dead.
+        # With default fallback ON, non-covered removals (before observation and after start) notify once immediately.
+        rem_row = base_paseo_row("d-rem", state="launching", agent_id=None, now=now)
+        rem_row["launched_at"] = (now - timedelta(seconds=registry.CREATE_SEND_WINDOW + 5)).isoformat()
+        seed_dispatch_row(self.db_path, rem_row)
+        self.write_dead_watcher_receipt("d-rem", agent_id=None)
+        gone_row = base_paseo_row("d-gone", state="started", agent_id="w-gone", now=now)
+        gone_row["observed_at"] = gone_row["launched_at"]
+        seed_dispatch_row(self.db_path, gone_row)
+        self.write_dead_watcher_receipt("d-gone", agent_id="w-gone")
+        self.write_host_state(
+            {
+                "parent_id": "parent-1",
+                "agents": {},
+                "creations": {"d-rem": {"error": "Previously created agent no longer exists"}},
+                "timelines": {},
+            }
+        )
+        self.run_pass_and_wait(force=True)
+        self.wait_until(
+            lambda: (
+                registry.inspect("d-rem", self.db_path)["state"] == "canceled"
+                and (registry.inspect("d-rem", self.db_path).get("end_notice") or {}).get("state") == "sent"
+                and registry.inspect("d-gone", self.db_path)["state"] == "canceled"
+                and (registry.inspect("d-gone", self.db_path).get("end_notice") or {}).get("state") == "sent"
+                and all(
+                    not psutil.pid_exists(
+                        json.loads((self.state_dir / "paseo-notifications" / f"{did}.json").read_text(encoding="utf-8")).get("pid", -1)
+                    )
+                    for did in ("d-rem", "d-gone")
+                )
+            )
+        )
+        self.assertTrue(
+            any("Dispatch: d-rem" in m["text"] and "removed before" in m["text"] for m in self.read_jsonl("messages.jsonl"))
+        )
+        self.assertTrue(
+            any("Dispatch: d-gone" in m["text"] and "State: worker unavailable" in m["text"] for m in self.read_jsonl("messages.jsonl"))
+        )
+
+        # With fallback explicitly off (`AGENTCOMPASS_ROLL_FALLBACK=off`), a failed worker sends one plain error notice.
         fail_row = base_paseo_row("d-fail", state="started", agent_id="w-fail", now=now)
+        fail_row["observed_at"] = fail_row["launched_at"]
         seed_dispatch_row(self.db_path, fail_row)
         self.write_dead_watcher_receipt("d-fail", agent_id="w-fail")
         failed_agent = {
@@ -892,68 +1308,32 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
             "labels": fail_row["request"]["labels"],
             "updatedAt": datetime.now(timezone.utc).isoformat(),
         }
-        # Case B: worker created then removed before observation while watcher was dead (past CREATE_SEND_WINDOW).
-        rem_row = base_paseo_row("d-rem", state="launching", agent_id=None, now=now)
-        rem_row["launched_at"] = (now - timedelta(seconds=registry.CREATE_SEND_WINDOW + 5)).isoformat()
-        seed_dispatch_row(self.db_path, rem_row)
-        self.write_dead_watcher_receipt("d-rem", agent_id=None)
-        # Case C: started worker removed while watcher was dead.
-        gone_row = base_paseo_row("d-gone", state="started", agent_id="w-gone", now=now)
-        seed_dispatch_row(self.db_path, gone_row)
-        self.write_dead_watcher_receipt("d-gone", agent_id="w-gone")
-
-        self.write_host_state(
-            {
-                "parent_id": "parent-1",
-                "agents": {"w-fail": failed_agent},
-                "creations": {"d-rem": {"error": "Previously created agent no longer exists"}},
-                "timelines": {},
-            }
-        )
-
-        self.run_pass_and_wait(force=True)
-        self.wait_until(
-            lambda: (
-                any("Dispatch: d-fail" in m["text"] and "State: error" in m["text"] for m in self.read_jsonl("messages.jsonl"))
-                and any(
-                    "Dispatch: d-rem" in m["text"] and "removed before" in m["text"]
-                    for m in self.read_jsonl("messages.jsonl")
-                )
-                and any(
-                    "Dispatch: d-gone" in m["text"] and "State: worker unavailable" in m["text"]
-                    for m in self.read_jsonl("messages.jsonl")
-                )
-            )
-        )
-        # Wait for any restarted short-lived watchers to finish settling and exit.
-        self.wait_until(
-            lambda: (
-                registry.inspect("d-fail", self.db_path)["state"] == "failed"
-                and (registry.inspect("d-fail", self.db_path).get("end_notice") or {}).get("state") == "sent"
-                and registry.inspect("d-rem", self.db_path)["state"] == "canceled"
-                and (registry.inspect("d-rem", self.db_path).get("end_notice") or {}).get("state") == "sent"
-                and registry.inspect("d-gone", self.db_path)["state"] == "canceled"
-                and (registry.inspect("d-gone", self.db_path).get("end_notice") or {}).get("state") == "sent"
-                and all(
-                    not psutil.pid_exists(
-                        json.loads((self.state_dir / "paseo-notifications" / f"{did}.json").read_text(encoding="utf-8")).get("pid", -1)
+        self.write_host_state({"parent_id": "parent-1", "agents": {"w-fail": failed_agent}, "timelines": {}})
+        with mock.patch.dict(os.environ, {"AGENTCOMPASS_ROLL_FALLBACK": "off"}):
+            self.run_pass_and_wait(force=True)
+            self.wait_until(
+                lambda: (
+                    registry.inspect("d-fail", self.db_path)["state"] == "failed"
+                    and (registry.inspect("d-fail", self.db_path).get("end_notice") or {}).get("state") == "sent"
+                    and not psutil.pid_exists(
+                        json.loads((self.state_dir / "paseo-notifications" / "d-fail.json").read_text(encoding="utf-8")).get("pid", -1)
                     )
-                    for did in ("d-fail", "d-rem", "d-gone")
                 )
             )
-        )
-        for did in ("d-fail", "d-rem", "d-gone"):
+            self.assertFalse(services.dispatch_notice_needed())
+            raw_before = len(self.read_jsonl("raw_sends.jsonl"))
+            self.assertFalse(services.dispatch_notice_tick(force=True))
+            self.assertEqual(len(self.read_jsonl("raw_sends.jsonl")), raw_before)
+
+        for did in ("d-rem", "d-gone", "d-fail"):
             msgs = [m for m in self.read_jsonl("messages.jsonl") if f"Dispatch: {did}" in m["text"]]
             self.assertEqual(len(msgs), 1)
-            expected_id = hashlib.sha256(f"router-finish:{did}:terminal".encode()).hexdigest()
+            expected_id = registry.end_notice_message_id(did)
             raw = [m["options"]["messageId"] for m in self.read_jsonl("raw_sends.jsonl") if f"Dispatch: {did}" in m["text"]]
             self.assertTrue(raw)
             self.assertEqual(set(raw), {expected_id})
-
-        self.assertFalse(services.dispatch_notice_needed())
-        raw_before = len(self.read_jsonl("raw_sends.jsonl"))
-        self.assertFalse(services.dispatch_notice_tick(force=True))
-        self.assertEqual(len(self.read_jsonl("raw_sends.jsonl")), raw_before)
+        fail_msg = [m for m in self.read_jsonl("messages.jsonl") if "Dispatch: d-fail" in m["text"]][0]
+        self.assertIn("State: error", fail_msg["text"])
 
     def test_due_end_notice_with_dead_watcher_is_delivered_once_and_matches_watcher_message_id(self):
         now = datetime.now(timezone.utc)
@@ -987,6 +1367,16 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
                 },
             }
         )
+
+        # Without `"daemon"` in `$PASEO_HOME/config.json`, `needs_reader` reports `due`, yet `deliver_end_notices`
+        # would skip it: the gate must not start a pass every 30 s.
+        cfg_path = self.paseo_home / "config.json"
+        saved_cfg = cfg_path.read_text(encoding="utf-8")
+        cfg_path.write_text("{}", encoding="utf-8")
+        self.assertEqual(registry.needs_reader(path=self.db_path, now=now)["due"], ["d-due"])
+        self.assertFalse(services.dispatch_notice_needed(now=now))
+        self.assertFalse(services.dispatch_notice_tick(force=True))
+        cfg_path.write_text(saved_cfg, encoding="utf-8")
 
         self.run_pass_and_wait(force=True)
         msgs = self.read_jsonl("messages.jsonl")

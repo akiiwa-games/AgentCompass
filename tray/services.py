@@ -1039,10 +1039,11 @@ def _watcher_healthy(dispatch_id: str, state_dir: Path, now: datetime) -> bool:
 
 
 def dispatch_notice_needed(now: datetime | None = None) -> bool:
-    """True only when dispatch.sqlite3 has an open Paseo dispatch with an unhealthy watcher or a deliverable due end notice."""
+    """True only when dispatch.sqlite3 has an open Paseo dispatch with an unhealthy watcher or `needs_reader` has actionable work."""
     db = _dispatch_db_path()
     if not db.is_file():
         return False
+    current = now or dispatch_registry.utcnow()
     try:
         stored = dispatch_registry.read_dispatches(path=db, timeout=0.5)
     except sqlite3.Error as exc:
@@ -1050,50 +1051,42 @@ def dispatch_notice_needed(now: datetime | None = None) -> bool:
     except (OSError, ValueError):
         return False
 
-    current = now or datetime.now(timezone.utc)
     state_dir = _dispatch_state_dir()
-    daemon_configured: bool | None = None
     for row in stored:
-        if not isinstance(row, dict):
+        if not isinstance(row, dict) or row.get("dispatch_mode", "paseo") != "paseo" or not row.get("launched_at"):
             continue
-        if row.get("dispatch_mode", "paseo") == "paseo":
-            state = row.get("state")
-            if state in _DISPATCH_NOTICE_ACTIVE and bool(row.get("launched_at")):
-                launched_at = _parse_iso(row.get("launched_at"))
-                if (
-                    state == "launching"
-                    and launched_at is not None
-                    and current < launched_at + timedelta(seconds=dispatch_registry.CREATE_SEND_WINDOW)
-                ):
-                    pass
-                else:
-                    dispatch_id = row.get("dispatch_id")
-                    if _safe_dispatch_id(dispatch_id) and not _watcher_healthy(dispatch_id, state_dir, current):
-                        return True
-            elif state == "expired" and bool(row.get("launched_at")) and _iso_after(row.get("hard_until"), current):
-                dispatch_id = row.get("dispatch_id")
-                if _safe_dispatch_id(dispatch_id) and not _watcher_healthy(dispatch_id, state_dir, current):
-                    return True
-            elif dispatch_registry.fallback_guard(row, current):
-                fb = row.get("fallback") if isinstance(row.get("fallback"), dict) else {}
-                watch_id = fb.get("retry_of") or fb.get("current") or row.get("dispatch_id")
-                if _safe_dispatch_id(watch_id) and not _watcher_healthy(watch_id, state_dir, current):
-                    return True
-        notice = row.get("end_notice")
-        if (
-            row.get("state") in dispatch_registry._END_NOTICE_STATES
-            and isinstance(notice, dict)
-            and notice.get("state") == "due"
-        ):
+        state = row.get("state")
+        if state in _DISPATCH_NOTICE_ACTIVE:
+            launched_at = _parse_iso(row.get("launched_at"))
+            if (
+                state == "launching"
+                and not row.get("observed_at")
+                and launched_at is not None
+                and current < launched_at + timedelta(seconds=dispatch_registry.CREATE_SEND_WINDOW)
+            ):
+                continue
             dispatch_id = row.get("dispatch_id")
-            if not _safe_dispatch_id(dispatch_id):
-                continue
-            if not (state_dir / "paseo-notifications" / f"{dispatch_id}.json").is_file():
-                continue
-            if daemon_configured is None:
-                daemon_configured = _paseo_daemon_configured()
-            if daemon_configured:
+            if _safe_dispatch_id(dispatch_id) and not _watcher_healthy(dispatch_id, state_dir, current):
                 return True
+        elif state == "expired" and _iso_after(row.get("hard_until"), current):
+            dispatch_id = row.get("dispatch_id")
+            if _safe_dispatch_id(dispatch_id) and not _watcher_healthy(dispatch_id, state_dir, current):
+                return True
+
+    try:
+        needs = dispatch_registry.needs_reader(path=db, timeout=0.5, now=current)
+    except sqlite3.Error as exc:
+        return _sqlite_locked(exc)
+    except (OSError, ValueError):
+        return False
+    if not needs["needed"]:
+        return False
+    if any(_safe_dispatch_id(did) and not _watcher_healthy(did, state_dir, current) for did in needs["observe"]):
+        return True
+    if needs["due"] and _paseo_daemon_configured():
+        notif_dir = state_dir / "paseo-notifications"
+        if any(_safe_dispatch_id(did) and (notif_dir / f"{did}.json").is_file() for did in needs["due"]):
+            return True
     return False
 
 
