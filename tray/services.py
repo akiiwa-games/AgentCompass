@@ -5,7 +5,7 @@ from __future__ import annotations
 from i18n import translate as _tr
 
 import csv
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import io
 import json
 import os
@@ -34,6 +34,10 @@ BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
+_SKILL_SCRIPTS = ROOT / "skills" / "agent-compass" / "scripts"
+if str(_SKILL_SCRIPTS) not in sys.path:
+    sys.path.append(str(_SKILL_SCRIPTS))
+import dispatch_registry  # noqa: E402
 DOT_ROOT = plugins.plugin_root("dot2api")
 CHATGPT_ROOT = plugins.plugin_root("chatgpt-web")
 CHATGPT_LAUNCHER = CHATGPT_ROOT / "launcher"
@@ -66,23 +70,23 @@ def safe_cwd(cwd: Path | str | None = None) -> Path:
 
 def hidden_popen(args: list[str], env: dict[str, str], cwd: Path, log_path: Path, extra_flags: int = 0) -> subprocess.Popen:
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log = open(log_path, "ab", buffering=0)
     startup = subprocess.STARTUPINFO()
     exe_name = Path(args[0]).name.lower() if args else ""
     if "--hidden" in args or "--quit" in args or not exe_name.startswith(("electron", "pythonw", "agentcompass")):
         startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startup.wShowWindow = 0
-    return subprocess.Popen(
-        args,
-        cwd=str(safe_cwd(cwd)),
-        env=env,
-        stdin=subprocess.DEVNULL,
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        startupinfo=startup,
-        creationflags=CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | extra_flags,
-        close_fds=True,
-    )
+    with open(log_path, "ab", buffering=0) as log:
+        return subprocess.Popen(
+            args,
+            cwd=str(safe_cwd(cwd)),
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            startupinfo=startup,
+            creationflags=CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | extra_flags,
+            close_fds=True,
+        )
 
 
 def run_hidden(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -927,8 +931,9 @@ def stop_usage_collect() -> None:
 
 # Dispatch notice recovery: restarts killed Paseo watchers (e.g. Antigravity's Windows job object) and sends due end notices.
 DISPATCH_NOTICE_INTERVAL = 30
+DISPATCH_NOTICE_LOG_MAX_BYTES = 1_000_000
+WATCHER_RECEIPT_STALE_SECONDS = 45.0
 _DISPATCH_NOTICE_ACTIVE = ("launching", "launched", "started")
-_DISPATCH_END_NOTICE_STATES = ("completed", "failed", "canceled", "create_failed")
 _dispatch_notice: dict = {"proc": None, "started": None}
 
 
@@ -940,27 +945,26 @@ def _dispatch_db_path() -> Path:
     return Path(os.environ["ROUTER_DISPATCH_DB"]) if os.environ.get("ROUTER_DISPATCH_DB") else _dispatch_state_dir() / "dispatch.sqlite3"
 
 
-def _iso_after(stamp: object, now: datetime) -> bool:
+def _parse_iso(stamp: object) -> datetime | None:
     if not isinstance(stamp, str) or not stamp:
-        return False
+        return None
     try:
-        return datetime.fromisoformat(stamp.replace("Z", "+00:00")) > now
+        return datetime.fromisoformat(stamp.replace("Z", "+00:00"))
     except ValueError:
-        return False
+        return None
 
 
-def _fallback_guard_active(row: dict, now: datetime) -> bool:
-    guard = row.get("fallback")
-    if not isinstance(guard, dict):
-        return False
-    if guard.get("state") in ("retrying", "relaunching") and _iso_after(guard.get("until"), now):
+def _iso_after(stamp: object, now: datetime) -> bool:
+    parsed = _parse_iso(stamp)
+    return parsed is not None and parsed > now
+
+
+def _sqlite_locked(exc: sqlite3.Error) -> bool:
+    name = getattr(exc, "sqlite_errorname", "") or ""
+    if name in ("SQLITE_BUSY", "SQLITE_LOCKED") or name.startswith(("SQLITE_BUSY_", "SQLITE_LOCKED_")):
         return True
-    handled = guard.get("handled")
-    if isinstance(handled, dict):
-        for item in handled.values():
-            if isinstance(item, dict) and item.get("action") == "pending" and _iso_after(item.get("until"), now):
-                return True
-    return False
+    msg = str(exc).lower()
+    return isinstance(exc, sqlite3.OperationalError) and ("locked" in msg or "busy" in msg)
 
 
 def _paseo_daemon_configured() -> bool:
@@ -981,44 +985,106 @@ def _safe_dispatch_id(value: object) -> bool:
     )
 
 
+def _is_bridge_watcher_cmdline(cmdline: list[str], dispatch_id: str | None = None) -> bool:
+    for idx, arg in enumerate(cmdline):
+        if arg != "--watch":
+            continue
+        if not any(Path(prev).name == "paseo_dispatch_bridge.mjs" for prev in cmdline[:idx]):
+            continue
+        if dispatch_id is not None:
+            return idx + 1 < len(cmdline) and cmdline[idx + 1] == dispatch_id
+        return True
+    return False
+
+
+def _watcher_process_alive(pid: object, dispatch_id: str) -> bool:
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
+    try:
+        proc = psutil.Process(pid)
+        if not proc.is_running():
+            return False
+        cmdline = proc.cmdline()
+    except (psutil.Error, OSError, ValueError):
+        return False
+    return _is_bridge_watcher_cmdline(cmdline, dispatch_id)
+
+
+def _watcher_healthy(dispatch_id: str, state_dir: Path, now: datetime) -> bool:
+    """True only when `dispatch_id`'s receipt names a live `--watch <id>` process that is actively writing (or sleeping on a scheduled retry)."""
+    notif_dir = state_dir / "paseo-notifications"
+    receipt_path = notif_dir / f"{dispatch_id}.json"
+    if (notif_dir / f"{dispatch_id}.json.creation-failed").exists():
+        return False
+    try:
+        st = receipt_path.stat()
+        record = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(record, dict) or record.get("dispatch_id") != dispatch_id:
+        return False
+    if record.get("status") != "watching":
+        return False
+    if not _watcher_process_alive(record.get("pid"), dispatch_id):
+        return False
+    if now.timestamp() - st.st_mtime <= WATCHER_RECEIPT_STALE_SECONDS:
+        return True
+    # `paseo_dispatch_bridge.mjs` skips `persist()` on polls before `fallback.retry_at` while `fallback.status == "scheduled"`.
+    fb = record.get("fallback")
+    if not record.get("pending") and isinstance(fb, dict) and fb.get("status") == "scheduled":
+        retry_at = _parse_iso(fb.get("retry_at"))
+        if retry_at is not None and now < retry_at + timedelta(seconds=WATCHER_RECEIPT_STALE_SECONDS):
+            return True
+    return False
+
+
 def dispatch_notice_needed(now: datetime | None = None) -> bool:
-    """True only when dispatch.sqlite3 has a launched open Paseo dispatch or a deliverable due end notice."""
+    """True only when dispatch.sqlite3 has an open Paseo dispatch with an unhealthy watcher or a deliverable due end notice."""
     db = _dispatch_db_path()
     if not db.is_file():
         return False
     try:
-        conn = sqlite3.connect(f"{db.resolve().as_uri()}?mode=ro", uri=True, timeout=0.5)
-    except sqlite3.Error:
-        return True
-    try:
-        raw_rows = conn.execute("SELECT data FROM dispatches").fetchall()
-    except sqlite3.OperationalError as exc:
-        return "no such table" not in str(exc).lower()
-    except sqlite3.Error:
-        return True
-    finally:
-        conn.close()
+        stored = dispatch_registry.read_dispatches(path=db, timeout=0.5)
+    except sqlite3.Error as exc:
+        return _sqlite_locked(exc)
+    except (OSError, ValueError):
+        return False
 
     current = now or datetime.now(timezone.utc)
     state_dir = _dispatch_state_dir()
     daemon_configured: bool | None = None
-    for (raw,) in raw_rows:
-        try:
-            row = json.loads(raw)
-        except (TypeError, ValueError):
-            continue
+    for row in stored:
         if not isinstance(row, dict):
             continue
         if row.get("dispatch_mode", "paseo") == "paseo":
             state = row.get("state")
             if state in _DISPATCH_NOTICE_ACTIVE and bool(row.get("launched_at")):
-                return True
-            if state == "expired" and bool(row.get("launched_at")) and _iso_after(row.get("hard_until"), current):
-                return True
-            if _fallback_guard_active(row, current):
-                return True
+                launched_at = _parse_iso(row.get("launched_at"))
+                if (
+                    state == "launching"
+                    and launched_at is not None
+                    and current < launched_at + timedelta(seconds=dispatch_registry.CREATE_SEND_WINDOW)
+                ):
+                    pass
+                else:
+                    dispatch_id = row.get("dispatch_id")
+                    if _safe_dispatch_id(dispatch_id) and not _watcher_healthy(dispatch_id, state_dir, current):
+                        return True
+            elif state == "expired" and bool(row.get("launched_at")) and _iso_after(row.get("hard_until"), current):
+                dispatch_id = row.get("dispatch_id")
+                if _safe_dispatch_id(dispatch_id) and not _watcher_healthy(dispatch_id, state_dir, current):
+                    return True
+            elif dispatch_registry.fallback_guard(row, current):
+                fb = row.get("fallback") if isinstance(row.get("fallback"), dict) else {}
+                watch_id = fb.get("retry_of") or fb.get("current") or row.get("dispatch_id")
+                if _safe_dispatch_id(watch_id) and not _watcher_healthy(watch_id, state_dir, current):
+                    return True
         notice = row.get("end_notice")
-        if row.get("state") in _DISPATCH_END_NOTICE_STATES and isinstance(notice, dict) and notice.get("state") == "due":
+        if (
+            row.get("state") in dispatch_registry._END_NOTICE_STATES
+            and isinstance(notice, dict)
+            and notice.get("state") == "due"
+        ):
             dispatch_id = row.get("dispatch_id")
             if not _safe_dispatch_id(dispatch_id):
                 continue
@@ -1032,7 +1098,7 @@ def dispatch_notice_needed(now: datetime | None = None) -> bool:
 
 
 def dispatch_reconcile_command() -> list[str] | None:
-    """argv for `agentcompass dispatch --dispatch-action reconcile` using the console CLI, never the windowed tray."""
+    """argv for `agentcompass dispatch --dispatch-action reconcile` using the console CLI, never the windowed tray or `route_judge.py`."""
     if component_launch.frozen():
         cli = Path(sys.executable).resolve().parent / "cli" / ("agentcompass.exe" if os.name == "nt" else "agentcompass")
         if cli.is_file():
@@ -1042,22 +1108,38 @@ def dispatch_reconcile_command() -> list[str] | None:
     scripts = component_launch.skill_scripts()
     if scripts is None:
         return None
+    try:
+        scripts = scripts.resolve()
+    except OSError:
+        pass
     python = Path(sys.executable)
     if os.name == "nt" and python.name.lower() == "pythonw.exe":
         console = python.with_name("python.exe")
         if console.is_file():
             python = console
-    checkout_pkg = scripts.parents[2] / "agentcompass"
-    if (checkout_pkg / "__main__.py").is_file() and (scripts.parents[2] / "pyproject.toml").is_file():
+    checkout_pkg = scripts.parents[2] / "agentcompass" if len(scripts.parents) > 2 else None
+    if checkout_pkg is not None and (checkout_pkg / "__main__.py").is_file() and (scripts.parents[2] / "pyproject.toml").is_file():
         return [str(python), "-X", "utf8", str(checkout_pkg), "dispatch", "--dispatch-action", "reconcile"]
     installed_pkg = scripts.parents[3] if len(scripts.parents) > 3 else None
     if installed_pkg is not None and installed_pkg.name == "agentcompass" and (installed_pkg / "__main__.py").is_file():
         return [str(python), "-X", "utf8", str(installed_pkg), "dispatch", "--dispatch-action", "reconcile"]
-    return [str(python), "-I", "-X", "utf8", str(scripts / "route_judge.py"), "dispatch", "--dispatch-action", "reconcile"]
+    root_pkg = ROOT / "agentcompass"
+    if (root_pkg / "__main__.py").is_file() and (ROOT / "pyproject.toml").is_file():
+        return [str(python), "-X", "utf8", str(root_pkg), "dispatch", "--dispatch-action", "reconcile"]
+    found = shutil.which("agentcompass")
+    return [found, "dispatch", "--dispatch-action", "reconcile"] if found else None
+
+
+def _bound_dispatch_notice_log(log_path: Path) -> None:
+    try:
+        if log_path.stat().st_size > DISPATCH_NOTICE_LOG_MAX_BYTES:
+            os.replace(log_path, log_path.with_name(log_path.name + ".1"))
+    except OSError:
+        pass
 
 
 def dispatch_notice_tick(force: bool = False) -> bool:
-    """Run one low-priority reconcile pass when an open Paseo dispatch or due end notice exists."""
+    """Run one low-priority reconcile pass when an open Paseo dispatch needs watcher recovery or a due end notice exists."""
     proc = _dispatch_notice["proc"]
     if proc is not None and proc.poll() is None:
         return False
@@ -1066,10 +1148,10 @@ def dispatch_notice_tick(force: bool = False) -> bool:
         return False
     if not dispatch_notice_needed():
         return False
+    _dispatch_notice["started"] = time.monotonic()
     cmd = dispatch_reconcile_command()
     if cmd is None:
         return False
-    _dispatch_notice["started"] = time.monotonic()
     state_dir = _dispatch_state_dir()
     env = os.environ.copy()
     default_state = Path.home() / ".agent-compass"
@@ -1077,21 +1159,74 @@ def dispatch_notice_tick(force: bool = False) -> bool:
         env.setdefault("ROUTER_STATE_DIR", str(state_dir))
         env.setdefault("ROUTER_DISPATCH_DB", str(_dispatch_db_path()))
     child_cwd = Path(sys.executable).resolve().parent if component_launch.frozen() else ROOT
-    _dispatch_notice["proc"] = hidden_popen(
-        cmd,
-        env,
-        child_cwd,
-        state_dir / "dispatch-notice.log",
-        BELOW_NORMAL_PRIORITY_CLASS,
-    )
+    log_path = state_dir / "dispatch-notice.log"
+    _bound_dispatch_notice_log(log_path)
+    try:
+        _dispatch_notice["proc"] = hidden_popen(
+            cmd,
+            env,
+            child_cwd,
+            log_path,
+            BELOW_NORMAL_PRIORITY_CLASS,
+        )
+    except OSError:
+        _dispatch_notice["proc"] = None
+        return False
     return True
 
 
-def stop_dispatch_notice() -> None:
-    """Terminate an in-flight reconcile pass without tree-killing detached watchers it started."""
-    proc = _dispatch_notice["proc"]
-    if proc is not None and proc.poll() is None:
+def _non_watcher_descendants(pid: int) -> list[psutil.Process]:
+    to_stop: list[psutil.Process] = []
+    try:
+        queue = list(psutil.Process(pid).children(recursive=False))
+    except psutil.Error:
+        return to_stop
+    while queue:
+        child = queue.pop(0)
         try:
-            proc.terminate()
-        except OSError:
+            cmdline = child.cmdline()
+        except psutil.Error:
+            continue
+        if _is_bridge_watcher_cmdline(cmdline):
+            continue
+        to_stop.append(child)
+        try:
+            queue.extend(child.children(recursive=False))
+        except psutil.Error:
+            continue
+    return to_stop
+
+
+def stop_dispatch_notice() -> None:
+    """Stop an in-flight reconcile pass and its non-watcher bridge children while preserving `--watch` processes."""
+    proc = _dispatch_notice["proc"]
+    _dispatch_notice["proc"] = None
+    if proc is None or proc.poll() is not None:
+        return
+    children = _non_watcher_descendants(proc.pid) if isinstance(proc, subprocess.Popen) else []
+    for child in reversed(children):
+        try:
+            if child.is_running():
+                child.terminate()
+        except psutil.Error:
             pass
+    try:
+        proc.terminate()
+    except OSError:
+        pass
+    if children:
+        _gone, alive = psutil.wait_procs(children, timeout=3.0)
+        for child in reversed(alive):
+            try:
+                child.kill()
+            except psutil.Error:
+                pass
+    if isinstance(proc, subprocess.Popen):
+        try:
+            proc.wait(timeout=3.0)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+                proc.wait(timeout=1.0)
+            except OSError:
+                pass

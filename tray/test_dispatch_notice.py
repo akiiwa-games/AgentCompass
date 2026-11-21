@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -64,13 +65,17 @@ exports.DaemonClient = class {
   isConnected = false;
   async connect() {
     this.isConnected = true;
-    appendJsonl('connections.jsonl', {pid: process.pid, at: Date.now()});
+    appendJsonl('connections.jsonl', {pid: process.pid, argv: process.argv, at: Date.now()});
   }
   async close() {
     this.isConnected = false;
   }
   async fetchAgent(id) {
     const state = readState();
+    if (Array.isArray(state.delay_fetch_ids) && state.delay_fetch_ids.includes(id) && !process.argv.includes('--watch')) {
+      appendJsonl('slow_bridge.jsonl', {pid: process.pid, id, at: Date.now()});
+      await new Promise(resolve => setTimeout(resolve, state.delay_fetch_ms || 6000));
+    }
     if (id === (state.parent_id || 'parent-1')) {
       return {agent: state.parent ?? {id, status: 'running'}};
     }
@@ -245,28 +250,37 @@ class DispatchNoticeUnitTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def write_receipt(self, dispatch_id: str, status: str = "watching", pid: int = 999999) -> Path:
+    def write_receipt(
+        self,
+        dispatch_id: str,
+        status: str = "watching",
+        pid: int = 999999,
+        *,
+        fallback: dict | None = None,
+        pending: dict | None = None,
+        mtime_age_s: float = 0.0,
+    ) -> Path:
         notif_dir = self.state_dir / "paseo-notifications"
         notif_dir.mkdir(parents=True, exist_ok=True)
         path = notif_dir / f"{dispatch_id}.json"
         now_ms = int(time.time() * 1000)
-        path.write_text(
-            json.dumps(
-                {
-                    "dispatch_id": dispatch_id,
-                    "parent_id": "parent-1",
-                    "agent_id": "worker-1",
-                    "pid": pid,
-                    "status": status,
-                    "delivered": ["terminal"] if status == "delivered" else [],
-                    "pending": None,
-                    "created_at": now_ms - 5000,
-                    "deadline": now_ms + 3600_000,
-                    "creation_deadline": now_ms + 240_000,
-                }
-            ),
-            encoding="utf-8",
-        )
+        record = {
+            "dispatch_id": dispatch_id,
+            "parent_id": "parent-1",
+            "agent_id": "worker-1",
+            "pid": pid,
+            "status": status,
+            "delivered": ["terminal"] if status == "delivered" else [],
+            "pending": pending,
+            "created_at": now_ms - 5000,
+            "deadline": now_ms + 3600_000,
+            "creation_deadline": now_ms + 240_000,
+            **({"fallback": fallback} if fallback is not None else {}),
+        }
+        path.write_text(json.dumps(record), encoding="utf-8")
+        if mtime_age_s:
+            ts = time.time() - mtime_age_s
+            os.utime(path, (ts, ts))
         return path
 
     def test_idle_registry_starts_nothing(self):
@@ -321,21 +335,24 @@ class DispatchNoticeUnitTests(unittest.TestCase):
         for state in ("launching", "launched", "started"):
             with self.subTest(state=state):
                 db = self.root / f"open-{state}.sqlite3"
+                row = base_paseo_row(f"d-{state}", state=state, now=now)
+                if state == "launching":
+                    row["launched_at"] = (now - timedelta(seconds=registry.CREATE_SEND_WINDOW + 5)).isoformat()
                 with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db)}):
-                    seed_dispatch_row(db, base_paseo_row(f"d-{state}", state=state, now=now))
-                    self.assertTrue(services.dispatch_notice_needed())
+                    seed_dispatch_row(db, row)
+                    self.assertTrue(services.dispatch_notice_needed(now=now))
 
         db_exp = self.root / "expired-live.sqlite3"
         with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_exp)}):
             seed_dispatch_row(db_exp, base_paseo_row("d-exp", state="expired", now=now))
-            self.assertTrue(services.dispatch_notice_needed())
+            self.assertTrue(services.dispatch_notice_needed(now=now))
 
         db_fb = self.root / "fallback.sqlite3"
         with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_fb)}):
             fb_row = base_paseo_row("d-fb", state="failed", now=now)
             fb_row["fallback"] = {"state": "retrying", "until": (now + timedelta(seconds=60)).isoformat()}
             seed_dispatch_row(db_fb, fb_row)
-            self.assertTrue(services.dispatch_notice_needed())
+            self.assertTrue(services.dispatch_notice_needed(now=now))
 
         db_due = self.root / "due.sqlite3"
         self.configure_paseo_daemon()
@@ -350,7 +367,204 @@ class DispatchNoticeUnitTests(unittest.TestCase):
                     end_notice={"state": "due", "message_id": "m-due"},
                 ),
             )
-            self.assertTrue(services.dispatch_notice_needed())
+            self.assertTrue(services.dispatch_notice_needed(now=now))
+
+    def test_launching_row_inside_create_send_window_starts_no_pass_until_window_elapses(self):
+        now = datetime.now(timezone.utc)
+        for op, aid in (("create", None), ("resume", "w-vanished")):
+            with self.subTest(operation=op):
+                db = self.root / f"launching-{op}.sqlite3"
+                row = base_paseo_row(f"d-launch-{op}", state="launching", agent_id=aid, now=now)
+                row["operation"] = op
+                row["launched_at"] = (now - timedelta(seconds=5)).isoformat()
+                seed_dispatch_row(db, row)
+                # Even with a dead watcher receipt, a launching row inside CREATE_SEND_WINDOW belongs to `roll`.
+                self.write_receipt(f"d-launch-{op}", status="watching", pid=999999)
+                with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db)}), \
+                        mock.patch.object(services, "hidden_popen") as popen:
+                    self.assertFalse(services.dispatch_notice_needed(now=now))
+                    self.assertFalse(services.dispatch_notice_tick(force=True))
+                    popen.assert_not_called()
+                    # Prove the gate reads registry.CREATE_SEND_WINDOW directly rather than a copied constant.
+                    with mock.patch.object(registry, "CREATE_SEND_WINDOW", 120):
+                        self.assertFalse(
+                            services.dispatch_notice_needed(
+                                now=datetime.fromisoformat(row["launched_at"]) + timedelta(seconds=90)
+                            )
+                        )
+                        self.assertTrue(
+                            services.dispatch_notice_needed(
+                                now=datetime.fromisoformat(row["launched_at"]) + timedelta(seconds=120)
+                            )
+                        )
+                    after_window = datetime.fromisoformat(row["launched_at"]) + timedelta(seconds=registry.CREATE_SEND_WINDOW)
+                    self.assertTrue(services.dispatch_notice_needed(now=after_window))
+
+    def test_receipt_gate_skips_healthy_and_scheduled_watchers_and_catches_pid_reuse_and_stale_receipts(self):
+        now = datetime.now(timezone.utc)
+        seed_dispatch_row(self.db_path, base_paseo_row("d-gate", state="started", now=now))
+        bridge = str(services.ROOT / "setup" / "paseo_dispatch_bridge.mjs")
+
+        def fake_proc(cmdline, running=True):
+            proc = mock.Mock()
+            proc.is_running.return_value = running
+            proc.cmdline.return_value = cmdline
+            return proc
+
+        # 1. Healthy live watcher (`--watch d-gate`) writing recently -> no pass needed.
+        self.write_receipt("d-gate", status="watching", pid=7777)
+        with mock.patch.object(services.psutil, "Process", return_value=fake_proc(["node", bridge, "--watch", "d-gate", "parent-1", "worker-1", ""])):
+            self.assertFalse(services.dispatch_notice_needed(now=now))
+
+        # 2. PID reused by an unrelated process, a non-watch bridge call, or another dispatch's watcher -> pass needed.
+        for bad_cmd in (
+            ["python.exe", "-c", "print(1)"],
+            ["node", bridge],
+            ["node", bridge, "--watch", "d-other", "parent-1", "worker-1", ""],
+        ):
+            with self.subTest(cmdline=bad_cmd), mock.patch.object(services.psutil, "Process", return_value=fake_proc(bad_cmd)):
+                self.assertTrue(services.dispatch_notice_needed(now=now))
+
+        # 3. Live `--watch d-gate` process whose receipt stopped updating beyond WATCHER_RECEIPT_STALE_SECONDS -> pass needed.
+        stale_age = services.WATCHER_RECEIPT_STALE_SECONDS + 10.0
+        self.write_receipt("d-gate", status="watching", pid=7777, mtime_age_s=stale_age)
+        with mock.patch.object(services.psutil, "Process", return_value=fake_proc(["node", bridge, "--watch", "d-gate", "parent-1", "worker-1", ""])):
+            self.assertTrue(services.dispatch_notice_needed(now=now))
+
+        # 4. Watcher waiting on a scheduled retry (`paseo_dispatch_bridge.mjs` stops `persist()` until `retry_at`):
+        #    old receipt mtime is allowed before `retry_at` (+ grace), and flagged once `retry_at` + grace has elapsed.
+        retry_at = (now + timedelta(seconds=180)).isoformat()
+        self.write_receipt(
+            "d-gate",
+            status="watching",
+            pid=7777,
+            fallback={"status": "scheduled", "at": (now - timedelta(seconds=120)).isoformat(), "retry_at": retry_at},
+            mtime_age_s=120.0,
+        )
+        with mock.patch.object(services.psutil, "Process", return_value=fake_proc(["node", bridge, "--watch", "d-gate", "parent-1", "worker-1", ""])):
+            self.assertFalse(services.dispatch_notice_needed(now=now))
+            overdue = datetime.fromisoformat(retry_at) + timedelta(seconds=services.WATCHER_RECEIPT_STALE_SECONDS + 5.0)
+            self.assertTrue(services.dispatch_notice_needed(now=overdue))
+
+        # 5. Non-watching status or `.creation-failed` marker -> pass needed even if PID is alive and mtime is fresh.
+        self.write_receipt("d-gate", status="delivery_failed", pid=7777)
+        with mock.patch.object(services.psutil, "Process", return_value=fake_proc(["node", bridge, "--watch", "d-gate", "parent-1", "worker-1", ""])):
+            self.assertTrue(services.dispatch_notice_needed(now=now))
+
+        self.write_receipt("d-gate", status="watching", pid=7777)
+        marker = self.state_dir / "paseo-notifications" / "d-gate.json.creation-failed"
+        marker.write_text("stop", encoding="utf-8")
+        try:
+            with mock.patch.object(services.psutil, "Process", return_value=fake_proc(["node", bridge, "--watch", "d-gate", "parent-1", "worker-1", ""])):
+                self.assertTrue(services.dispatch_notice_needed(now=now))
+        finally:
+            marker.unlink(missing_ok=True)
+
+        # 6. Even when every open dispatch's watcher is healthy, a terminal due end notice still starts a pass.
+        self.configure_paseo_daemon()
+        seed_dispatch_row(
+            self.db_path,
+            base_paseo_row("d-due-still", state="completed", now=now, end_notice={"state": "due", "message_id": "m-due"}),
+        )
+        self.write_receipt("d-due-still", status="delivery_failed", pid=8888)
+        with mock.patch.object(services.psutil, "Process", return_value=fake_proc(["node", bridge, "--watch", "d-gate", "parent-1", "worker-1", ""])):
+            self.assertTrue(services.dispatch_notice_needed(now=now))
+
+    def test_dispatch_notice_log_rotates_above_size_bound(self):
+        seed_dispatch_row(self.db_path, base_paseo_row("d-log", state="started"))
+        log_path = self.state_dir / "dispatch-notice.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        oversized = b"L" * (services.DISPATCH_NOTICE_LOG_MAX_BYTES + 64)
+        log_path.write_bytes(oversized)
+        with mock.patch.object(services, "hidden_popen", return_value=self.child(True)) as popen:
+            self.assertTrue(services.dispatch_notice_tick(force=True))
+        popen.assert_called_once()
+        rotated = self.state_dir / "dispatch-notice.log.1"
+        self.assertTrue(rotated.is_file())
+        self.assertEqual(rotated.read_bytes(), oversized)
+        self.assertFalse(log_path.exists())
+
+    def test_junctioned_codex_skill_resolves_to_checkout_agentcompass_never_route_judge(self):
+        codex_skills = self.root / ".codex" / "skills"
+        codex_skills.mkdir(parents=True, exist_ok=True)
+        junc = codex_skills / "agent-compass"
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(junc), str(services.ROOT / "skills" / "agent-compass")],
+            capture_output=True,
+            check=True,
+            creationflags=services.CREATE_NO_WINDOW,
+        )
+        self.addCleanup(
+            subprocess.run,
+            ["cmd", "/c", "rmdir", str(junc)],
+            capture_output=True,
+            creationflags=services.CREATE_NO_WINDOW,
+        )
+        with mock.patch.dict(os.environ, {"CODEX_HOME": str(self.root / ".codex")}):
+            cmd = services.dispatch_reconcile_command()
+        self.assertIsNotNone(cmd)
+        self.assertNotIn("-I", cmd)
+        self.assertFalse(any(part.endswith("route_judge.py") for part in cmd), cmd)
+        self.assertEqual(Path(cmd[3]).resolve(), (services.ROOT / "agentcompass").resolve())
+        self.assertEqual(cmd[4:], ["dispatch", "--dispatch-action", "reconcile"])
+
+    def test_missing_cli_and_popen_oserror_are_quiet_and_throttled_to_interval(self):
+        seed_dispatch_row(self.db_path, base_paseo_row("d-nocli", state="started"))
+        needed_calls = 0
+        orig_needed = services.dispatch_notice_needed
+
+        def counting_needed(*args, **kwargs):
+            nonlocal needed_calls
+            needed_calls += 1
+            return orig_needed(*args, **kwargs)
+
+        clock = [1000.0]
+        with mock.patch.object(services, "dispatch_notice_needed", side_effect=counting_needed), \
+                mock.patch.object(services, "dispatch_reconcile_command", return_value=None), \
+                mock.patch.object(services.time, "monotonic", side_effect=lambda: clock[0]):
+            for offset in (0, 10, 20, 30):
+                clock[0] = 1000.0 + offset
+                self.assertFalse(services.dispatch_notice_tick(force=False))
+        self.assertIsNotNone(services._dispatch_notice["started"])
+        self.assertEqual(needed_calls, 2)
+
+        services._dispatch_notice.update(proc=None, started=None)
+        needed_calls = 0
+        with mock.patch.object(services, "dispatch_notice_needed", side_effect=counting_needed), \
+                mock.patch.object(services, "hidden_popen", side_effect=OSError("spawn failed")) as popen, \
+                mock.patch.object(services.time, "monotonic", side_effect=lambda: clock[0]):
+            for offset in (0, 10, 20, 30):
+                clock[0] = 2000.0 + offset
+                self.assertFalse(services.dispatch_notice_tick(force=False))
+        self.assertEqual(needed_calls, 2)
+        self.assertEqual(popen.call_count, 2)
+
+    def test_corrupt_non_database_registry_starts_no_pass_while_locked_database_still_may(self):
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        for name, payload in (
+            ("garbage", b"not a sqlite database"),
+            ("malformed_header", b"SQLite format 3\x00" + b"\xff" * 512),
+            ("empty_file", b""),
+        ):
+            with self.subTest(case=name):
+                bad_db = self.root / f"{name}.sqlite3"
+                bad_db.write_bytes(payload)
+                with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(bad_db)}), \
+                        mock.patch.object(services, "hidden_popen") as popen:
+                    self.assertFalse(services.dispatch_notice_needed())
+                    self.assertFalse(services.dispatch_notice_tick(force=True))
+                    popen.assert_not_called()
+
+        locked_db = self.root / "locked.sqlite3"
+        seed_dispatch_row(locked_db, base_paseo_row("d-locked", state="started"))
+        holder = sqlite3.connect(locked_db, isolation_level=None)
+        self.addCleanup(holder.close)
+        holder.execute("BEGIN EXCLUSIVE")
+        try:
+            with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(locked_db)}):
+                self.assertTrue(services.dispatch_notice_needed())
+        finally:
+            holder.rollback()
 
     def test_frozen_tray_invokes_bundled_cli_executable_never_windowed_tray(self):
         install_root = self.root / "install"
@@ -400,6 +614,37 @@ class DispatchNoticeUnitTests(unittest.TestCase):
             services.stop_dispatch_notice()
             live_proc.terminate.assert_called_once_with()
             kill.assert_not_called()
+
+        # When `observe` is still alive with a newly spawned `--watch` child beneath it, stopping terminates
+        # `route_judge` and `observe` (leaves-first) while sparing `--watch` and anything beneath `--watch`.
+        bridge = str(services.ROOT / "setup" / "paseo_dispatch_bridge.mjs")
+        watch_sub = mock.Mock(pid=9004)
+        watch_sub.cmdline.return_value = ["python.exe", "-m", "agentcompass", "continuation-verdict", "w-1"]
+        watch_child = mock.Mock(pid=9003)
+        watch_child.cmdline.return_value = ["node", bridge, "--watch", "d-1", "parent-1", "w-1", ""]
+        watch_child.children.return_value = [watch_sub]
+        observe_child = mock.Mock(pid=9002)
+        observe_child.cmdline.return_value = ["node", bridge]
+        observe_child.children.return_value = [watch_child]
+        observe_child.is_running.return_value = True
+        judge_child = mock.Mock(pid=9001)
+        judge_child.cmdline.return_value = ["python.exe", "-I", "-X", "utf8", "route_judge.py", "dispatch"]
+        judge_child.children.return_value = [observe_child]
+        judge_child.is_running.return_value = True
+        root_ps = mock.Mock(pid=9000)
+        root_ps.children.return_value = [judge_child]
+
+        fake_popen = mock.Mock(spec=subprocess.Popen, pid=9000)
+        fake_popen.poll.return_value = None
+        services._dispatch_notice["proc"] = fake_popen
+        with mock.patch.object(services.psutil, "Process", return_value=root_ps), \
+                mock.patch.object(services.psutil, "wait_procs", return_value=([observe_child, judge_child], [])):
+            services.stop_dispatch_notice()
+        observe_child.terminate.assert_called_once_with()
+        judge_child.terminate.assert_called_once_with()
+        fake_popen.terminate.assert_called_once_with()
+        watch_child.terminate.assert_not_called()
+        watch_sub.terminate.assert_not_called()
 
 
 class DispatchNoticeIntegrationTests(unittest.TestCase):
@@ -481,11 +726,12 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
         agent_id: str | None = "worker-1",
         parent_id: str = "parent-1",
         status: str = "watching",
+        state_dir: Path | None = None,
     ) -> Path:
         dead = subprocess.Popen([sys.executable, "-c", "pass"])
         dead.wait(timeout=5)
         dead_pid = dead.pid
-        notif_dir = self.state_dir / "paseo-notifications"
+        notif_dir = (state_dir or self.state_dir) / "paseo-notifications"
         notif_dir.mkdir(parents=True, exist_ok=True)
         receipt_path = notif_dir / f"{dispatch_id}.json"
         lock_path = notif_dir / f"{dispatch_id}.json.lock"
@@ -578,8 +824,11 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
         time.sleep(0.3)
         self.assertTrue(psutil.pid_exists(watcher_pid), "restarted watcher died when the pass command exited")
 
-        # 2. While the watcher is alive, another pass keeps the same watcher PID without starting a duplicate.
-        self.run_pass_and_wait(force=True)
+        # 2. While the watcher is alive and writing, another tick starts nothing at all.
+        conns_before_idle_tick = len(self.read_jsonl("connections.jsonl"))
+        self.assertFalse(services.dispatch_notice_needed())
+        self.assertFalse(services.dispatch_notice_tick(force=True))
+        self.assertEqual(len(self.read_jsonl("connections.jsonl")), conns_before_idle_tick)
         receipt_after = json.loads(receipt_path.read_text(encoding="utf-8"))
         self.assertEqual(receipt_after["pid"], watcher_pid)
         self.assertTrue(psutil.pid_exists(watcher_pid))
@@ -643,8 +892,9 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
             "labels": fail_row["request"]["labels"],
             "updatedAt": datetime.now(timezone.utc).isoformat(),
         }
-        # Case B: worker created then removed before observation while watcher was dead.
+        # Case B: worker created then removed before observation while watcher was dead (past CREATE_SEND_WINDOW).
         rem_row = base_paseo_row("d-rem", state="launching", agent_id=None, now=now)
+        rem_row["launched_at"] = (now - timedelta(seconds=registry.CREATE_SEND_WINDOW + 5)).isoformat()
         seed_dispatch_row(self.db_path, rem_row)
         self.write_dead_watcher_receipt("d-rem", agent_id=None)
         # Case C: started worker removed while watcher was dead.
@@ -793,6 +1043,9 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
                 },
             }
         )
+        # Age the receipt mtime past WATCHER_RECEIPT_STALE_SECONDS so the pass runs simultaneously with the live watcher.
+        stale_ts = time.time() - (services.WATCHER_RECEIPT_STALE_SECONDS + 10.0)
+        os.utime(receipt_path, (stale_ts, stale_ts))
         self.run_pass_and_wait(force=True)
         self.wait_until(
             lambda: (
@@ -809,11 +1062,150 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
         self.assertTrue(raw)
         self.assertEqual(set(raw), {expected_id})
         raw_count = len(raw)
+        self.assertFalse(services.dispatch_notice_needed())
         self.assertFalse(services.dispatch_notice_tick(force=True))
         self.assertEqual(
             len([m for m in self.read_jsonl("raw_sends.jsonl") if "Dispatch: d-race" in m["text"]]),
             raw_count,
         )
+
+    def test_open_dispatches_with_live_watchers_spawn_zero_processes_and_zero_connections(self):
+        for count in (1, 3):
+            with self.subTest(open_dispatches=count):
+                sub_dir = self.root / f"live-{count}"
+                state_dir = sub_dir / ".agent-compass"
+                state_dir.mkdir(parents=True, exist_ok=True)
+                db_path = state_dir / "dispatch.sqlite3"
+                now = datetime.now(timezone.utc)
+                agents = {}
+                with mock.patch.dict(os.environ, {"ROUTER_STATE_DIR": str(state_dir), "ROUTER_DISPATCH_DB": str(db_path)}), \
+                        mock.patch.object(services, "STATE_DIR", state_dir):
+                    for idx in range(1, count + 1):
+                        did = f"d-live-{count}-{idx}"
+                        aid = f"w-live-{count}-{idx}"
+                        row = base_paseo_row(did, state="started", agent_id=aid, now=now)
+                        seed_dispatch_row(db_path, row)
+                        self.write_dead_watcher_receipt(did, agent_id=aid, state_dir=state_dir)
+                        agents[aid] = {
+                            "id": aid,
+                            "status": "running",
+                            "provider": "codex",
+                            "model": "gpt-6.1-sol",
+                            "currentModeId": "full-access",
+                            "effectiveThinkingOptionId": "medium",
+                            "labels": row["request"]["labels"],
+                            "updatedAt": now.isoformat(),
+                        }
+                    (state_dir / "fake-paseo-host.json").write_text(
+                        json.dumps({"parent_id": "parent-1", "agents": agents}), encoding="utf-8"
+                    )
+                    # First pass starts the `count` live watchers.
+                    self.assertTrue(services.dispatch_notice_tick(force=True))
+                    rc = services._dispatch_notice["proc"].wait(timeout=30)
+                    self.assertEqual(rc, 0)
+                    watcher_pids = [
+                        json.loads((state_dir / "paseo-notifications" / f"d-live-{count}-{i}.json").read_text(encoding="utf-8"))["pid"]
+                        for i in range(1, count + 1)
+                    ]
+                    for pid in watcher_pids:
+                        hermetic_run._started.add(pid)
+                        self.assertTrue(psutil.pid_exists(pid))
+
+                    try:
+                        conn_path = state_dir / "connections.jsonl"
+                        conns_before = conn_path.read_text(encoding="utf-8").splitlines() if conn_path.is_file() else []
+                        log_path = state_dir / "dispatch-notice.log"
+                        log_before = log_path.stat().st_size if log_path.is_file() else 0
+
+                        with mock.patch.object(services, "hidden_popen") as popen:
+                            self.assertFalse(services.dispatch_notice_needed())
+                            self.assertFalse(services.dispatch_notice_tick(force=True))
+                            popen.assert_not_called()
+
+                        conns_after = conn_path.read_text(encoding="utf-8").splitlines() if conn_path.is_file() else []
+                        non_watch_new = [
+                            json.loads(line)
+                            for line in conns_after[len(conns_before):]
+                            if line.strip() and "--watch" not in json.loads(line).get("argv", [])
+                        ]
+                        self.assertEqual(non_watch_new, [])
+                        self.assertEqual((log_path.stat().st_size if log_path.is_file() else 0) - log_before, 0)
+                    finally:
+                        for pid in watcher_pids:
+                            if psutil.pid_exists(pid):
+                                try:
+                                    psutil.Process(pid).terminate()
+                                    psutil.Process(pid).wait(timeout=5)
+                                except psutil.Error:
+                                    pass
+
+    def test_stop_dispatch_notice_stops_inflight_bridge_child_without_stopping_watcher(self):
+        now = datetime.now(timezone.utc)
+        # First row (`d-keep-watch`) observed quickly -> starts a detached `--watch` child.
+        keep_row = base_paseo_row("d-keep-watch", state="started", agent_id="w-keep", now=now)
+        seed_dispatch_row(self.db_path, keep_row)
+        keep_receipt = self.write_dead_watcher_receipt("d-keep-watch", agent_id="w-keep")
+        # Second row (`d-slow-obs`) blocks inside `observe` (`node paseo_dispatch_bridge.mjs` without `--watch`).
+        slow_row = base_paseo_row("d-slow-obs", state="started", agent_id="w-slow", now=now)
+        seed_dispatch_row(self.db_path, slow_row)
+        self.write_dead_watcher_receipt("d-slow-obs", agent_id="w-slow")
+
+        self.write_host_state(
+            {
+                "parent_id": "parent-1",
+                "delay_fetch_ids": ["w-slow"],
+                "delay_fetch_ms": 15000,
+                "agents": {
+                    "w-keep": {
+                        "id": "w-keep",
+                        "status": "running",
+                        "provider": "codex",
+                        "model": "gpt-6.1-sol",
+                        "currentModeId": "full-access",
+                        "effectiveThinkingOptionId": "medium",
+                        "labels": keep_row["request"]["labels"],
+                        "updatedAt": now.isoformat(),
+                    },
+                    "w-slow": {
+                        "id": "w-slow",
+                        "status": "running",
+                        "provider": "codex",
+                        "model": "gpt-6.1-sol",
+                        "currentModeId": "full-access",
+                        "effectiveThinkingOptionId": "medium",
+                        "labels": slow_row["request"]["labels"],
+                        "updatedAt": now.isoformat(),
+                    },
+                },
+            }
+        )
+
+        self.assertTrue(services.dispatch_notice_tick(force=True))
+        pass_proc = services._dispatch_notice["proc"]
+        slow_entries = self.wait_until(lambda: self.read_jsonl("slow_bridge.jsonl"), timeout=15.0)
+        bridge_pid = slow_entries[0]["pid"]
+        hermetic_run._started.add(bridge_pid)
+        for desc in psutil.Process(pass_proc.pid).children(recursive=True):
+            hermetic_run._started.add(desc.pid)
+        watcher_pid = json.loads(keep_receipt.read_text(encoding="utf-8"))["pid"]
+        hermetic_run._started.add(watcher_pid)
+        self.assertTrue(psutil.pid_exists(bridge_pid))
+        self.assertTrue(psutil.pid_exists(watcher_pid))
+
+        try:
+            services.stop_dispatch_notice()
+            pass_proc.wait(timeout=5)
+            self.wait_until(lambda: not psutil.pid_exists(bridge_pid), timeout=3.0)
+            time.sleep(0.3)
+            self.assertTrue(psutil.pid_exists(watcher_pid), "stopping an in-flight pass must not kill a `--watch` child")
+        finally:
+            for pid in (bridge_pid, watcher_pid):
+                if psutil.pid_exists(pid):
+                    try:
+                        psutil.Process(pid).terminate()
+                        psutil.Process(pid).wait(timeout=5)
+                    except psutil.Error:
+                        pass
 
 
 if __name__ == "__main__":

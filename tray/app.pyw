@@ -550,6 +550,9 @@ def main() -> None:
     try:
         icon.run(setup)
     finally:
+        services.stop_usage_collect()
+        services.stop_capacity()
+        services.stop_dispatch_notice()
         updates.abandon_usage_float_mpv()
         release_single_instance()
         log_info("tray event loop ended")

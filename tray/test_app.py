@@ -452,6 +452,78 @@ class WatchTests(TrayTestCase):
         renew.assert_not_called()
         thread.assert_not_called()
 
+    def test_every_main_exit_stops_periodic_children_including_wm_stop_and_icon_error(self):
+        for outcome in (lambda _setup: None, RuntimeError("icon loop crashed")):
+            with self.subTest(outcome=type(outcome).__name__):
+                fake_icon = mock.Mock()
+                fake_icon.run.side_effect = outcome
+                with mock.patch.object(app, "single_instance", return_value=True), \
+                        mock.patch.object(app, "release_single_instance") as release_mutex, \
+                        mock.patch.object(app.plugins, "load", return_value=app.plugins.defaults()), \
+                        mock.patch.object(app, "draw_icon"), \
+                        mock.patch.object(app, "build_menu"), \
+                        mock.patch.object(app.pystray, "Icon", return_value=fake_icon), \
+                        mock.patch.object(app.services, "stop_usage_collect") as stop_usage, \
+                        mock.patch.object(app.services, "stop_capacity") as stop_cap, \
+                        mock.patch.object(app.services, "stop_dispatch_notice") as stop_notice, \
+                        mock.patch.object(app.updates, "abandon_usage_float_mpv") as abandon_mpv, \
+                        mock.patch.object(app, "log_info"):
+                    if isinstance(outcome, Exception):
+                        with self.assertRaisesRegex(RuntimeError, "icon loop crashed"):
+                            app.main()
+                    else:
+                        app.main()
+                stop_usage.assert_called_once_with()
+                stop_cap.assert_called_once_with()
+                stop_notice.assert_called_once_with()
+                abandon_mpv.assert_called_once_with()
+                release_mutex.assert_called_once_with()
+
+    def test_failed_dispatch_notice_start_is_quiet_throttled_and_does_not_abort_watch_loop(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state_dir = Path(folder) / ".agent-compass"
+            db_path = state_dir / "dispatch.sqlite3"
+            import dispatch_registry as registry
+            from test_dispatch_notice import base_paseo_row, seed_dispatch_row
+
+            now = app.services.datetime.now(app.services.timezone.utc)
+            seed_dispatch_row(db_path, base_paseo_row("d-popen-fail", state="started", now=now))
+            refresh_calls = []
+            event = mock.Mock()
+            event.return_value.wait.side_effect = [None, Stop]
+            clock = [1000.0]
+            app.PLUGINS["dot2api"]["enabled"] = False
+            app.services._dispatch_notice.update(proc=None, started=None)
+            self.addCleanup(app.services._dispatch_notice.update, proc=None, started=None)
+
+            steps = iter([None, Stop()])
+
+            def wait_step(_seconds):
+                clock[0] += 10.0
+                nxt = next(steps)
+                if isinstance(nxt, BaseException):
+                    raise nxt
+
+            event.return_value.wait.side_effect = wait_step
+            with mock.patch.dict("os.environ", {"ROUTER_STATE_DIR": str(state_dir), "ROUTER_DISPATCH_DB": str(db_path)}), \
+                    mock.patch.object(app.services, "STATE_DIR", state_dir), \
+                    mock.patch.object(app.services, "hidden_popen", side_effect=FileNotFoundError("cli missing")) as popen, \
+                    mock.patch.object(app.services.time, "monotonic", side_effect=lambda: clock[0]), \
+                    mock.patch.object(app.time, "monotonic", side_effect=lambda: clock[0]), \
+                    mock.patch.object(app.threading, "Event", event), \
+                    mock.patch.object(app.services, "usage_collect_tick"), \
+                    mock.patch.object(app.services, "capacity_tick"), \
+                    mock.patch.object(app, "refresh", side_effect=lambda _ic: refresh_calls.append(True)), \
+                    mock.patch.object(app.cli_updates, "maybe_trigger_auto_update") as auto_upd:
+                with self.assertRaises(Stop):
+                    app.watch(mock.Mock())
+            self.assertEqual(len(refresh_calls), 2)
+            auto_upd.assert_called_once()
+            self.assertEqual(popen.call_count, 1)
+            tray_log = (state_dir / "tray.log").read_text(encoding="utf-8") if (state_dir / "tray.log").is_file() else ""
+            self.assertEqual(tray_log, "")
+            del registry
+
 
 if __name__ == "__main__":
     unittest.main()
