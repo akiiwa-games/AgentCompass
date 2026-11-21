@@ -28,13 +28,13 @@ import grok_bot_paths  # noqa: E402
 import plugins  # noqa: E402
 
 checkout = work / "checkout"
-for folder in ("usage-float", "codex-chatgpt-web", "gemini-web", "dot2api"):
+for folder in ("usage-float", "codex-chatgpt-web", "dot2api"):
     (checkout / folder / ".git").mkdir(parents=True, exist_ok=True)
 plugins_dir = plugins.PLUGINS_DIR
 check("the plugins directory is the foreign profile's", plugins_dir.is_relative_to(home), str(plugins_dir))
 check("git-cloned plugin roots always resolve to ~/.agent-compass/plugins/<id> (never a checkout copy)",
       all(plugins.plugin_root(pid, repo_root=checkout) == plugins_dir / pid
-          for pid in ("usage-float", "chatgpt-web", "gemini-web", "dot2api")))
+          for pid in ("usage-float", "chatgpt-web", "dot2api")))
 
 program_data = Path(os.environ["ProgramData"])
 product = program_data / "AgentCompass" / "easytier"

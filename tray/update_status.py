@@ -20,7 +20,7 @@ _process = None
 _state = {}
 
 
-DEFAULT_TARGETS = ("Dot2API", "ChatGPT Web", "Usage Float", "Gemini Web")
+DEFAULT_TARGETS = ("Dot2API", "ChatGPT Web", "Usage Float")
 
 
 def record(event: dict | str, *, directory: Path | None = None) -> None:

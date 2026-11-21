@@ -703,7 +703,7 @@ def update_paseo_config() -> None:
 
 # --- skills ----------------------------------------------------------------------------------------------------------
 
-SKILLS_TO_CODEX = ["agent-compass", "dot-subagent", "chatgpt-pro-consult", "gemini-web", "gate-design-reflection"]
+SKILLS_TO_CODEX = ["agent-compass", "dot-subagent", "chatgpt-pro-consult", "gate-design-reflection"]
 SKILLS_TO_AGENTS = ["paseo", "paseo-advisor", "paseo-committee", "paseo-handoff", "paseo-help", "paseo-plugin"]
 
 
@@ -977,6 +977,33 @@ def _retire_stale_skill_links(active_homes: list[tuple[str, Path]]) -> None:
                 report(f"[uninstall] {path}: {_restore_file(path, entry.get('backup'), bool(entry.get('created')))}")
         if not DRY_RUN:
             MANIFEST["files"].pop(key, None)
+
+    _retire_links_to_nothing()
+
+
+def _retire_links_to_nothing() -> None:
+    """Remove the links this install made whose target no longer exists: a skill a later version does not ship.
+
+    A link is ours while it still points where the manifest says. What it replaced is put back, as on uninstall. The
+    Antigravity copy of a skill goes with the hub link it was made from."""
+    for key in sorted(list(MANIFEST["junctions"])):
+        link, entry = Path(key), MANIFEST["junctions"][key]
+        current = junction_target(link)
+        if current is None or Path(current) != Path(entry["target"]).resolve() or Path(current).exists():
+            continue
+        if _within_home(link):
+            _uninstall_one_junction(link, entry)
+        if not DRY_RUN:
+            MANIFEST["junctions"].pop(key, None)
+    hub = HOME / ".codex" / "skills"
+    for key in sorted(list(MANIFEST["materialized"])):
+        path = Path(key)
+        if (hub / path.name).is_dir() or is_reparse_point(hub / path.name):
+            continue
+        if _within_home(path):
+            _uninstall_one_materialized(path, MANIFEST["materialized"][key])
+        if not DRY_RUN:
+            MANIFEST["materialized"].pop(key, None)
 
 
 def clean_dead_files() -> None:

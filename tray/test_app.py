@@ -13,7 +13,7 @@ SPEC = importlib.util.spec_from_loader(LOADER.name, LOADER)
 app = importlib.util.module_from_spec(SPEC)
 LOADER.exec_module(app)
 
-ALL_RUNNING = dict(dot="运行中", web="运行中", gemini="已停止", float="运行中",
+ALL_RUNNING = dict(dot="运行中", web="运行中", float="运行中",
                    easytier="运行中（2 个对端）", muse=app.DISABLED)
 
 
@@ -81,7 +81,7 @@ class MenuTests(TrayTestCase):
     def test_core_actions_and_enabled_plugin_windows_are_available(self):
         self.assertCountEqual(self.shown(), [
             "打开 AgentCompass", "重置前优先", "Usage Float：运行中",
-            "ChatGPT Web：运行中", "Gemini Web：已停止", "EasyTier：运行中（2 个对端）",
+            "ChatGPT Web：运行中", "EasyTier：运行中（2 个对端）",
             "检查更新（当前 0.3.8）", "退出"])
         items = self.items()
         self.assertTrue(items[0].default)
@@ -114,7 +114,7 @@ class MenuTests(TrayTestCase):
     def test_opening_the_menu_reads_no_file_or_service(self):
         guard = mock.Mock(side_effect=AssertionError("menu must use cached snapshots"))
         with mock.patch.object(app.plugins, "load", guard), mock.patch.object(app.router_priority, "snapshot", guard), \
-                mock.patch.multiple(app.services, dot_label=guard, chatgpt_label=guard, gemini_label=guard,
+                mock.patch.multiple(app.services, dot_label=guard, chatgpt_label=guard,
                                     usage_float_label=guard), \
                 mock.patch.object(app.easytier, "snapshot", guard), \
                 mock.patch.object(app.updates, "inspect_installs", guard), \
@@ -229,8 +229,7 @@ class MenuTests(TrayTestCase):
 
     def test_each_plugin_line_opens_its_window(self):
         cases = (("Usage Float：运行中", "component_action", ("usage-float", "show")),
-                 ("ChatGPT Web：运行中", "start_chatgpt_web", (True,)),
-                 ("Gemini Web：已停止", "start_gemini_web", (True,)))
+                 ("ChatGPT Web：运行中", "start_chatgpt_web", (True,)))
         for text, name, arguments in cases:
             with self.subTest(text), mock.patch.object(app.services, name, return_value="ok") as target:
                 act = self.click(self.by_text()[text])
@@ -329,8 +328,7 @@ class IconTests(TrayTestCase):
         app.STATE["float"] = "已停止"
         self.assertEqual(app.draw_icon().getpixel(self.STATUS)[:3], app.STATUS_COLOURS["error"])
 
-    def test_a_stopped_always_on_plugin_is_an_error_but_on_demand_or_disabled_ones_are_not(self):
-        app.STATE["gemini"] = "已停止"
+    def test_a_stopped_plugin_is_an_error_but_a_disabled_one_is_not(self):
         self.assertEqual(app.health(), "ok")
         app.STATE["dot"] = "已停止"
         self.assertEqual(app.health(), "error")
@@ -338,10 +336,10 @@ class IconTests(TrayTestCase):
         self.assertEqual(app.health(), "ok")
 
     def test_title_lists_only_enabled_plugins_within_the_windows_limit(self):
-        app.PLUGINS["gemini-web"]["enabled"] = False
+        app.PLUGINS["chatgpt-web"]["enabled"] = False
         title = app.title()
         self.assertTrue(title.startswith("AgentCompass · 正常"))
-        self.assertNotIn("Gemini", title)
+        self.assertNotIn("Web", title)
         self.assertIn("Dot 运行中", title)
         app.STATE.update({key: "x" * 40 for key in ALL_RUNNING if key != "monitor"})
         self.assertLessEqual(len(app.title()), app.TITLE_LIMIT)
@@ -362,7 +360,7 @@ class RefreshTests(TrayTestCase):
         self.addCleanup(label.stop)
 
     def labels(self, **overrides):
-        values = {"dot_label": "运行中", "chatgpt_label": "运行中", "gemini_label": "已停止",
+        values = {"dot_label": "运行中", "chatgpt_label": "运行中",
                   "usage_float_label": "运行中"}
         values.update(overrides)
         return mock.patch.multiple(app.services, **{name: (lambda v=value: v) for name, value in values.items()})

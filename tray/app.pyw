@@ -35,7 +35,7 @@ DISABLED = "未启用"
 TITLE_LIMIT = 127
 
 # What the menu and icon show. Built by the watcher threads so that opening the menu never waits on a service.
-STATE = {"dot": "检测中", "web": "检测中", "gemini": "检测中",
+STATE = {"dot": "检测中", "web": "检测中",
          "float": "检测中", "easytier": "检测中", "muse": "检测中"}
 EASYTIER = {"state": easytier.MISSING, "pids": [], "peers": None}
 PRIORITY = {"label": "重置前优先", "entries": [], "targets": []}
@@ -52,11 +52,9 @@ VERSION = {
 }
 _NOTIFIED_RELEASE_TAG = ""
 
-# plugin id -> STATE key of its label
-PLUGIN_STATE = {"usage-float": "float", "chatgpt-web": "web", "gemini-web": "gemini",
+# plugin id -> STATE key of its label. Each of them is expected to keep running once started.
+PLUGIN_STATE = {"usage-float": "float", "chatgpt-web": "web",
                 "easytier": "easytier", "dot2api": "dot", "muse2api": "muse"}
-# Plugins that are expected to keep running once started (Gemini Web is a visible browser, started on demand).
-SERVICE_PLUGINS = ("dot2api", "chatgpt-web", "easytier", "usage-float", "muse2api")
 
 
 _SINGLE_INSTANCE_MUTEX = None
@@ -99,7 +97,7 @@ STATUS_COLOURS = {"ok": (16, 185, 129), "attention": (245, 158, 11), "error": (2
 
 def health() -> str:
     """error: an enabled always-on plugin is down; attention: a reset priority is active."""
-    for plugin_id in SERVICE_PLUGINS:
+    for plugin_id in PLUGIN_STATE:
         if PLUGINS[plugin_id]["enabled"] and PLUGINS[plugin_id]["autostart"]:
             if STATE.get(PLUGIN_STATE[plugin_id]) in ("已停止", "Stopped"):
                 return "error"
@@ -157,7 +155,6 @@ def refresh(icon: pystray.Icon) -> None:
     """Re-read the states of the enabled plugins; redraw only when something changed."""
     config = PLUGINS
     probes = {"dot": ("dot2api", services.dot_label), "web": ("chatgpt-web", services.chatgpt_label),
-              "gemini": ("gemini-web", services.gemini_label),
               "float": ("usage-float", services.usage_float_label),
               "muse": ("muse2api", services.muse_label)}
     latest = {}
@@ -395,7 +392,6 @@ def notify_if_rolled_back(icon: pystray.Icon) -> bool:
 PLUGIN_ACTIONS = {
     "usage-float": lambda: services.component_action("usage-float", "show"),
     "chatgpt-web": lambda: services.start_chatgpt_web(True),
-    "gemini-web": lambda: services.start_gemini_web(True),
 }
 
 

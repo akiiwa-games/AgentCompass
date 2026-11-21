@@ -28,7 +28,7 @@
 
 ## System-Level Skill & Host Rollout (Mandatory on Every Host)
 
-- **Always load skills at the system level, never workspace-only**: Run `agentcompass setup` (`python -X utf8 setup/sync_host_globals.py` in a checkout) so `agent-compass`, `dot-subagent`, `chatgpt-pro-consult`, and `gemini-web` are registered globally across all local agent harnesses regardless of `cwd` (see [docs/technical-reference.md](docs/technical-reference.md#7-host-rollout--system-level-skill-loading-setup)).
+- **Always load skills at the system level, never workspace-only**: Run `agentcompass setup` (`python -X utf8 setup/sync_host_globals.py` in a checkout) so `agent-compass`, `dot-subagent`, and `chatgpt-pro-consult` are registered globally across all local agent harnesses regardless of `cwd` (see [docs/technical-reference.md](docs/technical-reference.md#7-host-rollout--system-level-skill-loading-setup)).
 
 ## Enforcement & Auditing
 
@@ -40,5 +40,4 @@
 - [cindy-agentcompass-plugin](https://github.com/akiiwa-games/cindy-agentcompass-plugin): Cindy host plugin delegating routing decisions to `agentcompass roll` while Cindy's `cindy.tasks` API manages execution and replies.
 - [magpie-agentcompass-router](https://github.com/akiiwa-games/magpie-agentcompass-router): Magpie local gateway plugin running AgentCompass four-category `TaskProfile` and quota-economy `<model>:<effort>` routing per turn.
 - [usage-float/README.md](https://github.com/akiiwa-games/usage-float#readme): Optional borderless Windows subscription quota HUD and live wallpaper switcher.
-- [gemini-web/README.md](https://github.com/akiiwa-games/gemini-web#readme): Persistent Chrome CDP bridge (`127.0.0.1:17849`) for Gemini Web, Google AI Studio, Flow, and Gemini Omni 1.1 Flash video generation.
 - [tray/](tray/): Windows 11 system tray supervisor (`app.pyw`), five-axis decision console (`router_window.py`, `panel_*.py`), and local service manager (`dot2api`, `muse2api`, `easytier`).

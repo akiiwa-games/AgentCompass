@@ -9,7 +9,6 @@ class PortTests(unittest.TestCase):
     def test_defaults_match_the_running_services(self):
         self.assertEqual(DEFAULTS["dot2api"], 8788)
         self.assertEqual(DEFAULTS["chatgpt_web"], 17843)
-        self.assertEqual(DEFAULTS["gemini_web"], 17849)
         self.assertEqual(DEFAULTS["account_login"], 17851)
         self.assertEqual(DEFAULTS["easytier_rpc"], 15888)
         self.assertEqual(DEFAULTS["muse2api"], 18610)

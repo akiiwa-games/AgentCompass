@@ -9,7 +9,7 @@ class OriginTests(unittest.TestCase):
         self.assertEqual(github_org(environ), DEFAULT_ORG)
         self.assertEqual(DEFAULT_ORG, "akiiwa-games")
         self.assertEqual(sibling_repo("usage-float", environ), "https://github.com/akiiwa-games/usage-float.git")
-        self.assertNotIn("agent-compass", sibling_repo("gemini-web", environ))
+        self.assertNotIn("agent-compass", sibling_repo("another-repo", environ))
         self.assertIn("akiiwa-games/AgentCompass-Router", RELEASES_API)
 
     def test_env_org_and_usage_float_url_win(self):

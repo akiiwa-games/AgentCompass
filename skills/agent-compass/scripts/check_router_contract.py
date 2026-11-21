@@ -15,7 +15,7 @@ def check_documents(skills_root: Path) -> tuple[list[str], int]:
     failures: list[str] = []
     checked: set[Path] = set()
     pending = [skills_root / name / 'SKILL.md' for name in
-               ('agent-compass', 'chatgpt-pro-consult', 'dot-subagent', 'gemini-web')]
+               ('agent-compass', 'chatgpt-pro-consult', 'dot-subagent')]
     while pending:
         path = pending.pop().resolve()
         if path in checked:

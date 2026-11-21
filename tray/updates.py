@@ -1,4 +1,4 @@
-"""Update Dot2API, ChatGPT Web and the enabled Git plugins (Gemini Web, Muse2API).
+"""Update Dot2API, ChatGPT Web and the enabled Git plugins (Usage Float, Muse2API).
 
     python updates.py check      fetch and show how far behind each clone is; changes nothing else
     python updates.py build      install dependencies and build the ChatGPT Web launcher (deploy.py install does this)
@@ -240,7 +240,7 @@ def ensure_plugin(plugin_id: str, root: Path | None = None) -> str:
     target.parent.mkdir(parents=True, exist_ok=True)
     report("progress", _tr('从 GitHub 下载 {0} 到 {1}').format(f'{plugin.name}', f'{target}'), plugin.name)
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "Never"}
-    repo = plugins._sibling_repo("usage-float") if plugin_id == "usage-float" else plugin.repo
+    repo = plugins._usage_float_repo() if plugin_id == "usage-float" else plugin.repo
     run(["git", "clone", repo, str(target)], target.parent, env=env, timeout=600)
     services.refresh_plugin_roots()
     if plugin_id == "dot2api":
@@ -276,10 +276,6 @@ def update_usage_float() -> str:
         if warning:
             message += "；" + warning
     return message
-
-
-def update_gemini_web() -> str:
-    return update_simple_plugin("gemini-web", services.GEMINI_ROOT)
 
 
 def update_dot2api() -> str:
@@ -544,10 +540,9 @@ def update_all(progress=None) -> UpdateAllResult:
         items = (("Dot2API", update_dot2api, "dot2api"),
                  ("ChatGPT Web", update_chatgpt_web, "chatgpt-web"),
                  ("Usage Float", update_usage_float, "usage-float"),
-                 ("Gemini Web", update_gemini_web, "gemini-web"),
                  ("Muse2API", lambda: update_gateway("muse2api"), "muse2api"))
         targets = [label for label, _, pid in items if plugins.enabled(pid, config) or plugins.BY_ID[pid].enabled_by_default]
-        report("start", _tr("开始检查并更新已启用插件组件"), "", title=_tr("外部集成"), targets=targets)
+        report("start", _tr("开始检查并更新已启用插件组件"), "", title=_tr("托盘托管"), targets=targets)
         results = []
         components: dict[str, dict[str, str]] = {}
         for label, update, plugin_id in items:
@@ -2409,7 +2404,7 @@ def _upgrade_hint() -> str:
 def release_notice(root: Path, opener=None, state_dir: Path | None = None) -> ProductNoticeResult:
     """Tell a non-git install whether a newer release exists. Does not download or replace files.
 
-    Shares the release cache with check_product_release, so the integrations check and the AgentCompass update
+    Shares the release cache with check_product_release, so the hosted services check and the AgentCompass update
     button make at most one GitHub call per RELEASE_CHECK_INTERVAL_SECONDS between them; when GitHub cannot be read
     (rate limit, offline) the last good reading decides, labelled with its time."""
     if str(root) not in os.sys.path:

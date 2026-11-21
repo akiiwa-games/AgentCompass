@@ -789,7 +789,7 @@ class LanguageTests(unittest.TestCase):
 
         i18n.set_language("en")
         self.assertEqual([p[1] for p in router_window.PAGES],
-                         ["Decision Compass", "Quota Monitor", "Model Settings", "Integrations"])
+                         ["Decision Compass", "Quota Monitor", "Model Settings", "Hosted Services"])
         self.assertEqual(radar_chart.DNA_AXES[0][1], "Creativity")
         self.assertEqual([a[1] for a in radar_chart.DNA_AXES[:4]],
                          ["Creativity", "Coding", "Aesthetics", "Tool Operation"])
@@ -841,7 +841,7 @@ class LanguageTests(unittest.TestCase):
             root.update_idletasks()
             self.assertEqual(json.loads((self.directory / "ui-settings.json").read_text()), {"language": "en"})
             self.assertEqual([panel.nav[key][2].cget("text") for key, _, _ in router_window.PAGES],
-                             ["Decision Compass", "Quota Monitor", "Model Settings", "Integrations"])
+                             ["Decision Compass", "Quota Monitor", "Model Settings", "Hosted Services"])
             self.assertEqual((panel.current, panel.current_setting), ("policy", "system"))
             self.assertEqual(panel.status.get(), "Language switched to English")
             self.assertIn("Custom OpenAI-compatible endpoint", panel.scorer_type_box.cget("values"))

@@ -2,7 +2,7 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass-Router/releases) page.
 
-## v0.7.5 - 2026-11-21
+## v0.7.5 - 2026-11-22
 
 - The GitHub repository is `akiiwa-games/AgentCompass-Router`. Only the repository name and its URLs change (`origin.PRODUCT_REPO`, the project URLs, the installer's product URL, the documents); GitHub redirects the old address, so earlier installs keep finding updates and published data.
 - The Windows tray carries a notice whose watcher died (Antigravity on Windows ends a command's processes when it returns, measured 2026-11-21): it runs `dispatch --dispatch-action reconcile` when a pass can change something (`dispatch_registry.needs_reader`, a watcher the bridge would restart, a receipt that proves an unrecorded ending), starts nothing otherwise, and backs off after a pass that changed nothing.
@@ -11,6 +11,8 @@ One entry per released tag, newest first. The full notes of each release are on 
 - A later dispatch of the same parent silences the earlier notice only once its turn landed (`end_notice.source: continued`, `continued_by`); the "took over" notice is removed.
 - A launching claim stays with its `roll`: `missing_agent` leaves a claim in flight alone and `fallback_to_create` acts only on the claim it was given. A removed worker leaves a due notice. A reclaimed watcher lock holds its pid once. A turn that ended on its reply reads as replied after a late close of a tool call it started.
 - The installer registers the logon task through `deploy startup` (no execution time limit, priority 4, 20 s delay); the task registered by earlier installers carried Task Scheduler's default 72 hour limit.
+- The tray's Integrations page is Hosted Services (托盘托管): the services the tray installs, starts, stops and updates. Gemini Web is no longer one of them: its tray entry, the `gemini-web` skill, the `gemini_web` port and its launcher are removed. `sync_host_globals` removes a managed skill link whose target no longer exists, with its Antigravity copy.
+- `tray/services.py` imports the router's dispatch modules on first use.
 - The README and `llms.txt` say how AgentCompass differs from an HTTP proxy router.
 
 ## v0.7.4 - 2026-11-21

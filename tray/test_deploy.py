@@ -71,8 +71,8 @@ class SkillLinkTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         root = Path(self.directory.name)
         self.repo = root / "repo" / "skills"
-        (self.repo / "gemini-web").mkdir(parents=True)
-        (self.repo / "gemini-web" / "SKILL.md").write_text("skill", encoding="utf-8")
+        (self.repo / "dot-subagent").mkdir(parents=True)
+        (self.repo / "dot-subagent" / "SKILL.md").write_text("skill", encoding="utf-8")
         (self.repo / "notes").mkdir()      # no SKILL.md, not a skill
         self.codex = root / ".codex" / "skills"
         self.claude = root / ".claude" / "skills"
@@ -85,14 +85,14 @@ class SkillLinkTests(unittest.TestCase):
     def test_a_new_skill_is_linked_into_codex_and_claude(self):
         done = deploy.link_skills()
         self.assertEqual(len(done), 2)
-        for link in (self.codex / "gemini-web", self.claude / "gemini-web"):
+        for link in (self.codex / "dot-subagent", self.claude / "dot-subagent"):
             self.assertTrue(deploy.is_link(link))
-            self.assertEqual(link.resolve(), (self.repo / "gemini-web").resolve())
+            self.assertEqual(link.resolve(), (self.repo / "dot-subagent").resolve())
         self.assertFalse((self.codex / "notes").exists())
         self.assertEqual(deploy.link_skills(), [])
 
     def test_a_real_directory_in_the_way_is_backed_up(self):
-        old = self.codex / "gemini-web"
+        old = self.codex / "dot-subagent"
         old.mkdir(parents=True)
         (old / "SKILL.md").write_text("old copy", encoding="utf-8")
         done = deploy.link_skills()
@@ -106,12 +106,12 @@ class SkillLinkTests(unittest.TestCase):
         elsewhere = Path(self.directory.name) / "elsewhere"
         elsewhere.mkdir()
         deploy.link_skills()
-        link = self.claude / "gemini-web"
+        link = self.claude / "dot-subagent"
         os.rmdir(link)
         subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(elsewhere)], check=True, capture_output=True)
-        self.assertFalse(deploy.skill_linked(link, self.codex / "gemini-web"))
+        self.assertFalse(deploy.skill_linked(link, self.codex / "dot-subagent"))
         deploy.link_skills()
-        self.assertTrue(deploy.skill_linked(link, self.codex / "gemini-web"))
+        self.assertTrue(deploy.skill_linked(link, self.codex / "dot-subagent"))
         self.assertTrue(elsewhere.is_dir())
 
 

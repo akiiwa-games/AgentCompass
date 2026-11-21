@@ -112,7 +112,7 @@ and plan window structure in [`skills/agent-compass/references/plan-templates.js
 |---|---|---|
 | **Core**: [`skills/agent-compass`](../skills/agent-compass/SKILL.md) | Classifier, allocator, ledger, and `roll` (`classify → allocate → launch` with explicit permission mode and parent-session contract). Python 3.11+, Windows-first, POSIX-compatible. | **Yes** |
 | **Gate**: [`setup/router_gate_hook.py`](../setup/router_gate_hook.py) | Pre-tool spawn gate and configured context rotation threshold (`rotate_after_carried_tokens`, set in the tray) check for hosts with pre-tool hooks. | Opt-in |
-| **Tray**: [`tray/`](../tray/) | Windows system tray, decision console, quota view, and local bridges ([`gemini-web`](https://github.com/akiiwa-games/gemini-web), `codex-chatgpt-web`, `dot2api`, `easytier`). | Optional |
+| **Tray**: [`tray/`](../tray/) | Windows system tray, decision console, quota view, and the services the tray hosts (`usage-float`, `codex-chatgpt-web`, `dot2api`, `easytier`). | Optional |
 
 ---
 
@@ -175,7 +175,7 @@ uv tool uninstall agentcompass      # or: python -m pip uninstall -y agentcompas
 ## 3. Packaging, Incremental Updates & Runtime Ports
 
 - The router is a Python package, not a frozen executable: skills stay real directories because Claude, Codex and Antigravity read `SKILL.md`, and `agentcompass` runs the sibling scripts by path (`python -I`).
-- A packaged install (no `.git`) checks [GitHub Releases](https://github.com/akiiwa-games/AgentCompass-Router/releases) at most once per 6 hours using conditional `ETag` requests and a failure/rate-limit cooldown on periodic checks (one cache shared by the tray's AgentCompass update and the integrations check; a failed non-forced read such as a rate limit falls back to the last good release, labelled with its time; an explicit update or forced check that hits an API rate-limit refusal falls back to the `releases/latest` web redirect and `expanded_assets` page with the same SHA-256 verification) and points the installer build at the tray's **Update AgentCompass** button and a uv install at `uv tool upgrade agentcompass`; a development checkout fast-forwards with git. `AGENTCOMPASS_GITHUB_ORG` and `AGENTCOMPASS_USAGE_FLOAT_REPO` override the org and the usage-float clone URL.
+- A packaged install (no `.git`) checks [GitHub Releases](https://github.com/akiiwa-games/AgentCompass-Router/releases) at most once per 6 hours using conditional `ETag` requests and a failure/rate-limit cooldown on periodic checks (one cache shared by the tray's AgentCompass update and the hosted services check; a failed non-forced read such as a rate limit falls back to the last good release, labelled with its time; an explicit update or forced check that hits an API rate-limit refusal falls back to the `releases/latest` web redirect and `expanded_assets` page with the same SHA-256 verification) and points the installer build at the tray's **Update AgentCompass** button and a uv install at `uv tool upgrade agentcompass`; a development checkout fast-forwards with git. `AGENTCOMPASS_GITHUB_ORG` and `AGENTCOMPASS_USAGE_FLOAT_REPO` override the org and the usage-float clone URL.
 - Tray extras: `pip install "agentcompass[tray]"`. `packaging/build.ps1` builds a one-folder PyInstaller tray (`AgentCompass.exe`) and CLI (`cli/agentcompass.exe`), a versioned application code package (`app-<version>.zip`), a release `manifest.json`, and with Inno Setup 6 a per-user installer (`AgentCompass-tray-setup.exe`, `PrivilegesRequired=lowest`) that registers the "AgentCompass" scheduled task; uninstall removes the task, the `PRO_CONSULT_*` / `CODEX_WEB_GPT_EXTERNAL_TRAY` variables and the Startup shortcuts. Builds are unsigned unless `AGENTCOMPASS_SIGNTOOL` and a certificate are set (SmartScreen will warn; see `packaging/SIGNING.md`). Tagged pushes (`v*`) attach the wheel, `AgentCompass-tray-setup.exe`, `app-<version>.zip` and `manifest.json` to the Release.
 - **Incremental Windows updates (since `0.4.0`)**:
   - The Windows installer separates the frozen runtime (`_internal/`, `cli/_internal/`, boot executables `AgentCompass.exe` and `cli/agentcompass.exe`, and `runtime-info.json`) from application code (`app/current/`, unpacked from `app/packages/app-<version>.zip`, with the previous version retained at `app/previous/` for automatic startup/update rollback).
@@ -192,7 +192,7 @@ uv tool uninstall agentcompass      # or: python -m pip uninstall -y agentcompas
   - **The installer and a running tray**: the installer stops the tray, then waits up to a minute for the tray's and the CLI's program files to be released. If they are not, it exits with code 7 before changing any file, and it starts the tray it stopped again whenever the install does not finish. The installer starts the tray through the `AgentCompass` scheduled task, never as its own child process, and builds with `RedirectionGuard=no`: a child of Inno Setup (6.7 and later) inherits Windows' RedirectionGuard and cannot follow a junction a non-elevated process made, which is what the skill links of `agentcompass setup` are.
   - **Transition compatibility (`<=0.3.18` → `0.4.0`)**: Legacy clients (`<=0.3.18`) only look for `AgentCompass-tray-setup.exe` in a Release and upgrade to `0.4.0` through the full installer; from `0.4.0` onward, clients carry `runtime-info.json` and `app/current/` and use `app-<version>.zip` for subsequent code-only releases.
 - Reference data ships with the version and the maintainer publishes changes between releases (a new model, a corrected hand-written score or launch row): `roll`/`plan` check `published/<schema>/` on the repository's `main` branch at most every 6 hours in a background process, verify every sha256 against its manifest, and use the fetched set only when it is complete, accepted by this version's own readers (an offline plan completes with it) and newer than the installed copy. A process keeps the whole set it took; a reader that fails on a fetched set all the same reruns the read-only part on the shipped set (when the fetched set is taken again is stated in [Never on the failure line](../skills/agent-compass/references/router-internals.md#5-reference-data-shipped-and-published)). Your own settings (`user-scores.json`, `accounts-override.json`, host policy) still win. Nothing reads the boards at run time. `agentcompass data` shows the source, `agentcompass data --refresh` checks now, `AGENTCOMPASS_PUBLIC_DATA=off` disables it ([details](../skills/agent-compass/references/router-internals.md#5-reference-data-shipped-and-published)).
-- Loopback ports default to Dot2API 8788, ChatGPT Web 17843, Gemini Web 17849, account login 17851, EasyTier 15888, Muse2API 18610. `AGENTCOMPASS_PORT_*` overrides `~/.agent-compass/ports.json`, which overrides the defaults; `doctor` reports conflicts.
+- Loopback ports default to Dot2API 8788, ChatGPT Web 17843, account login 17851, EasyTier 15888, Muse2API 18610. `AGENTCOMPASS_PORT_*` overrides `~/.agent-compass/ports.json`, which overrides the defaults; `doctor` reports conflicts.
 - Paseo dispatch via `roll` needs Node.js: `npm --prefix setup/paseo-bridge ci` (the host rollout script does this when it detects Paseo).
 - The demo uses a fixed synthetic quota snapshot and reference fleet, makes no network calls, writes no ledger and launches nothing. Add `--format json` for the full breakdown.
 
@@ -205,11 +205,11 @@ Companion repositories and runtime directories are separate local checkouts or i
 | Path | Description |
 |---|---|
 | `agentcompass/` | Public console package (`agentcompass`), checkout vs. installed path resolution (`locations.py`), `doctor.py`, and canonical loopback ports (`ports.py`). |
-| `skills/` | Agent skills (`agent-compass`, `dot-subagent`, `chatgpt-pro-consult`, `gemini-web`), including the split allocator modules (`allocator`, `account_fleet`, `task_intake`, `axis_scores`, `quota_economy`, `quota_pools`, `quota_overrides`, `candidate_eval`, `candidate_ranking`, `ledger_snapshot`, `worker_sessions`), the CLI stages (`route_judge`) with their owner modules (`scorer_client`, `decision_ledger`, `subscription_cli`, `usage_reading`, `env_vars`), dispatch/usage scripts, and `calibration/` (`agentcompass data refresh`). |
+| `skills/` | Agent skills (`agent-compass`, `dot-subagent`, `chatgpt-pro-consult`), including the split allocator modules (`allocator`, `account_fleet`, `task_intake`, `axis_scores`, `quota_economy`, `quota_pools`, `quota_overrides`, `candidate_eval`, `candidate_ranking`, `ledger_snapshot`, `worker_sessions`), the CLI stages (`route_judge`) with their owner modules (`scorer_client`, `decision_ledger`, `subscription_cli`, `usage_reading`, `env_vars`), dispatch/usage scripts, and `calibration/` (`agentcompass data refresh`). |
 | `setup/` | Onboarding (`onboard.py`), global host rule and skill sync (`sync_host_globals.py`, `host_rules.py`), `PreToolUse` / `tool_call` spawn and rotation gate (`router_gate_hook.py`), and Paseo SDK dispatch bridge (`paseo_dispatch_bridge.mjs`). |
 | `tray/` | Windows tray (`app.pyw`), decision console shell (`router_window.py`) and page mixins (`panel_scoring.py`, `panel_quota.py`, `panel_policy.py`, `panel_models.py`, `panel_strategy.py`, `panel_system.py`, `panel_plugins.py`, `panel_widgets.py`), Tk-free view model (`router_data.py`), `radar_chart.py`, `quota_line.py`, `decision_theatre.py`, updaters, and service supervisor. |
 | `packaging/` & `audit/` | Wheel/PyInstaller/Inno Setup bundling (`app_bundle.py`, `app_bootstrap.py`, `check_payload.py`), behavioral harnesses (`verify_release.py`, `sandbox_check.py`, `foreign_machine_check.py`, `zero_dispatch_check.py`), read-only ledger compliance audit (`audit/router_audit.py`), the maintainer calibration report (`audit/calibration_report.py`), and the gateway coverage check (`audit/gateway_coverage.py` over `audit/gateway-catalogs/`, the known-gap and out-of-scope lists; `audit/magpie_catalog.py` builds the Magpie catalog). |
-| `usage-float/`, `gemini-web/`, `dot2api/`, `codex-chatgpt-web/`, `easytier/` | Optional companion checkouts and runtime state; see [usage-float](https://github.com/akiiwa-games/usage-float#readme) and [gemini-web](https://github.com/akiiwa-games/gemini-web#readme). |
+| `usage-float/`, `dot2api/`, `codex-chatgpt-web/`, `easytier/` | Optional companion checkouts and runtime state; see [usage-float](https://github.com/akiiwa-games/usage-float#readme). |
 
 ---
 
@@ -258,10 +258,9 @@ The tray menu is at most two levels deep and performs no blocking I/O or network
 
 1. **Open AgentCompass** (default action on left-click) — opens the main decision and management panel.
 2. **Pre-Reset Priority** — quick submenu to boost a subscription whose weekly quota is about to reset.
-3. **One single-click entry per enabled window plugin**:
+3. **One single-click entry per enabled tray-hosted service that has a window**:
    - `Usage Float: …` — shows the floating HUD or auxiliary-screen panel.
    - `ChatGPT Web: …` — opens the ChatGPT Web launcher window.
-   - `Gemini Web: …` — starts the dedicated Chrome profile and brings a Gemini / AI Studio tab to the front.
    - `EasyTier: …` — opens the mesh LAN status window.
 4. **Exit** — closes the tray icon while leaving background bridges and services running (`app.pyw --attach-only` reconnects without starting paused services).
 
@@ -286,19 +285,18 @@ The tray icon displays a status dot: **green** when core usage collection and al
     - A native check that reports an available update must be followed by a version change; a successful command exit with no change is `failed`. Without a native check, a successful exit with no version change is `unverified`, excluded from the current count and shown as needing attention in the pill and progress window.
     - **Accepted limitation — mapped images**: retaining a locked exe/dll/.node keeps the already-mapped process running; new launches use the replacement file. Claude installations whose npm shim launches a native binary use this preservation path.
     - **Accepted limitation — later file reads**: files opened later through the original installation path can contain the new version. In particular, the same Node process (such as Pi) can keep cached old JS modules while a later `require` or cache reload reads new JS; executable-adjacent resources can also be new. The old installation directory is not frozen.
-- **Plugins & Services**:
-  - Individual cards for every service and plugin with `Enabled` and `Autostart` toggles, health status, and service-specific controls.
+- **Hosted Services** (托盘托管):
+  - One card per service the tray hosts, with `Enabled` and `Autostart` toggles, health status, and service-specific controls. The page lists the services supported today.
 
-### Services & Optional Plugins
+### Tray-Hosted Services
 
-State is stored atomically in `~/.agent-compass/plugins.json`:
+The tray hosts local services for the agents on this machine: it installs each one on first enable, starts and stops it, shows its state and keeps it updated. The table is the supported set. State is stored atomically in `~/.agent-compass/plugins.json`:
 
-| Service / Plugin | Window in Tray Menu | Autostarts by Default | Description |
+| Service | Window in Tray Menu | Autostarts by Default | Description |
 |---|---|---|---|
 | **Usage Collector & Capacity Stats** (`core`) | No (background) | Always on | Runs the router's collector (`agentcompass usage`) and `tray/capacity_stats.py --once` every 5 minutes, writing `~/.agent-compass/usage-cache.json` and `~/.agent-compass/capacity.json`. |
 | `usage-float` | Yes | Yes | Borderless subscription quota HUD and live wallpaper switcher (`~/.agent-compass/plugins/usage-float`). |
 | `chatgpt-web` | Yes | Yes | Local ChatGPT Web bridge (`127.0.0.1:17843`) run from `~/.agent-compass/plugins/chatgpt-web` with anchored patches from `tray/chatgpt_web_patch.py`. |
-| `gemini-web` | Yes | No (on demand) | Dedicated Google Chrome profile with loopback CDP (`127.0.0.1:17849`) for Gemini, AI Studio, Flow, and Omni 1.1 video generation. |
 | `easytier` | Yes | Yes | Per-host mesh VPN supervisor running `easytier-core.exe` (`127.0.0.1:15888` RPC portal) via a SYSTEM scheduled task. |
 | `dot2api` | No (background) | Yes | Local Dot2API server (`127.0.0.1:8788`) exposed via a Cloudflared quick tunnel; `tray/dot_reconnect.py` automatically registers new tunnel URLs in ChatGPT and prunes stale plugin entries. |
 | `muse2api` *(opt-in)* | No (background) | Once enabled | Clones `www222fff/muse2api` (`127.0.0.1:18610`, data in `~/.muse2api/data`) for headless Chrome muse.ai chat, image, and video generation. |
@@ -329,7 +327,7 @@ python tray\easytier_setup.py uninstall
 
 ## 7. Host Rollout & System-Level Skill Loading (`setup/`)
 
-When landing AgentCompass on a machine, **system-level skill loading is required** so every coding agent session discovers `agent-compass` (and `dot-subagent`, `chatgpt-pro-consult`, `gemini-web`) regardless of the active workspace directory:
+When landing AgentCompass on a machine, **system-level skill loading is required** so every coding agent session discovers `agent-compass` (and `dot-subagent`, `chatgpt-pro-consult`) regardless of the active workspace directory:
 
 ```powershell
 # Synchronize system-level skills and global rules (AGENTS.md / CLAUDE.md / GEMINI.md / Paseo prompt)
@@ -377,7 +375,7 @@ $tray = "$env:LOCALAPPDATA\AgentCompass\AgentCompass.exe"          # the install
 & $tray --run-component deploy install               # ChatGPT Web patch and build, startup task, user environment variables
 & $tray --run-component deploy restart               # restart the tray without stopping background services
 & $tray --run-component updates check                # print whether a newer GitHub release exists (downloads nothing), then one line each for the Dot2API, ChatGPT Web and Usage Float clones: version and commits behind upstream
-& $tray --run-component updates update               # fast-forward the enabled plugin clones (Dot2API, ChatGPT Web, Usage Float, Gemini Web, Muse2API), then print the same release notice
+& $tray --run-component updates update               # fast-forward the enabled hosted-service clones (Dot2API, ChatGPT Web, Usage Float, Muse2API), then print the same release notice
 & $tray --run-component updates update-agentcompass  # what the tray button runs: update AgentCompass itself and restart the tray
 ```
 

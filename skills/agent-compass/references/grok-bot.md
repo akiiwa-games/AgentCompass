@@ -1,6 +1,6 @@
 # Grok Bot external runner
 
-The AgentCompass **Integrations** page includes **Grok Bot CLI** with
+The AgentCompass **Hosted Services** page includes **Grok Bot CLI** with
 **Install/repair**, **Check connection**, and **Usage guide** actions. Install/repair
 uses the fixed upstream artifact and scope patch below. It never installs
 a global CLI or starts a service. Account enablement remains in **Routing Settings**.

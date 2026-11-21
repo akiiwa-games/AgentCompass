@@ -15,7 +15,6 @@ from pathlib import Path
 DEFAULTS = {
     "dot2api": 8788,
     "chatgpt_web": 17843,
-    "gemini_web": 17849,
     "account_login": 17851,
     "easytier_rpc": 15888,
     "muse2api": 18610,
@@ -24,7 +23,6 @@ DEFAULTS = {
 FEATURES = {
     "dot2api": "Dot2API local server",
     "chatgpt_web": "ChatGPT Web bridge",
-    "gemini_web": "Gemini Web Chrome CDP",
     "account_login": "account-login Chrome CDP",
     "easytier_rpc": "EasyTier RPC portal",
     "muse2api": "Muse2API",
@@ -33,7 +31,6 @@ FEATURES = {
 ENV_KEYS = {
     "dot2api": ("AGENTCOMPASS_PORT_DOT2API",),
     "chatgpt_web": ("AGENTCOMPASS_PORT_CHATGPT_WEB",),
-    "gemini_web": ("AGENTCOMPASS_PORT_GEMINI_WEB",),
     "account_login": ("AGENTCOMPASS_PORT_ACCOUNT_LOGIN",),
     "easytier_rpc": ("AGENTCOMPASS_PORT_EASYTIER",),
     "muse2api": ("AGENTCOMPASS_PORT_MUSE2API",),

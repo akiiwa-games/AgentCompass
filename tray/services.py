@@ -462,49 +462,6 @@ def stop_chatgpt_web(wait: float = 20.0) -> str:
     return _tr("已停止 ChatGPT Web（强制结束）") if forced else _tr("已停止 ChatGPT Web")
 
 
-# Gemini Web: AgentCompass/gemini-web, the installed Chrome on a dedicated, signed-in profile for
-# Gemini / AI Studio / Flow tasks. It is a visible browser, so it starts on demand (tray click or a
-# client's first task), not with the tray.
-GEMINI_ROOT = plugins.plugin_root("gemini-web")
-_gemini_module = None
-
-
-def gemini_web():
-    global _gemini_module
-    if _gemini_module is None:
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location("gemini_web", GEMINI_ROOT / "gemini_web.py")
-        _gemini_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(_gemini_module)
-    return _gemini_module
-
-
-def gemini_built() -> bool:
-    return (GEMINI_ROOT / "gemini_web.py").is_file() and gemini_web().CHROME.is_file()
-
-
-def start_gemini_web(show: bool = False) -> str:
-    if not gemini_built():
-        return _tr("Gemini Web 未安装（缺 gemini-web/gemini_web.py 或 Chrome）")
-    return gemini_web().start(show=show)
-
-
-def stop_gemini_web() -> str:
-    if not gemini_built():
-        return _tr("Gemini Web 未安装")
-    return gemini_web().stop()
-
-
-def gemini_label() -> str:
-    if not gemini_built():
-        return _tr("未安装")
-    module = gemini_web()
-    if module.health():
-        return _tr("运行中")
-    return _tr("启动中") if module.main_pid() is not None else _tr("已停止")
-
-
 def muse_ready() -> bool:
     return gateways.muse_ready(http_ok)
 
@@ -631,8 +588,6 @@ def start_all(config: dict | None = None) -> str:
         messages.append(start_muse2api())
     if plugins.autostarts("usage-float", config) and USAGE_FLOAT_SCRIPT.is_file():
         messages.append(start_usage_float())
-    if plugins.autostarts("gemini-web", config):
-        messages.append(start_gemini_web(False))
     if plugins.autostarts("easytier", config):
         started = easytier.start_if_stopped()
         if started:
@@ -676,14 +631,12 @@ def services_up(config: dict | None = None) -> bool:
 
 def refresh_plugin_roots() -> None:
     """Refresh module-level root paths after a plugin is cloned into ~/.agent-compass/plugins/."""
-    global DOT_ROOT, CHATGPT_ROOT, CHATGPT_LAUNCHER, USAGE_FLOAT_ROOT, USAGE_FLOAT_SCRIPT, GEMINI_ROOT, _gemini_module
+    global DOT_ROOT, CHATGPT_ROOT, CHATGPT_LAUNCHER, USAGE_FLOAT_ROOT, USAGE_FLOAT_SCRIPT
     DOT_ROOT = plugins.plugin_root("dot2api")
     CHATGPT_ROOT = plugins.plugin_root("chatgpt-web")
     CHATGPT_LAUNCHER = CHATGPT_ROOT / "launcher"
     USAGE_FLOAT_ROOT = plugins.plugin_root("usage-float")
     USAGE_FLOAT_SCRIPT = USAGE_FLOAT_ROOT / "usage_float.py"
-    GEMINI_ROOT = plugins.plugin_root("gemini-web")
-    _gemini_module = None
 
 
 # Start / stop per plugin, used by the main panel.
@@ -708,8 +661,6 @@ def plugin_start(plugin_id: str) -> str:
         return start_chatgpt_web(False)
     if plugin_id == "muse2api":
         return start_muse2api()
-    if plugin_id == "gemini-web":
-        return start_gemini_web(False)
     if plugin_id == "easytier":
         return easytier.start()
     if plugin_id == "usage-float":
@@ -725,8 +676,6 @@ def plugin_stop(plugin_id: str) -> str:
         return stop_chatgpt_web()
     if plugin_id == "muse2api":
         return stop_muse2api()
-    if plugin_id == "gemini-web":
-        return stop_gemini_web()
     if plugin_id == "easytier":
         return easytier.stop()
     if plugin_id == "usage-float":
@@ -738,8 +687,7 @@ def plugin_label(plugin_id: str) -> str:
     if plugin_id == 'grok-bot':
         import grok_bot_cli
         return grok_bot_cli.snapshot()['label']
-    return {"dot2api": dot_label, "chatgpt-web": chatgpt_label, "gemini-web": gemini_label,
-            "muse2api": muse_label,
+    return {"dot2api": dot_label, "chatgpt-web": chatgpt_label, "muse2api": muse_label,
             "easytier": lambda: easytier.label(easytier.snapshot()), "usage-float": usage_float_label}[plugin_id]()
 
 

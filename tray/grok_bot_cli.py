@@ -1,4 +1,4 @@
-"""Integration card actions for the repository-scoped Grok Bot CLI; no service/auth store."""
+"""Hosted-service card actions for the repository-scoped Grok Bot CLI; no service/auth store."""
 from __future__ import annotations
 
 import json

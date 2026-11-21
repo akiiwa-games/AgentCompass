@@ -21,7 +21,7 @@ class PluginStoreTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.path = Path(directory.name) / "plugins.json"
 
-    def test_missing_or_broken_file_means_built_ins_enabled_opt_ins_off_and_gemini_on_demand(self):
+    def test_missing_or_broken_file_means_built_ins_enabled_opt_ins_off_and_grok_bot_on_demand(self):
         opt_in = {"muse2api"}
         for content in (None, "{not json", json.dumps([1, 2]), json.dumps({"plugins": "x"})):
             with self.subTest(content=content):
@@ -29,19 +29,19 @@ class PluginStoreTests(unittest.TestCase):
                     self.path.write_text(content, encoding="utf-8")
                 config = plugins.load(self.path)
                 self.assertEqual({pid for pid, row in config.items() if not row["enabled"]}, opt_in)
-                self.assertFalse(config["gemini-web"]["autostart"])
+                self.assertFalse(config["grok-bot"]["autostart"])
                 self.assertTrue(config["dot2api"]["autostart"])
 
     def test_stored_values_override_defaults_and_unknown_or_bad_entries_are_ignored(self):
         self.path.write_text(json.dumps({"v": 1, "plugins": {
-            "dot2api": {"enabled": False}, "gemini-web": {"autostart": True},
-            "chatgpt-web": {"enabled": "no"}, "unknown": {"enabled": False}}}), encoding="utf-8")
+            "dot2api": {"enabled": False}, "grok-bot": {"autostart": True},
+            "chatgpt-web": {"enabled": "no"}, "gemini-web": {"enabled": False}}}), encoding="utf-8")
         config = plugins.load(self.path)
         self.assertFalse(config["dot2api"]["enabled"])
         self.assertTrue(config["dot2api"]["autostart"])
-        self.assertTrue(config["gemini-web"]["autostart"])
+        self.assertTrue(config["grok-bot"]["autostart"])
         self.assertTrue(config["chatgpt-web"]["enabled"])
-        self.assertNotIn("unknown", config)
+        self.assertNotIn("gemini-web", config)  # a service an earlier version hosted
 
     def test_save_is_atomic_and_round_trips(self):
         plugins.set_flag("easytier", "enabled", False, self.path)
@@ -58,7 +58,7 @@ class PluginStoreTests(unittest.TestCase):
     def test_only_enabled_plugins_with_a_window_are_menu_plugins_in_fixed_order(self):
         config = plugins.defaults()
         self.assertEqual([p.id for p in plugins.menu_plugins(config)],
-                         ["usage-float", "chatgpt-web", "gemini-web", "easytier"])
+                         ["usage-float", "chatgpt-web", "easytier"])
         config["usage-float"]["enabled"] = False
         self.assertNotIn("usage-float", [p.id for p in plugins.menu_plugins(config)])
         self.assertFalse(plugins.BY_ID["dot2api"].has_window_action)
@@ -116,7 +116,7 @@ class LifecycleTests(unittest.TestCase):
         calls = []
         record = lambda name, result="": (lambda *a, **k: calls.append(name) or result or name)
         with mock.patch.multiple(services, start_dot2api=record("dot"), start_chatgpt_web=record("web"),
-                                 start_usage_float=record("uf"), start_gemini_web=record("gemini")), \
+                                 start_usage_float=record("uf")), \
                 mock.patch.object(services, "USAGE_FLOAT_SCRIPT", mock.Mock(is_file=lambda: True)), \
                 mock.patch.object(services, "start_muse2api", side_effect=lambda: calls.append("muse") or "muse"), \
                 mock.patch.object(services.easytier, "start_if_stopped", side_effect=lambda: calls.append("et")):
@@ -136,10 +136,10 @@ class LifecycleTests(unittest.TestCase):
         calls, message = self.start_all(config)
         self.assertEqual(calls, [])
         self.assertEqual(message, "核心服务已就绪")
-        config = self.config(dot2api={"autostart": False}, gemini_web={"autostart": True})
+        config = self.config(dot2api={"autostart": False})
         calls, _ = self.start_all(config)
         self.assertNotIn("dot", calls)
-        self.assertIn("gemini", calls)
+        self.assertIn("web", calls)
 
     def test_restart_touches_only_enabled_bridges(self):
         calls = []
@@ -165,11 +165,10 @@ class LifecycleTests(unittest.TestCase):
                     mock.patch.object(updates, "product_notice", return_value=""), \
                     mock.patch.object(updates, "update_dot2api") as dot, \
                     mock.patch.object(updates, "update_chatgpt_web", return_value="web"), \
-                    mock.patch.object(updates, "update_usage_float", return_value="uf"), \
-                    mock.patch.object(updates, "update_gemini_web", return_value="gemini"):
+                    mock.patch.object(updates, "update_usage_float", return_value="uf"):
                 message = updates.update_all()
         dot.assert_not_called()
-        self.assertEqual(message, "Dot2API 插件未启用，已跳过；web；uf；gemini")
+        self.assertEqual(message, "Dot2API 插件未启用，已跳过；web；uf")
 
 
     def test_plugin_root_resolves_user_data_directory_and_auto_clones_when_missing(self):
@@ -204,10 +203,9 @@ class SiblingRepoTests(unittest.TestCase):
             root = Path(directory)
             with mock.patch.object(plugins, "ROOT", root), mock.patch.dict(os.environ, self._env(), clear=True):
                 self.assertEqual(
-                    plugins._sibling_repo("usage-float"),
+                    plugins._usage_float_repo(),
                     "https://github.com/akiiwa-games/usage-float.git",
                 )
-                self.assertNotIn("agent-compass", plugins._sibling_repo("gemini-web"))
 
     def test_env_org_and_git_origin_override_the_fallback(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -220,28 +218,28 @@ class SiblingRepoTests(unittest.TestCase):
             )
             with mock.patch.object(plugins, "ROOT", root), mock.patch.dict(os.environ, self._env(), clear=True):
                 self.assertEqual(
-                    plugins._sibling_repo("usage-float"),
+                    plugins._usage_float_repo(),
                     "https://github.com/fork-org/usage-float.git",
                 )
             with mock.patch.object(plugins, "ROOT", root), mock.patch.dict(
                 os.environ, self._env(AGENTCOMPASS_GITHUB_ORG="override-org"), clear=True
             ):
                 self.assertEqual(
-                    plugins._sibling_repo("usage-float"),
+                    plugins._usage_float_repo(),
                     "https://github.com/override-org/usage-float.git",
                 )
             with mock.patch.object(plugins, "ROOT", root), mock.patch.dict(
                 os.environ, self._env(AGENTCOMPASS_USAGE_FLOAT_REPO="C:/local/usage-float"), clear=True
             ):
                 self.assertEqual(
-                    plugins._sibling_repo("usage-float"),
+                    plugins._usage_float_repo(),
                     "C:/local/usage-float",
                 )
 
 
 @pytest.mark.slow
-class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
-    """End-to-end regression tests for the '外部集成' (plugins) page in an isolated temp profile."""
+class HostedServicesPageEndToEndRegressionTests(unittest.TestCase):
+    """End-to-end regression tests for the '托盘托管' (plugins) page in an isolated temp profile."""
 
     def setUp(self):
         import account_login
@@ -283,6 +281,9 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         self.tk_test_support = tk_test_support
         self.update_status = update_status
 
+        # Enabling a service re-reads the plugin roots into services' module state. Registered first, so it runs after
+        # the patches below are undone and the roots are those of the unpatched plugin directory again.
+        self.addCleanup(services.refresh_plugin_roots)
         for patcher in (
             mock.patch.object(router_data, "STATE_DIR", self.state_dir, create=True),
             mock.patch.object(i18n, "settings_path", return_value=self.state_dir / "ui-settings.json"),
@@ -314,7 +315,6 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         label_map = {
             "usage-float": "运行中",
             "chatgpt-web": "运行中",
-            "gemini-web": "已停止",
             "dot2api": "运行中",
             "muse2api": "未安装",
         }
@@ -405,7 +405,7 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
             self.assertEqual(loaded[p.id]["enabled"], idx % 2 == 0)
 
     def test_checkbox_toggles_persist_across_reopen_and_in_flight_load_never_reverts_ui(self):
-        self._mark_deployed("usage-float", "chatgpt-web", "gemini-web", "dot2api")
+        self._mark_deployed("usage-float", "chatgpt-web", "dot2api")
         jobs = []
 
         def queued_run(panel_self, work, done=None, message=None, long=False):
@@ -486,7 +486,6 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
             labels={
                 "usage-float": "已停止",
                 "chatgpt-web": "已停止",
-                "gemini-web": "未安装",
                 "dot2api": "已停止",
                 "muse2api": "未安装",
             },
@@ -494,17 +493,17 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
             tunnel_url="",
         )
         # Uncloned repo plugins must show '未安装' (or '未启用 · 未安装'), never '已停止'
-        for pid in ("usage-float", "chatgpt-web", "gemini-web", "dot2api"):
+        for pid in ("usage-float", "chatgpt-web", "dot2api"):
             self.assertEqual(panel.plugin_widgets[pid]["status"].cget("text").strip(), "未安装", pid)
             self.assertEqual(panel.plugin_widgets[pid]["info"].get(), "未下载 · 启用后自动部署", pid)
         self.assertEqual(panel.plugin_widgets["muse2api"]["status"].cget("text").strip(), "未启用 · 未安装")
         self.assertEqual(panel.plugin_widgets["easytier"]["info"].get(), "对端读取失败")
 
-        # Mark plugins deployed and running; gemini-web stays idle ('已停止', autostart=False)
-        self._mark_deployed("usage-float", "chatgpt-web", "gemini-web", "dot2api")
+        # Mark plugins deployed and running
+        self._mark_deployed("usage-float", "chatgpt-web", "dot2api")
         panel2 = self._make_panel(sync_run=True)
         self.assertEqual(panel2.plugins_pill.cget("text").strip(), "正常")
-        self.assertEqual(panel2.plugins_status.get(), "集成：5 已启用 · 4 运行中")
+        self.assertEqual(panel2.plugins_status.get(), "托管服务：4 已启用 · 4 运行中")
         self.assertEqual(panel2.plugin_widgets["easytier"]["info"].get(), "可见对端 2 个")
         self.assertIn("https://demo.trycloudflare.com", panel2.plugin_widgets["dot2api"]["info"].get())
 
@@ -519,22 +518,23 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         self.assertEqual(panel_en.plugin_widgets["dot2api"]["status"].cget("text").strip(), "Server running, tunnel stopped")
         self.assertEqual(panel_en.plugins_pill.cget("text").strip(), "Attention")
 
-    def test_enabling_undownloaded_gemini_web_deploys_it_and_autostart_starts_it(self):
+    def test_enabling_an_undownloaded_service_deploys_it_and_autostart_starts_it(self):
         panel = self._make_panel(sync_run=True)
-        with mock.patch.object(updates, "ensure_plugin", return_value="Gemini Web 已下载并部署（v1）") as ensure, \
-                mock.patch.object(services, "plugin_start", return_value="已启动 Gemini Web") as start:
-            # Default autostart=False on gemini-web: enabling when not cloned deploys it without opening browser
-            panel.toggle_enabled("gemini-web", True)
-            ensure.assert_called_once_with("gemini-web")
+        with mock.patch.object(updates, "ensure_plugin", return_value="ChatGPT Web 已下载并部署（v1）") as ensure, \
+                mock.patch.object(services, "plugin_start", return_value="已启动 ChatGPT Web") as start:
+            # Autostart off: enabling a service that is not cloned deploys it and starts nothing
+            panel.toggle_autostart("chatgpt-web", False)
+            panel.toggle_enabled("chatgpt-web", True)
+            ensure.assert_called_once_with("chatgpt-web")
             start.assert_not_called()
-            self.assertIn("已启用 Gemini Web；Gemini Web 已下载并部署（v1）", panel.status.get())
+            self.assertIn("已启用 ChatGPT Web；ChatGPT Web 已下载并部署（v1）", panel.status.get())
 
-            # When user enables autostart on gemini-web and enables it, plugin_start is called
-            self._mark_deployed("gemini-web")
-            panel.toggle_autostart("gemini-web", True)
-            panel.toggle_enabled("gemini-web", True)
-            start.assert_called_once_with("gemini-web")
-            self.assertIn("已启用 Gemini Web；已启动 Gemini Web", panel.status.get())
+            # Autostart on: enabling starts it
+            self._mark_deployed("chatgpt-web")
+            panel.toggle_autostart("chatgpt-web", True)
+            panel.toggle_enabled("chatgpt-web", True)
+            start.assert_called_once_with("chatgpt-web")
+            self.assertIn("已启用 ChatGPT Web；已启动 ChatGPT Web", panel.status.get())
 
     def test_account_badge_immediately_reflects_plugin_config_switch(self):
         import host_policy
@@ -543,7 +543,7 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
             badge, kind = self.router_data.account_badge(
                 "dot", {"status": "ready"}, {"dot2api": {"enabled": False, "autostart": True}}, None
             )
-            self.assertEqual((badge, kind), ("集成已关闭", "idle"))
+            self.assertEqual((badge, kind), ("托管服务已关闭", "idle"))
             # Stale inventory says plugin_disabled_in_agentcompass, but user re-enabled dot2api
             badge2, kind2 = self.router_data.account_badge(
                 "dot",
@@ -557,7 +557,7 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         import subprocess
         import sys
 
-        self._mark_deployed("usage-float", "chatgpt-web", "gemini-web", "dot2api")
+        self._mark_deployed("usage-float", "chatgpt-web", "dot2api")
         plugins.save(plugins.defaults(), self.plugins_path)
         panel = self._make_panel(sync_run=True)
 
@@ -629,7 +629,7 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
                 long_reader.stdout.close()
 
     def test_update_components_covers_progress_up_to_date_updated_partial_fail_network_fail_and_disabled_skip(self):
-        self._mark_deployed("usage-float", "chatgpt-web", "gemini-web", "dot2api")
+        self._mark_deployed("usage-float", "chatgpt-web", "dot2api")
         panel = self._make_panel(sync_run=True)
 
         # Prepare an installed-product root (no .git) so real product_notice -> release_notice runs with fake GitHub responses
@@ -664,7 +664,7 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
 
         real_product_notice = updates.product_notice
 
-        # Disable dot2api; keep chatgpt-web, usage-float, gemini-web enabled; muse2api is disabled by default
+        # Disable dot2api; keep chatgpt-web and usage-float enabled; muse2api is disabled by default
         plugins.set_flag("dot2api", "enabled", False, self.plugins_path)
 
         # 1a. Installed product matching GitHub release ("matches" notice, product_status='current')
@@ -674,7 +674,6 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         with mock.patch.object(updates, "update_dot2api") as up_dot, \
                 mock.patch.object(updates, "update_chatgpt_web", return_value="ChatGPT Web 已是最新（1111111）"), \
                 mock.patch.object(updates, "update_usage_float", return_value="Usage Float 已是最新（2222222）"), \
-                mock.patch.object(updates, "update_gemini_web", return_value="Gemini Web 已是最新（3333333）"), \
                 mock.patch.object(updates, "update_gateway") as up_muse, \
                 mock.patch.object(
                     updates,
@@ -696,7 +695,7 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         self.assertFalse(res.busy)
         self.assertEqual(
             res.statuses,
-            {"Dot2API": "skipped", "ChatGPT Web": "current", "Usage Float": "current", "Gemini Web": "current"},
+            {"Dot2API": "skipped", "ChatGPT Web": "current", "Usage Float": "current"},
         )
         self.assertEqual(res.product_status, "current")
         self.assertEqual(res.product_notice, matches_notice)
@@ -707,7 +706,6 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         with mock.patch.object(updates, "update_dot2api"), \
                 mock.patch.object(updates, "update_chatgpt_web", return_value="ChatGPT Web 已是最新（1111111）"), \
                 mock.patch.object(updates, "update_usage_float", return_value="Usage Float 已是最新（2222222）"), \
-                mock.patch.object(updates, "update_gemini_web", return_value="Gemini Web 已是最新（3333333）"), \
                 mock.patch.object(updates, "update_gateway"), \
                 mock.patch.object(
                     updates,
@@ -729,7 +727,6 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         with mock.patch.object(updates, "update_dot2api"), \
                 mock.patch.object(updates, "update_chatgpt_web", return_value="ChatGPT Web 已是最新（1111111）"), \
                 mock.patch.object(updates, "update_usage_float", return_value="Usage Float 已是最新（2222222）"), \
-                mock.patch.object(updates, "update_gemini_web", return_value="Gemini Web 已是最新（3333333）"), \
                 mock.patch.object(updates, "update_gateway"), \
                 mock.patch.object(
                     updates,
@@ -752,7 +749,6 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         with mock.patch.object(updates, "update_dot2api"), \
                 mock.patch.object(updates, "update_chatgpt_web", return_value="ChatGPT Web 已是最新（1111111）"), \
                 mock.patch.object(updates, "update_usage_float", return_value="Usage Float 已是最新（2222222）"), \
-                mock.patch.object(updates, "update_gemini_web", return_value="Gemini Web 已是最新（3333333）"), \
                 mock.patch.object(updates, "update_gateway"), \
                 mock.patch.object(
                     updates,
@@ -780,7 +776,6 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         with mock.patch.object(updates, "update_dot2api") as up_dot, \
                 mock.patch.object(updates, "update_chatgpt_web", return_value="ChatGPT Web 更新失败：构建失败；已回到原版本"), \
                 mock.patch.object(updates, "update_usage_float", return_value="Usage Float 已更新：111 → 222"), \
-                mock.patch.object(updates, "update_gemini_web", return_value="Gemini Web 已是最新（333）"), \
                 mock.patch.object(updates, "product_notice", return_value=""):
             panel.update_components()
         self.assertEqual(panel.plugins_pill.cget("text").strip(), "部分异常")
@@ -798,7 +793,7 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
         self.assertIn("检查更新失败：network unreachable", panel.status.get())
 
     def test_all_other_page_controls_preserve_action_feedback_and_resolve_isolated_paths(self):
-        self._mark_deployed("usage-float", "chatgpt-web", "gemini-web", "dot2api", "muse2api")
+        self._mark_deployed("usage-float", "chatgpt-web", "dot2api", "muse2api")
         panel = self._make_panel(sync_run=True, tunnel_url="https://tunnel.trycloudflare.com")
 
         # 1. Header '重启服务' button preserves restart summary

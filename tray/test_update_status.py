@@ -30,8 +30,7 @@ class UpdateProgressTests(unittest.TestCase):
                 mock.patch.object(updates, "product_notice", return_value=""), \
                 mock.patch.object(updates, "update_dot2api", return_value="Dot2API 已是最新"), \
                 mock.patch.object(updates, "update_chatgpt_web", side_effect=RuntimeError("offline")), \
-                mock.patch.object(updates, "update_usage_float", return_value="Usage Float 已更新"), \
-                mock.patch.object(updates, "update_gemini_web", return_value="Gemini Web 已是最新"):
+                mock.patch.object(updates, "update_usage_float", return_value="Usage Float 已更新"):
             observed = []
             def progress(event):
                 update_status.record(event)
@@ -39,7 +38,7 @@ class UpdateProgressTests(unittest.TestCase):
             updates.update_all(progress=progress)
             self.assertTrue(observed[0]["running"])
             self.assertFalse(observed[-1]["running"])
-            self.assertEqual(list(observed[-1]["results"]), ["Dot2API", "ChatGPT Web", "Usage Float", "Gemini Web"])
+            self.assertEqual(list(observed[-1]["results"]), ["Dot2API", "ChatGPT Web", "Usage Float"])
             self.assertIn("offline", observed[-1]["results"]["ChatGPT Web"])
             self.assertIn("Usage Float 已更新", (Path(directory) / "updates.log").read_text(encoding="utf-8"))
 

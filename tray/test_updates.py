@@ -107,9 +107,6 @@ class UpdateTestCase(unittest.TestCase):
         uf_update = mock.patch.object(updates, "update_usage_float", return_value="Usage Float 已是最新")
         uf_update.start()
         self.addCleanup(uf_update.stop)
-        gemini_update = mock.patch.object(updates, "update_gemini_web", return_value="Gemini Web 已是最新")
-        gemini_update.start()
-        self.addCleanup(gemini_update.stop)
         self.build_failures = 0
         self.sync_failures = 0
 
@@ -311,13 +308,11 @@ class UpdateAllTests(UpdateTestCase):
                 mock.patch.object(updates, "product_notice", return_value=""), \
                 mock.patch.object(updates, "update_dot2api", return_value="dot") as dot, \
                 mock.patch.object(updates, "update_chatgpt_web", return_value="web") as web, \
-                mock.patch.object(updates, "update_usage_float", return_value="uf") as uf, \
-                mock.patch.object(updates, "update_gemini_web", return_value="gemini") as gemini:
-            self.assertEqual(updates.update_all(), "dot；web；uf；gemini")
+                mock.patch.object(updates, "update_usage_float", return_value="uf") as uf:
+            self.assertEqual(updates.update_all(), "dot；web；uf")
         dot.assert_called_once()
         web.assert_called_once()
         uf.assert_called_once()
-        gemini.assert_called_once()
 
 
 class PluginTagTests(unittest.TestCase):

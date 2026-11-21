@@ -26,20 +26,17 @@ AUTOSTART_OFF_MARKER = "usage-float-autostart-disabled"
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _sibling_repo(name: str) -> str:
-    """Clone URL for a sibling repo. A checkout's git origin wins; a packaged install uses akiiwa-games."""
+def _usage_float_repo() -> str:
+    """Clone URL of Usage Float. A checkout's git origin wins; a packaged install uses akiiwa-games."""
     if str(ROOT) not in sys.path:
         sys.path.append(str(ROOT))
-    from agentcompass.origin import sibling_repo, usage_float_repo
+    from agentcompass.origin import usage_float_repo
 
-    config = None
     try:
         config = (ROOT / ".git" / "config").read_text(encoding="utf-8", errors="ignore")
     except OSError:
         config = None
-    if name == "usage-float":
-        return usage_float_repo(git_config=config)
-    return sibling_repo(name, git_config=config)
+    return usage_float_repo(git_config=config)
 
 
 @dataclass(frozen=True)
@@ -63,11 +60,9 @@ class Plugin:
 # Fixed order: the tray menu and the panel list plugins in this order.
 PLUGINS = (
     Plugin("usage-float", "Usage Float", "UF", "桌面额度悬浮窗", True, color="#10B981",
-           repo=_sibling_repo("usage-float")),
+           repo=_usage_float_repo()),
     Plugin("chatgpt-web", "ChatGPT Web", "Web", "ChatGPT Pro 网页桥", True, color="#0EA5E9",
            repo="https://github.com/miuuyy/codex-chatgpt-web.git"),
-    Plugin("gemini-web", "Gemini Web", "Gemini", "Gemini / AI Studio 专用浏览器", True,
-           autostart=False, color="#6366F1", repo=_sibling_repo("gemini-web")),
     Plugin("easytier", "EasyTier", "ET", "虚拟局域网节点", True, color="#14B8A6",
            repo=None),
     Plugin("dot2api", "Dot2API", "Dot", "Dot 远端任务队列与隧道", False, color="#8B5CF6",

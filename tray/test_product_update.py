@@ -101,7 +101,7 @@ class ProductNoticeTests(unittest.TestCase):
 
 
 class ReleaseNoticeCacheTests(unittest.TestCase):
-    """The integrations check shares the 6 h release cache and survives a rate-limited GitHub read."""
+    """The hosted services check shares the 6 h release cache and survives a rate-limited GitHub read."""
 
     def _root(self, directory: str, version: str = "0.4.3") -> Path:
         root = Path(directory) / "app"

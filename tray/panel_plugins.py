@@ -1,4 +1,4 @@
-"""The integrations page: plugin cards, toggles and component updates.
+"""The tray-hosted services page: plugin cards, toggles and component updates.
 
 A mixin of router_window.Panel; methods run on the panel instance.
 """
@@ -31,7 +31,7 @@ def follow_width(container, label, margin: int, floor: int) -> None:
 
 
 class PluginsPage:
-    # ---------- page 4: integrations ----------
+    # ---------- page 4: tray-hosted services ----------
     def build_plugins_toolbar(self, frame):
         tk, ttk = self.tk, self.ttk
         bar = theme.card(frame, padding=0, fill="x", pady=(0, 12))
@@ -40,7 +40,7 @@ class PluginsPage:
         inner.pack(side="left", fill="both", expand=True)
         self.plugins_pill = theme.pill(inner, _tr("检测中"), "idle")
         self.plugins_pill.pack(side="left", padx=(0, 8))
-        self.plugins_status = tk.StringVar(value=_tr("正在读取集成状态…"))
+        self.plugins_status = tk.StringVar(value=_tr("正在读取托管服务状态…"))
         self.plugins_status_label = ttk.Label(inner, textvariable=self.plugins_status, style="Card.TLabel", width=1)
         self.plugins_status_label.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.plugins_update_button = ttk.Button(inner, text=_tr("检查更新"), style="SmallAccent.TButton",
@@ -56,7 +56,7 @@ class PluginsPage:
 
     def build_plugins(self, page):
         tk, ttk = self.tk, self.ttk
-        self.header(page, _tr("外部集成"), (
+        self.header(page, _tr("托盘托管"), (
             (_tr("重启服务"), self.restart_services, "Small.TButton"),
             (_tr("刷新"), self.load_plugins, "SmallAccent.TButton"),
         ))
@@ -178,9 +178,6 @@ class PluginsPage:
             return ((_tr("打开"), lambda: services.start_chatgpt_web(True)), (_tr("启动"), start), (_tr("停止"), stop),
                     (_tr("重启"), lambda: f"{services.stop_chatgpt_web()}；{services.start_chatgpt_web(False)}"),
                     (_tr("日志"), log(lambda: services.STATE_DIR / "chatgpt-web.log")))
-        if plugin_id == "gemini-web":
-            return ((_tr("打开"), lambda: services.start_gemini_web(True)), (_tr("停止"), stop),
-                    (_tr("日志"), log(lambda: services.STATE_DIR / "gemini-web.log")))
         if plugin_id == "usage-float":
             return ((_tr("悬浮窗"), lambda: services.component_action("usage-float", "show")), (_tr("启动"), start),
                     (_tr("停止"), stop), (_tr("刷新"), lambda: services.component_action("usage-float", "refresh")),
@@ -371,7 +368,7 @@ class PluginsPage:
                     keep_status=keep_status,
                     update_result=update_result,
                 )
-        self.run(work, done, None if keep_status else _tr("正在读取集成状态…"))
+        self.run(work, done, None if keep_status else _tr("正在读取托管服务状态…"))
 
     def plugins_loaded(self, value, keep_status=None, update_result=None):
         config, labels, extras = value
@@ -446,7 +443,7 @@ class PluginsPage:
                     theme.set_pill(self.plugins_pill, *pill)
             else:
                 if hasattr(self, "plugins_status"):
-                    self.plugins_status.set(_tr("集成：{0} 已启用 · {1} 运行中").format(enabled_count, running_count))
+                    self.plugins_status.set(_tr("托管服务：{0} 已启用 · {1} 运行中").format(enabled_count, running_count))
                 if hasattr(self, "plugins_pill"):
                     if attention_count > 0:
                         theme.set_pill(self.plugins_pill, _tr("部分异常"), "warn")
@@ -456,7 +453,7 @@ class PluginsPage:
                             or running_count >= enabled_count
                         )
                         theme.set_pill(self.plugins_pill, _tr("正常") if all_ok else _tr("就绪"), "ok" if all_ok else "idle")
-            self.status.set(keep_status or _tr('集成状态已更新 · {0}').format(f"{time.strftime('%H:%M:%S')}"))
+            self.status.set(keep_status or _tr('托管服务状态已更新 · {0}').format(f"{time.strftime('%H:%M:%S')}"))
 
     def copy_tunnel(self):
         url = getattr(self, "tunnel_url", "")

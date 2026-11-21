@@ -357,42 +357,6 @@ class CompositeActionTests(unittest.TestCase):
         self.assertEqual(calls, [("stop_dot", False), ("stop_web",), ("start_dot",), ("start_web", False)])
 
 
-class GeminiWebTests(unittest.TestCase):
-    """The tray only wraps gemini-web/gemini_web.py; it never starts Chrome on its own."""
-
-    def module(self, healthy=None, pid=None):
-        fake = mock.Mock()
-        fake.CHROME = mock.Mock(is_file=lambda: True)
-        fake.health.return_value = healthy
-        fake.main_pid.return_value = pid
-        fake.start.side_effect = lambda show=False: "shown" if show else "started"
-        fake.stop.return_value = "stopped"
-        return mock.patch.multiple(services, _gemini_module=fake,
-                                   gemini_built=mock.Mock(return_value=True))
-
-    def test_labels_tell_running_starting_and_stopped_apart(self):
-        with self.module(healthy={"pid": 1}):
-            self.assertEqual(services.gemini_label(), "运行中")
-        with self.module(pid=7):
-            self.assertEqual(services.gemini_label(), "启动中")
-        with self.module():
-            self.assertEqual(services.gemini_label(), "已停止")
-
-    def test_the_tray_line_shows_the_window_and_stop_delegates(self):
-        with self.module():
-            self.assertEqual(services.start_gemini_web(True), "shown")
-            self.assertEqual(services.stop_gemini_web(), "stopped")
-
-    def test_it_does_not_start_with_the_other_services(self):
-        with mock.patch.object(services, "start_dot2api", return_value="a"), \
-                mock.patch.object(services, "start_chatgpt_web", return_value="b"), \
-                mock.patch.object(services, "USAGE_FLOAT_SCRIPT", Path("missing-usage-float.py")), \
-                mock.patch.object(services.easytier, "start_if_stopped", return_value=None), \
-                mock.patch.object(services, "start_gemini_web") as gemini:
-            services.start_all()
-        gemini.assert_not_called()
-
-
 class EasyTierLoginTests(unittest.TestCase):
     def start_all(self, easytier_result):
         with mock.patch.object(services, "start_dot2api", return_value="a"), \

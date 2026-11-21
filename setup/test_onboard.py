@@ -303,37 +303,69 @@ class SkillUpgradeTests(HomeCase):
         self.quiet(sg.deduplicate_and_link_skills, [("claude", secondary)])
         self.assertTrue((secondary / "skills/agent-compass/SKILL.md").is_file())
 
+    def test_a_managed_link_to_a_skill_no_longer_shipped_is_removed_with_its_copies(self):
+        # The hub links two skills of the install; Claude links them and Antigravity holds real copies.
+        name = "chatgpt-pro-consult"
+        shipped = self.write(f"install/skills/{name}/SKILL.md", "companion").parent
+        self.write(f"install/skills/{name}/scripts/tool.py", "tool")
+        kept = self.write("install/skills/agent-compass/SKILL.md", "router").parent
+        hub = self.home / ".codex/skills"
+        claude, antigravity = self.home / ".claude", self.home / ".gemini"
+        claude.mkdir()
+        antigravity.mkdir()
+        homes = [("claude", claude), ("antigravity", antigravity)]
+        roots = (hub, claude / "skills", antigravity / "skills")
+        sg.begin_run(False)
+        sg.create_junction(hub / name, shipped)
+        sg.create_junction(hub / "agent-compass", kept)
+        sg.make_link(hub / "mine", self.home / "users-own-folder")  # not in the manifest: the user's, whatever it points at
+        self.quiet(sg.deduplicate_and_link_skills, homes)
+        for root in roots:
+            self.assertTrue((root / name / "SKILL.md").is_file(), root)
+        sg.save_manifest()
+
+        # The next version does not ship the skill: the folder the links end in is gone.
+        sg.shutil.rmtree(shipped)
+        sg.begin_run(False)
+        self.quiet(sg.deduplicate_and_link_skills, homes)
+        for root in roots:
+            self.assertFalse((root / name).exists() or sg.is_reparse_point(root / name), root)
+            self.assertTrue((root / "agent-compass" / "SKILL.md").is_file(), root)
+        self.assertNotIn(str(hub / name), sg.MANIFEST["junctions"])
+        self.assertNotIn(str(antigravity / "skills" / name), sg.MANIFEST["materialized"])
+        self.assertTrue(sg.is_reparse_point(hub / "mine"))
+
     def test_links_into_another_install_are_taken_over_and_restored_on_uninstall(self):
         # A checkout-era hub: links made by hand (no manifest) into the checkout's skills/.
         self.write("checkout/setup/sync_host_globals.py", "")
-        for name in ("agent-compass", "gemini-web"):
+        for name in ("agent-compass", "chatgpt-pro-consult"):
             self.write(f"checkout/skills/{name}/SKILL.md", f"checkout {name}")
         self.write("bundle/setup/sync_host_globals.py", "")
-        for name in ("agent-compass", "gemini-web", "dot-subagent"):
+        for name in ("agent-compass", "chatgpt-pro-consult", "dot-subagent"):
             self.write(f"bundle/skills/{name}/SKILL.md", f"bundle {name}")
-        foreign = self.write("elsewhere/skills/gemini-web/SKILL.md", "user's").parent
+        foreign = self.write("elsewhere/skills/chatgpt-pro-consult/SKILL.md", "user's").parent
         hub = self.home / ".codex/skills"
         hub.mkdir(parents=True)
         sg.make_link(hub / "agent-compass", self.home / "checkout/skills/agent-compass")
-        sg.make_link(hub / "gemini-web", self.home / "checkout/skills/gemini-web")
+        sg.make_link(hub / "chatgpt-pro-consult", self.home / "checkout/skills/chatgpt-pro-consult")
         bundle = self.home / "bundle/skills"
         with patch.object(sg, "REPO_SKILLS", bundle):
             self.sync(docs=False, dry_run=True)
             self.assertEqual((hub / "agent-compass").resolve(), (self.home / "checkout/skills/agent-compass").resolve())
             self.sync(docs=False, link_repo_skills=True)
         self.assertEqual((hub / "agent-compass").resolve(), (bundle / "agent-compass").resolve())
-        self.assertEqual((hub / "gemini-web").resolve(), (bundle / "gemini-web").resolve())
+        self.assertEqual((hub / "chatgpt-pro-consult").resolve(), (bundle / "chatgpt-pro-consult").resolve())
         self.assertFalse((hub / "dot-subagent").exists())  # shipped, but a new link is only made for SKILLS_FROM_REPO
         self.quiet(sg.uninstall)
         self.assertEqual((hub / "agent-compass").resolve(), (self.home / "checkout/skills/agent-compass").resolve())
-        self.assertEqual((hub / "gemini-web").resolve(), (self.home / "checkout/skills/gemini-web").resolve())
+        self.assertEqual((hub / "chatgpt-pro-consult").resolve(), (self.home / "checkout/skills/chatgpt-pro-consult").resolve())
 
         # A link into a directory that is not an AgentCompass install stays the user's.
-        sg.remove_dir_or_junction(hub / "gemini-web")
-        sg.make_link(hub / "gemini-web", foreign)
+        sg.remove_dir_or_junction(hub / "chatgpt-pro-consult")
+        sg.make_link(hub / "chatgpt-pro-consult", foreign)
         with patch.object(sg, "REPO_SKILLS", bundle):
             self.sync(docs=False, link_repo_skills=True)
-        self.assertEqual((hub / "gemini-web").resolve(), foreign.resolve())
+        self.assertEqual((hub / "chatgpt-pro-consult").resolve(), foreign.resolve())
 
 
 @pytest.mark.slow

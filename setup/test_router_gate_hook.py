@@ -2237,7 +2237,7 @@ class BoundDispatchGateTests(unittest.TestCase):
         for command in (
                 # Reproduced: blocked as shell:run_dot_task.py because `skills/dot-subagent ` is followed by a space.
                 'cd /d/work/agentcompass && cat agentcompass/test_docs.py; ls skills/route-agent-work '
-                'skills/gemini-web skills/dot-subagent skills/chatgpt-pro-consult',
+                'skills/dot-subagent skills/chatgpt-pro-consult',
                 'ls skills/dot-subagent', 'ls -la ~/.codex/skills/dot-subagent/scripts/run_dot_task.py',
                 'cat skills/dot-subagent/scripts/run_dot_task.py',
                 "rg -n 'paseo agent create|orca agent launch' setup", 'rg dot-subagent skills',

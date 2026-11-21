@@ -1,4 +1,4 @@
-"""AgentCompass main panel: decision compass, quota and live workers, routing settings, integrations.
+"""AgentCompass main panel: decision compass, quota and live workers, routing settings, tray-hosted services.
 
 Runs as its own pythonw process, like the network and update windows, so the tray thread never waits on it.
 The tray starts that process hidden (prewarm) so its pages are built before the first open; closing the window
@@ -37,7 +37,7 @@ import panel_widgets
 
 _process = None
 SHOW_EVENT = "Local\\AgentCompassWindowShow"  # created by the window process; open_window() sets it to show it
-PAGES = (("scoring", "决策罗盘", "◎"), ("quota", "额度监控", "▤"), ("policy", "模型设置", "⚙"), ("plugins", "外部集成", "▦"))
+PAGES = (("scoring", "决策罗盘", "◎"), ("quota", "额度监控", "▤"), ("policy", "模型设置", "⚙"), ("plugins", "托盘托管", "▦"))
 PAGES = LocalizedSequence(PAGES)
 
 
