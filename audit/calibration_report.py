@@ -41,7 +41,9 @@ AXES = ("creativity", "coding", "aesthetics", "tool_operation")
 ROUTED, PINNED, KEPT_WHOLE = "routed", "pinned", "keep_whole"
 GROUPS = (ROUTED, PINNED, KEPT_WHOLE)
 OPEN_STATES = ("prepared", "launching", "launched", "started")
-ENDINGS = ("completed", "failed", "relaunched", "canceled", "other_terminal", "open")
+ENDINGS = ("completed", "failed", "relaunched", "canceled", "other_terminal", "open", "end_unknown")
+# An external runner's dispatch (Dot, Grok Bot, ChatGPT Web) whose end its runner never reported: not an ending.
+END_UNKNOWN_STATES = ("external_launched",)
 USER_PIN = "user_override"
 NON_DISPATCH_CHOICES = (None, "none", "self", "split")   # a decision that deliberately starts no worker
 DECISION_STAGES = ("plan", "record")
@@ -199,6 +201,8 @@ def ending(row, successors):
         return "canceled"
     if state in OPEN_STATES:
         return "open"
+    if state in END_UNKNOWN_STATES:
+        return "end_unknown"
     return "other_terminal"
 
 
@@ -553,7 +557,8 @@ def render(report):
                   "cache-write tokens", "retried left out"], spend_rows(report["spend"]["by_model_effort"])) + [""]
     end_head = ["cell", "n"] + list(ENDINGS) + ["started by rotation", "rotated away"]
     out += ["Rotation is not an ending: the worker a rotation replaced shows as completed and is counted in *rotated away*; "
-            "the fresh worker that continued the work is counted in *started by rotation*.", ""]
+            "the fresh worker that continued the work is counted in *started by rotation*. *end_unknown* is not an ending "
+            "either: an external runner's dispatch (Dot, Grok Bot, ChatGPT Web) whose end its runner never reported.", ""]
     for title, block in (("Endings by model and effort", report["endings"]["by_model_effort"]),
                          ("Endings by work kind", report["endings"]["by_work_kind"])):
         out += [f"## {title}", ""] + table(end_head, [[k, mark(c)] + [c[e] for e in ENDINGS]

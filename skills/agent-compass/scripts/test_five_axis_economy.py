@@ -1487,8 +1487,10 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
 
     def _plan(self, *, claude_plan='pro', codex_plan='plus', claude_used=0.15, codex_used=0.15,
               claude_reset_h=84.0, codex_reset_h=84.0, seats_used=0, cadence_reset_h=9.0,
-              creativity=1, hours=0.3, local_only=True, records=None):
+              creativity=1, hours=0.3, local_only=True, records=None, cadence_on=None):
         acc = copy.deepcopy(self.accounts)
+        if cadence_on:
+            acc['accounts'][cadence_on]['cadence'] = copy.deepcopy(acc['accounts']['chatgpt-web']['cadence'])
         acc['accounts']['claude']['plan'] = claude_plan
         acc['accounts']['codex']['plan'] = codex_plan
         usage = sim.snapshot(sim.synthetic_document(acc, NOW, sim.STATES['ample']), acc, NOW)
@@ -1531,10 +1533,9 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
             )
 
     def test_l1_local_research_with_4_of_5_seats_used_does_not_pick_pro_max_and_c_rises_with_used_seats(self):
-        # Seats 1..4 share the oldest dispatch, so the window renews at the same time and only the used share differs. An
-        # empty window has no oldest dispatch and renews a full period from now: not the same window state.
+        # AGENTS.md: quota cost is non-decreasing in used share, here from 0 seats used to the last free one.
         costs = []
-        for seats in range(1, 5):
+        for seats in range(5):
             d = self._plan(claude_plan='pro', codex_plan='plus', claude_used=0.35, codex_used=0.35,
                            seats_used=seats, cadence_reset_h=9.0, creativity=1, hours=0.3, local_only=True)
             cw = window_reports(d)['chatgpt-web/cadence']
@@ -1548,7 +1549,7 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
         # raises its rank. Asserted as a property, not as which bundle wins.
         for cl_plan, cx_plan, used in (('pro', 'plus', 0.10), ('pro', 'plus', 0.35), ('max_20x', 'pro', 0.10)):
             prev = None
-            for seats in range(1, 5):
+            for seats in range(5):
                 d = self._plan(claude_plan=cl_plan, codex_plan=cx_plan, claude_used=used, codex_used=used,
                                seats_used=seats, cadence_reset_h=9.0, creativity=1, hours=0.3, local_only=True)
                 ids = [c['id'] for c in eligible(d)]
@@ -1576,25 +1577,47 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
             with self.subTest(seats=seats):
                 self.assertEqual(cadence_note in notes, seats >= 5, notes)
 
-    def test_one_seat_used_leaving_the_window_soon_follows_expiring_quota_speed_rule(self):
-        # 1 of 5 seats used and it leaves the 12h window in 10 minutes: C(pro_max) is near zero (~0).
-        # When local quota is also expiring (2h to weekly reset, C ≈ 0), the candidates' N differ by C alone (N is never
-        # rounded), and where N ties the documented order breaks the tie by completion_hours (AA Time/Task, +fast where
-        # available), asserted pairwise on the two candidates.
-        d_tie = self._plan(claude_plan='max_20x', codex_plan='pro', claude_used=0.50, codex_used=0.50,
-                           claude_reset_h=2.0, codex_reset_h=84.0,
-                           seats_used=1, cadence_reset_h=1 / 6, creativity=1, hours=0.3, local_only=True)
-        pro_tie = row(d_tie, 'pro_max')
-        opus_fast = row(d_tie, 'opus55_medium', fast=True)
-        self.assertLess(pro_tie['components']['opportunity_cost'], 5e-5)
-        self.assertLess(opus_fast['components']['opportunity_cost'], 5e-5)
-        self.assertAlmostEqual(pro_tie['score'] - opus_fast['score'],
-                               opus_fast['components']['opportunity_cost'] - pro_tie['components']['opportunity_cost'],
-                               places=12)
-        self.assertLess(opus_fast['duration_hours'], pro_tie['duration_hours'])
-        tied = {**pro_tie, 'score': opus_fast['score']}
-        self.assertEqual(candidate_ranking.five_axis_order(tied)[1], candidate_ranking.five_axis_order(opus_fast)[1])
-        self.assertEqual(candidate_ranking.five_axis_deciding_key(opus_fast, tied), 'completion_hours')
+    def test_a_free_seat_of_a_rolling_limit_never_expires(self):
+        # A rolling limit gives a seat back one window after its dispatch, whatever the others did: while a seat is free
+        # the price does not depend on when the oldest dispatch leaves (no free seat is quota about to expire).
+        for used in (0.10, 0.35):
+            costs = {round(reset, 2): row(self._plan(claude_used=used, codex_used=used, seats_used=2,
+                                                     cadence_reset_h=reset), 'pro_max')['components']['opportunity_cost']
+                     for reset in (1 / 6, 6.0, 11.9)}
+            with self.subTest(used=used):
+                self.assertEqual(len(set(costs.values())), 1, costs)
+
+    def test_a_full_cadence_waits_for_the_seats_that_leave_and_counts_only_those(self):
+        # Five dispatches spread over the window: the account can start when the oldest leaves, and then one seat is free
+        # (limit 5 less the 4 still inside), not the full allowance.
+        recs = [{'stage': 'launch', 'dispatch_id': f'cw-{i}', 'decision_id': f'cw-decision-{i}',
+                 'bundle': {'account': 'chatgpt-web', 'model': 'gpt-6-pro'},
+                 'at': (NOW - timedelta(hours=age)).isoformat()} for i, age in enumerate((11.5, 9.5, 7.5, 5.5, 3.5))]
+        pro = next(c for c in self._plan(records=recs)['ranking'] if c['id'] == 'pro_max' and not c['bundle'].get('fast'))
+        self.assertAlmostEqual(pro['available_in_hours'], 0.5)
+        self.assertTrue(any('cadence frees 1 of 5 dispatches in 0.5h' in n for n in pro['notes']), pro['notes'])
+        self.assertFalse(any('full renewal' in n for n in pro['notes']), pro['notes'])
+
+    def test_an_account_with_quota_windows_is_held_to_its_cadence(self):
+        # One rule for every account that declares a cadence: the plan excludes at `limit`, and below it the account's
+        # own quota windows are priced as they are without the cadence.
+        def codex_rows(d):
+            return {c['id']: c for c in d['ranking'] if c['bundle']['account'] == 'codex' and not c['bundle'].get('fast')}
+        def recs(n):
+            return [{'stage': 'launch', 'dispatch_id': f'cx-{i}', 'decision_id': f'cx-decision-{i}',
+                     'bundle': {'account': 'codex', 'model': 'gpt-6.1-sol'},
+                     'at': (NOW - timedelta(hours=1 + i)).isoformat()} for i in range(n)]
+        plain = codex_rows(self._plan(records=recs(4)))
+        held = codex_rows(self._plan(records=recs(4), cadence_on='codex'))
+        self.assertTrue(plain)
+        for bid, c in plain.items():
+            with self.subTest(bundle=bid):
+                self.assertEqual((held[bid]['excluded'], held[bid].get('score'), held[bid]['components'].get('quota_price')),
+                                 (c['excluded'], c.get('score'), c['components'].get('quota_price')))
+        full = codex_rows(self._plan(records=recs(5), cadence_on='codex'))
+        for bid, c in full.items():
+            with self.subTest(bundle=bid):
+                self.assertTrue(any(e.startswith('cadence has 0 of 5') for e in c['excluded']), c['excluded'])
 
 
 if __name__ == '__main__':

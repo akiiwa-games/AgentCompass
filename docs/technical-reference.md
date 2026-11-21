@@ -83,9 +83,8 @@ task's spend that lands over the recovery line of the account's quota window, pr
 price comes from a value ladder built over the demand grid `quota_economy.FIVE_AXIS_DEMAND_GRID` (levels 0–3 on the thinking
 categories), and its level-3 points read the fit with the ceiling as cap. So a model that raises a ceiling moves quota prices
 for every task, at every demand level, not only for level-3 tasks. Measured on the test fixtures when the ceilings were
-introduced (2026-11-13), the fit unchanged in both cases: the Claude window priced at 0.02511 before and 0.01043 after
-(`Fleet` fixture, Claude and Codex 60% used), and ChatGPT Web's cadence pool for a level-1 creativity task with 0 of 5 seats
-used and 9 h to reset priced at 0.003385 before and 0.006497 after (cost 0.0049 → 0.0097). Equal net scores
+introduced (2026-11-13), the fit unchanged: the Claude window priced at 0.02511 before and 0.01043 after (`Fleet` fixture,
+Claude and Codex 60% used). Equal net scores
 `N` go to the candidate that starts sooner (shorter wait before reset), then finishes sooner, then spends fewer list-price USD,
 then has the higher demand-weighted category level and preferred harness (`candidate_ranking.five_axis_order`). Expiring quota is
 not a tie-break: under-line allowance already lowers `quota_cost`. A near tie needs no caller action: `decision.margin` is the

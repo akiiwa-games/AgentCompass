@@ -162,8 +162,20 @@ class CalibrationReportTests(unittest.TestCase):
         write_state(self.root, rows, ledger=[{"stage": "plan", "decision_id": "rot", "action": "rotate", "at": STAMP}])
         cell = build(self.root)["endings"]["by_model_effort"]["m1@high"]
         self.assertEqual({k: cell[k] for k in report.ENDINGS},
-                         {"completed": 1, "failed": 1, "relaunched": 1, "canceled": 1, "other_terminal": 1, "open": 1})
+                         {"completed": 1, "failed": 1, "relaunched": 1, "canceled": 1, "other_terminal": 1, "open": 1,
+                          "end_unknown": 0})
         self.assertEqual(cell["started_by_rotation"], 1)
+
+    def test_an_external_dispatch_whose_end_was_never_learned_is_not_an_ending(self):
+        # Dot, Grok Bot and ChatGPT Web rows stay `external_launched` until their runner reports completion (ChatGPT Web
+        # never does): the report says the end is unknown, not that the dispatch ended.
+        rows = [dispatch(1, state="external_launched", dispatch_mode="chatgpt-web"),
+                dispatch(2, state="external_launched", dispatch_mode="dot"), dispatch(3, state="expired")]
+        write_state(self.root, rows)
+        out = build(self.root)
+        cell = out["endings"]["by_model_effort"]["m1@high"]
+        self.assertEqual((cell["end_unknown"], cell["other_terminal"], cell["open"]), (2, 1, 0))
+        self.assertIn("*end_unknown*", report.render(out))
 
     def test_the_rotated_away_worker_is_counted_as_rotated(self):
         old = dispatch(1, agent_id="worn", created="2026-11-04T10:00:00+00:00")

@@ -481,6 +481,46 @@ class WorkerDirectory(Base):
             res, _ = self.run_roll(env={'PASEO_AGENT_CWD': str(there)}, task_id='t-cli-dir')
         self.assertEqual([cwd_policy.normalized(c) for c in started], [cwd_policy.normalized(there)], res)
 
+    def test_a_host_claim_carries_a_launch_time_only_once_its_worker_started(self):
+        # Rule (dispatch_registry.launch_record, the cadence count): a row carries a launch time when the launch happened.
+        # A CLI or Herdr claim holds the workspace before the start and is stamped launched only when the worker started.
+        import roll
+        import dispatch_registry as registry
+        seen = []
+
+        def claims():
+            return [r for r in registry.read_dispatches() if r.get('dispatch_mode') in ('cli', 'herdr')]
+
+        def herdr(started):
+            def launch(out, bundle, prompt_file, task_id, *, cwd=None, dispatch_id=None):
+                seen.append(registry.inspect(dispatch_id).get('launched_at'))
+                return dict(out, launched=started, dispatch_mode='herdr', next='x'), 0 if started else 2
+            return launch
+
+        class Process:
+            pid = 4242
+
+            def __init__(self, argv, **kw):
+                seen.append(claims()[-1].get('launched_at'))
+
+        def refused(argv, **kw):
+            seen.append(claims()[-1].get('launched_at'))
+            raise OSError('test: not started')
+        cases = (('herdr', True, patch.object(host_herdr, 'launch', herdr(True))),
+                 ('herdr', False, patch.object(host_herdr, 'launch', herdr(False))),
+                 ('cli', True, patch.object(roll.subprocess, 'Popen', Process)),
+                 ('cli', False, patch.object(roll.subprocess, 'Popen', refused)))
+        for i, (surface, started, launcher) in enumerate(cases):
+            env = {'PASEO_AGENT_ID': '', 'HC_TERMINAL_ID': 'term-1'} if surface == 'herdr' else {}
+            over = {'parent_host': 'herdr'} if surface == 'herdr' else {}
+            with self.subTest(surface=surface, started=started), launcher,                     patch.object(roll, 'paseo_choice', lambda *a, **k: (False, 'test')):
+                seen.clear()
+                self.run_roll(env=env, task_id=f't-claim-{i}', **over)
+                row = claims()[-1]
+                self.assertEqual(seen, [None])          # nothing is stamped before the start
+                self.assertEqual(bool(row.get('launched_at')), started)
+                self.assertEqual(row['state'], 'launched' if started else 'canceled')
+
     def test_a_roll_whose_worker_runs_in_the_process_directory_plans_as_before(self):
         # Refactor equivalence: the process directory matched by name or by default reads the same plan.
         self.restrict('codex', os.getcwd())

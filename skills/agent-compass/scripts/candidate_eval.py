@@ -640,25 +640,28 @@ def evaluate_bundle(bundle, task, ctx):
         result['_five_context_burn'] = context_burn
         if not five_window_states and not result['excluded'] and not result.get('data_errors'):
             result['notes'].append('no current capacity observation; unknown is not exhausted')
-    elif not spec.get('unlimited'):
-        cad_got = quota_pools.cadence_window_state(bundle['account'], spec, ctx.get('records'), now)
-        if cad_got is not None:
-            wspec, state, cap_count = cad_got
+    # A declared dispatch cadence holds every account to it. It is priced only where it is the account's whole quota (an
+    # unmetered account); beside quota windows it is a gate, and those windows price the task as they do without it.
+    cad_got = quota_pools.cadence_window_state(bundle['account'], spec, ctx.get('records'), now)
+    if cad_got is not None:
+        wspec, state, cap_count = cad_got
+        need_pct = 100.0 / cap_count
+        if not pool and state['remaining'] + 1e-9 < need_pct:
+            if state['reset_hours'] <= policy['defer_if_reset_within_hours']:
+                renewed = quota_pools.after_reset(state, wspec['hours'])
+                if renewed is not None:
+                    state = renewed
+                    available_at, waiting_on = binding_wait(available_at, waiting_on, renewed['deferred_hours'], 'cadence')
+                    result['_five_long_wait'] = True
+                    result['notes'].append(
+                        f'cadence frees {renewed["remaining"] * cap_count / 100.0:g} of {cap_count:g} dispatches in '
+                        f'{renewed["deferred_hours"]:.1f}h; start then'
+                    )
+            if state['remaining'] + 1e-9 < need_pct:
+                task_exclude(f'cadence has 0 of {cap_count:g} dispatches left; one frees in {state["reset_hours"]:.1f}h')
+                result['wait_until_hours'] = max(result.get('wait_until_hours', 0), state['reset_hours'])
+        if spec.get('unmetered') and not spec.get('unlimited'):
             result.setdefault('_five_axis_windows', []).append('cadence')
-            need_pct = 100.0 / cap_count
-            if not pool and state['remaining'] + 1e-9 < need_pct:
-                if state['reset_hours'] <= policy['defer_if_reset_within_hours']:
-                    renewed = quota_pools.after_reset(state, wspec['hours'])
-                    if renewed is not None:
-                        state = renewed
-                        available_at, waiting_on = binding_wait(available_at, waiting_on, renewed['deferred_hours'], 'cadence')
-                        result['_five_long_wait'] = True
-                        result['notes'].append(
-                            f'cadence renews in {renewed["deferred_hours"]:.1f}h; start then (assumes a full renewal)'
-                        )
-                if state['remaining'] + 1e-9 < need_pct:
-                    task_exclude(f'cadence has 0 of {cap_count:g} dispatches left and resets in {state["reset_hours"]:.1f}h')
-                    result['wait_until_hours'] = max(result.get('wait_until_hours', 0), state['reset_hours'])
             five_window_states['cadence'] = (wspec, state, cap_count, None)
             result['_five_window_states'] = five_window_states
             result['_five_window_spend'] = 1.0

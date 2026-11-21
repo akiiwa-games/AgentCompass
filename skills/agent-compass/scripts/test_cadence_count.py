@@ -96,6 +96,44 @@ class CadenceCountRules(unittest.TestCase):
                     self.assertEqual(alert is not None, state['remaining'] <= 0.0)
 
 
+class RollingWindowState(unittest.TestCase):
+    """A cadence is a rolling limit: the seat a dispatch takes comes back one window after its launch, whatever the
+    others did, and a free seat never expires."""
+
+    def state(self, ages_h):
+        return quota_pools.cadence_window_state(ACCOUNT, SPEC, [launch(i, age_h=a) for i, a in enumerate(ages_h)], NOW)
+
+    def test_while_a_seat_is_free_nothing_of_the_allowance_expires(self):
+        period = WINDOW / 3600
+        for ages in ([], [1.0], [11.9], [11.9, 0.1], [11.99, 11.0, 6.0, 0.5]):
+            _, state, _ = self.state(ages)
+            with self.subTest(ages=ages):
+                self.assertEqual((state['reset_hours'], state['end_hours'], state['target_remaining']),
+                                 (period, period, 100.0))
+
+    def test_with_no_seat_free_the_wait_is_until_enough_dispatches_leave(self):
+        ages = [11.5, 9.5, 7.5, 5.5, 3.5]
+        _, state, _ = self.state(ages)
+        self.assertEqual(state['remaining'], 0.0)
+        self.assertAlmostEqual(state['reset_hours'], 0.5)
+        # One over the limit (a named route may pass it): two must leave before one seat is free.
+        _, over, _ = self.state([11.8, *ages])
+        self.assertAlmostEqual(over['reset_hours'], 0.5)
+        _, over, _ = self.state([11.8, 11.6, *ages])
+        self.assertAlmostEqual(over['reset_hours'], 0.5)
+        _, over, _ = self.state([11.5, 11.5, 9.5, 7.5, 5.5, 3.5])
+        self.assertAlmostEqual(over['reset_hours'], 0.5)
+
+    def test_what_comes_back_is_the_limit_less_the_dispatches_still_inside(self):
+        for ages, back in (([11.5, 9.5, 7.5, 5.5, 3.5], 1), ([11.5, 11.5, 9.5, 7.5, 5.5], 2),
+                           ([11.8, 11.5, 9.5, 7.5, 5.5, 3.5], 1)):
+            wspec, state, cap = self.state(ages)
+            renewed = quota_pools.after_reset(state, wspec['hours'])
+            with self.subTest(ages=ages):
+                self.assertAlmostEqual(renewed['remaining'], 100.0 * back / cap)
+                self.assertEqual(renewed['deferred_hours'], state['reset_hours'])
+
+
 class RegistryLaunchRecords(unittest.TestCase):
     """What the registry gives the count: every stored dispatch of the window, ended or not, with its launch time."""
 
@@ -107,8 +145,11 @@ class RegistryLaunchRecords(unittest.TestCase):
 
     def claim(self, i, *, launched, at=NOW):
         task = {'parent_agent_id': 'parent-a', 'task_id': f'task-{i}'}
-        return registry.record_host_claim('cli', {'decision_id': f'decision-{i}'}, task, BUNDLE,
-                                          launched=launched, now=at - timedelta(hours=1), path=self.path)
+        row = registry.record_host_claim('cli', {'decision_id': f'decision-{i}'}, task, BUNDLE,
+                                         now=at - timedelta(hours=1), path=self.path)
+        if launched:
+            row = registry.host_claim_launched(row['dispatch_id'], now=at - timedelta(hours=1), path=self.path)
+        return row
 
     def counted(self):
         return used(registry.launch_records(self.accounts, NOW, path=self.path))

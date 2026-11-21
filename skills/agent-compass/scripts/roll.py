@@ -772,6 +772,15 @@ def grok_bot(args, out, prompt_file, task, bundle, *, decision=None):
     return result, 1 if receipt['state'] == 'failed' else 0
 
 
+def settle_claim(claim_row, res, refusal):
+    """A host claim after its start: stamped launched when the worker started, or may have (Herdr's uncertain send,
+    `launched` None); canceled with `refusal` when nothing started (`launched` False)."""
+    if res.get('launched') is False:
+        registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', refusal)
+    else:
+        registry.host_claim_launched(claim_row['dispatch_id'])
+
+
 def task_access(args, read_only_review=None):
     """--access wins, then the classifier's access / read_only_review, and anything else writes: a wrong block is loud
     and has a way out, a wrong exemption silently lets a second writer in."""
@@ -997,7 +1006,7 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             claim_row = registry.record_host_claim(
                 'cli', decision, task, decision['selected_bundle'],
                 label=args.title or title_of(text),
-                usage=usage, access=access, workspace=workspace, cwd=landing, launched=True,
+                usage=usage, access=access, workspace=workspace, cwd=landing,
             )
         except registry.WorkspaceBusy as busy:
             return workspace_blocked(out, busy.workspace, busy.holders, dispatch_mode='cli')
@@ -1006,8 +1015,7 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         out['worker_prompt_file'] = str(prompt_file)
         res, code = cli(args, without_paseo(out, 'Paseo does not know the parent agent (parent_agent_not_found)'),
                         decision['selected_bundle'], text)
-        if not res.get('launched'):
-            registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', 'cli_not_launched')
+        settle_claim(claim_row, res, 'cli_not_launched')
         return res, code
     failed = receipt.get('state') in ('failed', 'create_failed')
     # launched_at records the single-use claim, before create is sent. Only a
@@ -1725,7 +1733,6 @@ def _run(args, judge):
             label=getattr(args, 'title', None) or title_of(text),
             usage=usage, access=access,
             workspace=canonical_ws, cwd=landing,
-            launched=surface in ('herdr', 'cli'),
         )
     except registry.WorkspaceBusy as busy:
         return workspace_blocked(out, busy.workspace, busy.holders,
@@ -1734,14 +1741,12 @@ def _run(args, judge):
         import host_herdr
         res, code = host_herdr.launch(out, bundle, prompt_file, task['task_id'],
                                       cwd=landing, dispatch_id=claim_row['dispatch_id'])
-        if code != 0 and res.get('launched') is False:
-            registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', 'herdr_preflight_failed')
+        settle_claim(claim_row, res, 'herdr_preflight_failed')
         return res, code
     if surface in NATIVE_HOSTS:
         return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',
                     **({'dispatch_id': claim_row['dispatch_id']} if canonical_ws else {}),
                     next=placed['next']), 0
     res, code = cli(args, without_paseo(out, no_paseo_because) if no_paseo_because else out, bundle, text)
-    if not res.get('launched'):
-        registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', 'cli_not_launched')
+    settle_claim(claim_row, res, 'cli_not_launched')
     return res, code

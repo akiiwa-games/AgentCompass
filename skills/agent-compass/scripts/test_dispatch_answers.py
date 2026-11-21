@@ -130,7 +130,8 @@ class DispatchAnswerTests(unittest.TestCase):
     def test_nothing_open_names_what_reconcile_looked_at_and_the_open_claims_it_does_not_observe(self):
         task = dict(self.task, task_id='herdr-claim')
         claim = registry.record_host_claim('herdr', {'decision_id': 'd-herdr'}, task, dict(self.bundle),
-                                           cwd=str(self.root), launched=True, now=registry.utcnow())
+                                           cwd=str(self.root), now=registry.utcnow())
+        registry.host_claim_launched(claim['dispatch_id'])
         answer = self.run_action(action('reconcile'))
         self.assertEqual((answer['observations'], answer['not_observed']), ([], []))
         self.assertEqual(answer['note'], flow.NOTHING_OPEN + ' ' + flow.OPEN_ELSEWHERE.format(

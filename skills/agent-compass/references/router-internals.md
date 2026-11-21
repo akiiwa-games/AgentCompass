@@ -175,12 +175,20 @@ telemetry retains its source and freshness. An optional account `cadence` (`wind
 dispatch counts once, from its launch until the window has passed over that moment, whoever chose the route and whether
 or not it has ended (`quota_pools.cadence_dispatches`). The launches are the rows of `dispatch.sqlite3`
 (`dispatch_registry.launch_record`: `launched_at`, unless the host refused the create; a reservation still holding its
-lease counts from its creation). A `--resume` turn is a row of its own and counts, as each turn is a request the vendor
-counts. A `record` row stands for its launch only when the registry holds no dispatch of its decision (a named route
-launched outside `roll`). A plan row is not a dispatch. ChatGPT Web's consultation is recorded as launched when `roll`
-hands over its `next_argv`, the last step `roll` sees. The plan's cadence window (one dispatch's share left starts now;
-none left excludes the account until its oldest dispatch leaves the window) and the ledger's `advisor_cadence` alert (at
-`limit` or more) read this one count.
+lease counts from its creation). A CLI or Herdr claim holds the workspace before its worker starts and carries
+`launched_at` only once the worker started (`dispatch_registry.host_claim_launched`; a Herdr send whose outcome is unknown
+counts). A `--resume` turn is a row of its own and counts, as each turn is a request the vendor counts. A `record` row
+stands for its launch only when the registry holds no dispatch of its decision (a named route launched outside `roll`). A
+plan row is not a dispatch. ChatGPT Web's consultation is recorded as launched when `roll` hands over its `next_argv`, the
+last step `roll` sees. Every account that declares a cadence is held to it, by the plan, the re-plan in
+`dispatch_registry.prepare` (which reads the ledger as the plan does, without the decision it prepares) and the ledger's
+`advisor_cadence` alert (at `limit` or more), all from this one count: with no seat free the account waits until enough
+dispatches have left the window for one seat, deferred when that is within `defer_if_reset_within_hours` and excluded
+otherwise. The cadence is a rolling limit (`quota_pools.cadence_window_state`): the seat a dispatch takes comes back one
+window after its launch, so while a seat is free nothing of the allowance expires (the window is priced with a full
+period to its reset), and what comes back after a wait is `limit` less the dispatches still inside the window then. It is
+priced in the quota economy only on an unmetered account, where it is the whole quota; beside an account's quota windows
+it is a gate, and those windows price the task.
 A local `capability_policy.remote_reroute_guard.enabled` may retain a remote adapter's
 reroute policy; the public catalogue does not enable a remote-first loop.
 

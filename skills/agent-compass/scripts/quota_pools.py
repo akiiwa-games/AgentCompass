@@ -454,7 +454,8 @@ def window_state(wid, spec, observed, account_spec, now, short_hours, account_st
 
 
 def after_reset(state, hours):
-    """The same allowance once it renews, assuming a full renewal. None when the plan ends first."""
+    """The same allowance once it renews: in full, or what the state says comes back (`renews_to`). None when the plan
+    ends first."""
     wait = state['reset_hours']
     if state.get('expected_reset_at') and wait < state.get('natural_reset_hours', wait):
         return None  # A prediction must never authorize work against an imagined refill.
@@ -466,7 +467,8 @@ def after_reset(state, hours):
         return None
     end = state['hours'] if left is None else min(state['hours'], left)
     full = state.get('full', 100.0)
-    return dict(state, remaining=full, reset_hours=wait + state['hours'], end_hours=end,
+    # A rolling limit gives back only what has left it by then (`renews_to`, cadence_window_state).
+    return dict(state, remaining=state.get('renews_to', full), reset_hours=wait + state['hours'], end_hours=end,
                 target_remaining=full * min(1.0, end / state['hours']), deferred_hours=wait,
                 expiry_hours=left)
 
@@ -522,64 +524,27 @@ def cadence_dispatches(account, records, now, win_sec):
 
 def cadence_window_state(account, spec, records, now):
     """(wspec, state, limit_count) for an account-declared dispatch cadence window, or None when the account declares no
-    `cadence`. Priced on the dispatches launched inside the window (cadence_dispatches) and the time until the oldest
-    of them leaves it."""
+    `cadence`. A cadence is a rolling limit: the seat a dispatch takes comes back one window after its launch, whatever
+    the others did. While a seat is free nothing of the allowance expires (`reset_hours` = `end_hours` = the period,
+    `target_remaining` 100). With no seat free, `reset_hours` is the wait until enough dispatches have left the window
+    for one seat, and `renews_to` what is free then: the limit less the dispatches still inside (after_reset)."""
     limits = cadence_limits(spec)
     if limits is None:
         return None
     win_sec, cap = limits
     period_h = win_sec / 3600.0
     events = cadence_dispatches(account, records, now, win_sec)
-    rem_pct = clamp(100.0 * (cap - len(events)) / cap, 0.0, 100.0)
-    seconds = max(1e-6, win_sec - (now - events[0]).total_seconds()) if events else win_sec
-    reset_h = seconds / 3600.0
+    used = len(events)
     state = {
         'id': 'cadence', 'hours': period_h, 'short': False, 'known': True, 'stale': False,
-        'full': 100.0, 'remaining': rem_pct, 'reset_hours': reset_h, 'end_hours': reset_h,
-        'expiry_hours': None, 'target_remaining': 100.0 * min(1.0, reset_h / period_h),
+        'full': 100.0, 'remaining': clamp(100.0 * (cap - used) / cap, 0.0, 100.0),
+        'reset_hours': period_h, 'end_hours': period_h, 'expiry_hours': None, 'target_remaining': 100.0,
         'reset_at': None, 'unstarted': not events,
     }
+    if cap - used < 1:
+        leaves = [max(1e-6, win_sec - (now - t).total_seconds()) for t in events]     # oldest first
+        wait = leaves[math.ceil(used - cap + 1) - 1]      # the last of the dispatches that must leave for one seat
+        inside = sum(1 for left in leaves if left > wait)
+        state.update(reset_hours=wait / 3600.0, end_hours=wait / 3600.0,
+                     renews_to=clamp(100.0 * (cap - inside) / cap, 0.0, 100.0))
     return {'hours': period_h}, state, cap
-    by_dispatch = {}
-    anon_times = []
-    for r in live_dispatch_holds(records):
-        if not isinstance(r, dict) or (r.get('bundle') or {}).get('account') != account:
-            continue
-        stage = r.get('stage')
-        t = None
-        if stage == 'record' and r.get('choice') not in (None, 'none'):
-            cand_t = parse_time(r.get('at'))
-            if cand_t is not None and 0.0 <= (now - cand_t).total_seconds() < win_sec:
-                t = cand_t
-        elif stage == 'dispatch' and r.get('state') in ('prepared', 'launching', 'launched', 'started'):
-            exp = parse_time(r.get('lease_until'))
-            if exp is not None and exp > now:
-                cand_t = parse_time(r.get('at') or r.get('created_at') or r.get('updated_at')) or now
-                if (now - cand_t).total_seconds() < win_sec:
-                    t = cand_t if cand_t <= now else now
-        if t is None:
-            continue
-        did = r.get('dispatch_id')
-        if isinstance(did, str) and did:
-            prev = by_dispatch.get(did)
-            by_dispatch[did] = t if prev is None or t < prev else prev
-        else:
-            anon_times.append(t)
-    events = [*by_dispatch.values(), *anon_times]
-    used = float(len(events))
-    rem_pct = clamp(100.0 * (cap - used) / cap, 0.0, 100.0)
-    if events:
-        oldest = min(events)
-        seconds = max(1e-6, win_sec - max(0.0, (now - oldest).total_seconds()))
-        unstarted = False
-    else:
-        seconds = win_sec
-        unstarted = True
-    reset_h = seconds / 3600.0
-    state = {
-        'id': 'cadence', 'hours': period_h, 'short': False, 'known': True, 'stale': False,
-        'full': 100.0, 'remaining': rem_pct, 'reset_hours': reset_h, 'end_hours': reset_h,
-        'expiry_hours': None, 'target_remaining': 100.0 * min(1.0, reset_h / period_h),
-        'reset_at': None, 'unstarted': unstarted,
-    }
-    return wspec, state, cap

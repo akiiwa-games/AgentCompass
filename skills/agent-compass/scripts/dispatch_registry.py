@@ -1368,6 +1368,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
     import account_fleet
     import candidate_ranking
     import dispatch_ground_truth
+    import quota_pools
     import task_intake
     now = now or utcnow()
     accounts = accounts or account_fleet.load_accounts()
@@ -1463,7 +1464,12 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             route['user_named_bundle'] = bundle['bundle_id']
         if decision.get('constraint') == 'user_override' and resume_bundle is None:
             route['pinned_bundle'] = bundle['bundle_id']
+        # The records the plan read (route_judge.plan_stage): the ledger when a cadence or a chain needs it, without this
+        # decision's own row, which is the launch being prepared and not one before it.
         records = active_records(connection, now) + launches(rows(connection, 'dispatches'), accounts, now)
+        if quota_pools.cadence_horizon(accounts) is not None or (alloc_task.get('chain') or {}).get('id'):
+            import decision_ledger
+            records += [r for r in decision_ledger.read_ledger() if r.get('decision_id') != decision_id]
         plan = allocator.plan(alloc_task, usage, now, records=records, accounts=accounts,
                               named_accounts={bundle['account']} if named else (), route=route)
         # A fast route with no fast variant in the ranking is answered by its plain row: its exclusions (the fast-mode
@@ -2052,9 +2058,10 @@ def open_host_claims(now=None, path=None):
 
 
 def record_host_claim(surface, decision, task, bundle, *, label=None, usage=None, access='write',
-                      workspace=None, cwd=None, launched=False, now=None, path=None):
+                      workspace=None, cwd=None, now=None, path=None):
     """Record a non-Paseo host dispatch (`orca`, `t3`, `native`, `herdr`, `cli`) in `dispatches` under the same
-    canonical-directory writer rule and SQLite BEGIN IMMEDIATE transaction as Paseo."""
+    canonical-directory writer rule and SQLite BEGIN IMMEDIATE transaction as Paseo. The claim is `prepared`: it holds the
+    workspace before the worker starts, and carries a launch time only once host_claim_launched says it started."""
     parent_id = task.get('parent_agent_id')
     require_parent_id(parent_id)
     now = now or utcnow()
@@ -2066,8 +2073,6 @@ def record_host_claim(surface, decision, task, bundle, *, label=None, usage=None
     raw_usd = (decision.get('expected_usd') if isinstance(decision.get('expected_usd'), (int, float))
                else bundle_copy.get('expected_usd'))
     expected_usd = float(raw_usd) if isinstance(raw_usd, (int, float)) and not isinstance(raw_usd, bool) else None
-    lease_secs = RUN_LEASE if launched else PREPARE_LEASE
-    state = 'launched' if launched else 'prepared'
     with transaction(path) as connection:
         expire(connection, now)
         by_dec = connection.execute('SELECT data FROM dispatches WHERE decision_id=?', (decision_id,)).fetchone()
@@ -2092,8 +2097,7 @@ def record_host_claim(surface, decision, task, bundle, *, label=None, usage=None
             'expected_usd': expected_usd,
             'usage': (usage or {}).get('accounts', {}),
             'created_at': stamp(now),
-            **({'launched_at': stamp(now)} if launched else {}),
-            'lease_until': stamp(now + timedelta(seconds=lease_secs)),
+            'lease_until': stamp(now + timedelta(seconds=PREPARE_LEASE)),
             'hard_until': stamp(now + timedelta(seconds=MAX_LIFETIME)),
             'operation': 'create',
             'agent_id': None,
@@ -2103,8 +2107,21 @@ def record_host_claim(surface, decision, task, bundle, *, label=None, usage=None
             **({'profile': task['profile']} if isinstance(task.get('profile'), dict) else {}),
             **({'brief_path': task['brief_path']} if task.get('brief_path') else {}),
         }
-        event(row, state, now)
+        event(row, 'prepared', now)
         save(connection, row)
+        return row
+
+
+def host_claim_launched(dispatch_id, *, now=None, path=None):
+    """Stamp a host claim (record_host_claim) launched once its worker started: its launch time, and the run lease."""
+    now = now or utcnow()
+    with transaction(path) as connection:
+        row = get(connection, 'dispatches', dispatch_id)
+        if row['state'] in ('prepared', 'expired'):
+            row.update(launched_at=stamp(now),
+                       lease_until=stamp(min(now + timedelta(seconds=RUN_LEASE), parse(row['hard_until']))))
+            event(row, 'launched', now)
+            save(connection, row)
         return row
 
 
