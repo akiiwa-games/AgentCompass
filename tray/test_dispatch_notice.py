@@ -1135,7 +1135,7 @@ class DispatchNoticeUnitTests(unittest.TestCase):
         fup_row["events"].append(
             {"state": "started", "at": now.isoformat(), "reason": "host_followup status=running", "kind": registry.HOST_FOLLOWUP_KIND}
         )
-        self.assertTrue(registry._followed_up(fup_row))
+        self.assertTrue(registry.followed_up(fup_row))
         seed_dispatch_row(db_fup, fup_row)
         self.write_receipt("d-n1-fup", status="delivered", pid=999999, terminal=valid_terminal)
         with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_fup)}):

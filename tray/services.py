@@ -1081,7 +1081,7 @@ def _watcher_restartable(dispatch_id: object, state_dir: Path) -> bool:
 
 def _receipt_proves_ending(row: dict, dispatch_id: object, state_dir: Path) -> bool:
     """True when `row` is not a parent follow-up and its readable receipt already proves an ending to the registry."""
-    if dispatch_registry._followed_up(row):
+    if dispatch_registry.followed_up(row):
         return False
     record = _readable_receipt(dispatch_id, state_dir)
     if record is None:

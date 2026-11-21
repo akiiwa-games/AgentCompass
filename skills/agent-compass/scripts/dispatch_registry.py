@@ -805,7 +805,7 @@ def end_notice_message_id(dispatch_id):
     return hashlib.sha256(f'router-finish:{dispatch_id}:terminal'.encode()).hexdigest()
 
 
-def _followed_up(row):
+def followed_up(row):
     """A parent continuation is the event kind. The reason text is not evidence."""
     return any(isinstance(item, dict) and item.get('kind') == HOST_FOLLOWUP_KIND
                for item in row.get('events') or [])
@@ -825,7 +825,7 @@ def _note_end_notice(row, receipt):
     if isinstance(notice, dict) and notice.get('state') == 'sent':
         return False
     message_id = end_notice_message_id(row['dispatch_id'])
-    if _followed_up(row):
+    if followed_up(row):
         row['end_notice'] = {'state': 'sent', 'message_id': message_id, 'source': 'notify_on_finish'}
         return True
     if not isinstance(receipt, dict):
