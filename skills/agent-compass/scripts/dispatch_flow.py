@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -494,7 +495,14 @@ def reconcile(dispatch_id=None, host=None, now=None, path=None, timeout=None, no
     bridge's error code, never a host's text."""
     host = host or host_call
     now = now or registry.utcnow()
-    targets = [registry.inspect(dispatch_id, path)] if dispatch_id else registry.pending(path)
+    if dispatch_id:
+        targets = [registry.inspect(dispatch_id, path)]
+    else:
+        # Beside the open dispatches, a failed attempt whose covered failure no fallback step took yet, inside its hold,
+        # whichever reader settled it: observing it restarts its watcher, which runs the fallback.
+        targets = registry.pending(path)
+        open_ids = {row['dispatch_id'] for row in targets}
+        targets += [row for row in registry.awaiting_fallback(path, now) if row['dispatch_id'] not in open_ids]
     results = []
     skipped = not_observed if not_observed is not None else []
 
@@ -508,8 +516,9 @@ def reconcile(dispatch_id=None, host=None, now=None, path=None, timeout=None, no
         if row['state'] in registry.TERMINAL and row['state'] != 'expired':
             pending_chain = registry.fallback_guard(row, now)
             candidates = (failed_attempts(row, path) if pending_chain
-                          else [row] if dispatch_id and row['state'] == 'failed'
-                          and row.get('launched_at') and row.get('agent_id') else [])
+                          else [row] if (dispatch_id and row['state'] == 'failed' and row.get('launched_at')
+                                         and row.get('agent_id')) or registry.awaits_fallback(row, now, path)
+                          else [])
             if not candidates:
                 skip(row, NOT_OBSERVED['terminal'].format(state=row['state']))
             for target in candidates:
@@ -587,35 +596,52 @@ def deliver_end_notices(now=None, path=None, host=None):
     """Send each due end notice once. Without an explicit daemon, and without an injected host, send nothing.
 
     A failed send leaves the notice due so the next read retries it. The bridge computes the message id, the same
-    one the watcher uses, so a race with a late watcher is one message. A send, a receipt that already shows the
-    terminal was delivered (`evidence` `delivered`), an intentional skip (`evidence` `skipped`), and a parent that
-    can no longer be reached are recorded. `already` without that evidence is not a delivery: the notice stays due.
-    A second call sends nothing."""
-    del now
+    one the watcher uses, so a race with a late watcher is one message, and names the id the notice ended on, which the
+    row records. A send, a receipt that already shows the terminal was delivered (`evidence` `delivered`), an
+    intentional skip (`evidence` `skipped`), and a parent that can no longer be reached are recorded. `already` without
+    that evidence is not a delivery: the notice stays due. When Paseo answered that an earlier send's outcome is
+    unknown, the bridge looks for the notice in the parent's timeline: found is `catchup_found`, not found and sent
+    once under the next derived id `catchup_resent`; a receipt the watcher resolved that way is `watcher_found` or
+    `watcher_resent`. A next id that is not due yet (`notice_resend_wait`) and a watcher still running the attempt's
+    fallback (`fallback_pending`) leave the notice due. A notice whose ids are used up without Paseo confirming a send
+    or the timeline showing it is recorded `watcher_undelivered` / `catchup_undelivered`: nothing more is sent, and the
+    parent's own next router call names it (`name_undelivered`). A notice whose worker the same parent continued under a
+    later dispatch, and one whose brief may still be retried or relaunched, are decided before this
+    (`dispatch_registry.due_end_notices`). A second call sends nothing."""
     if host is None and 'daemon' not in paseo_config():
         return []
     sender = host or host_call
     sent = []
-    for notice in registry.due_end_notices(path):
+    for notice in registry.due_end_notices(path, now=now):
+        dispatch_id = notice['dispatch_id']
         try:
-            response = sender({'operation': 'notify_end', 'dispatch_id': notice['dispatch_id'],
+            response = sender({'operation': 'notify_end', 'dispatch_id': dispatch_id,
                                'parent_id': notice.get('parent_id'), 'ended_as': notice['ended_as']})
         except Exception:
             continue
         if not isinstance(response, dict) or not response.get('ok'):
             continue
+        used = response.get('message_id')
         if response.get('error') == 'parent_unavailable':
-            registry.mark_end_notice_sent(notice['dispatch_id'], 'parent_unavailable', path=path)
+            registry.mark_end_notice_sent(dispatch_id, 'parent_unavailable', path=path)
+        elif response.get('error') == 'notice_undelivered':
+            # the catch-up gave up itself, or read a receipt the watcher gave up
+            source = 'catchup_undelivered' if response.get('outcome') == 'undelivered' else 'watcher_undelivered'
+            registry.mark_end_notice_sent(dispatch_id, source, path=path, message_id=used)
         elif response.get('sent'):
-            registry.mark_end_notice_sent(notice['dispatch_id'], 'catchup', path=path)
-            sent.append(notice['dispatch_id'])
+            source = 'catchup_resent' if response.get('outcome') == 'resent' else 'catchup'
+            registry.mark_end_notice_sent(dispatch_id, source, path=path, message_id=used)
+            sent.append(dispatch_id)
         elif response.get('already') and response.get('evidence') == 'delivered':
-            registry.mark_end_notice_sent(notice['dispatch_id'], 'watcher', path=path)
+            resolved = response.get('delivery_outcome')
+            source = ('catchup_found' if response.get('outcome') == 'found'
+                      else 'watcher_' + resolved if resolved in ('found', 'resent') else 'watcher')
+            registry.mark_end_notice_sent(dispatch_id, source, path=path, message_id=used)
         elif response.get('already') and response.get('evidence') == 'skipped':
             source = response.get('skipped')
             if not isinstance(source, str) or not source.isidentifier() or len(source) > 64:
                 source = 'skipped'
-            registry.mark_end_notice_sent(notice['dispatch_id'], source, path=path)
+            registry.mark_end_notice_sent(dispatch_id, source, path=path)
     return sent
 
 
@@ -701,9 +727,16 @@ def launch(dispatch_id, parent_id, host=None, watch_seconds=3600, poll_seconds=5
                 response = {'sent': None}
             elif refused_resume:
                 # An automatic resume: the plan chose the bundle, so a fresh worker on it carries the brief.
-                row = registry.fallback_to_create(dispatch_id, now=registry.utcnow(), path=path)
-                # The failed resume used up part of the window, so this gets a fresh one, still inside the deadline.
-                response = create(registry.utcnow())
+                switched = registry.fallback_to_create(dispatch_id, row['claim_id'], now=registry.utcnow(), path=path)
+                if switched is None:
+                    # The claim is no longer this roll's (another step settled the row): nothing is created, and the
+                    # answer is the row as it is.
+                    row = registry.inspect(dispatch_id, path)
+                    response = {'sent': None}
+                else:
+                    row = switched
+                    # The failed resume used up part of the window, so this gets a fresh one, still inside the deadline.
+                    response = create(registry.utcnow())
         else:
             # From the claim: a process paused before sending cannot stretch the window past the deadline.
             response = create(registry.parse(row['launched_at']))
@@ -856,6 +889,36 @@ def end_notices(answer, now=None, path=None):
         deliver_end_notices(now=now, path=path)
     except Exception as exc:
         answer['end_notices_error'] = type(exc).__name__
+    return answer
+
+
+UNDELIVERED_MEANING = ('AgentCompass could not deliver these workers\' end notices to you: Paseo left the outcome of each '
+                       'send unknown and your timeline did not show the notice after three tries over more than an hour. '
+                       'Check each worker with get_agent_status (agent_id) for how it ended and its final reply.')
+# The router calls a parent makes and reads the answer of. A watcher's `settle` and `fallback` run with its parent's
+# environment and nobody reads them; the tray's `reconcile` has no parent.
+NAMING_STAGES = ('roll', 'plan', 'record', 'launch')
+NAMING_ACTIONS = ('reconcile', 'start', 'status', 'release', 'prepare')
+
+
+def name_undelivered(answer, args, table=False, path=None):
+    """Name, in the answer of a router call the parent makes itself, the end notices of its dispatches that were given up
+    as undelivered (`dispatch_registry.name_undelivered`): that call is the first sign the parent takes turns again.
+    The parent is the actual Paseo agent (`PASEO_AGENT_ID`), never a caller-given id, so no notice is ever named to
+    another parent; each is named once. An answer printed as the plan table (`table`) shows no such key, so nothing is
+    named in it."""
+    parent = os.environ.get('PASEO_AGENT_ID', '').strip()
+    if (not parent or table or not isinstance(answer, dict) or getattr(args, 'dry_run', False)
+            or (args.stage not in NAMING_STAGES
+                and not (args.stage == 'dispatch' and getattr(args, 'dispatch_action', None) in NAMING_ACTIONS))):
+        return answer
+    try:
+        named = registry.name_undelivered(parent, path=path)
+    except (OSError, ValueError, sqlite3.Error):
+        return answer
+    if named:
+        answer['undelivered_end_notices'] = named
+        answer['undelivered_end_notices_meaning'] = UNDELIVERED_MEANING
     return answer
 
 
