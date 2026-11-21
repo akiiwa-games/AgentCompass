@@ -22,7 +22,6 @@ import quota_pools
 import route_judge
 import scorer_client
 import stage_help
-import subscription_judge
 import usage_reading
 from router_test_support import isolated_router_state, profile, temporary_root
 
@@ -119,8 +118,6 @@ class StageTableTests(RecordCli):
                                                         'expected_hours': 1, 'profile': multi}}))
         self.prepare = d / 'prepare.json'
         self.prepare.write_text(json.dumps({'decision_id': 'd', 'task': {'parent_agent_id': PARENT}, 'launch': {}}))
-        self.judge_input = d / 'judge.json'
-        self.judge_input.write_text(json.dumps({'task': {'objective': 'x'}}))
         self.later = (self.now + timedelta(hours=3)).isoformat()
 
         def classify(task, needs, capabilities, policy, timeout, use_model=True):     # no model call in a test
@@ -130,8 +127,6 @@ class StageTableTests(RecordCli):
                   patch.object(scorer_client, 'score_task', return_value=(single, {'source': 'fixture'})),
                   patch.object(scorer_client, 'save_scorer_config'),
                   patch.object(scorer_client, 'scorer_test', side_effect=lambda *a, **k: {'ok': True}),
-                  patch.object(subscription_judge, 'build_request', side_effect=lambda *a, **k: {}),
-                  patch.object(subscription_judge, 'evaluate', side_effect=lambda *a, **k: {'source': 'fixture'}),
                   patch.object(dispatch_flow, 'require_actual_parent'),
                   patch.object(dispatch_flow, 'reconcile', return_value=[]),
                   patch.object(dispatch_flow, 'launch', side_effect=lambda *a, **k: {'state': 'started'}),
@@ -146,7 +141,6 @@ class StageTableTests(RecordCli):
         """stage -> (argument vector, environment) runs that together take each path on which the stage reads a flag."""
         c, w, T, M = self.cache, self.workspace, str(self.task), str(self.multi_task)
         named = ['--provider', 'codex', '--account', 'codex', '--model', 'gpt-6.1-sol', '--effort', 'high', '--basis', 'q']
-        judge = str(self.judge_input)
         return {
             'record': [(NAMED + ['--input', T, '--trigger', 'workflow', '--reason-category', 'other', '--specialty', 's',
                                  '--dry-run', '--parent-id', PARENT, '--usage-cache', c, '--accounts', 'codex'], None),
@@ -174,10 +168,6 @@ class StageTableTests(RecordCli):
                          '--model', 'm', '--fallback-to-agy', 'on'], None),
                        (['scorer', '--action', 'test', '--type', 'openai_compatible', '--objective', 'o',
                          '--score-timeout', '5'], None)],
-            'delegate': [(['delegate', '--input', judge, '--dry-run', '--usage-cache', c], None),
-                         (['delegate', '--input', judge, '--judge', 'codex', '--timeout', '30'], None)],
-            'select': [(['select', '--input', judge, '--dry-run', '--usage-cache', c], None),
-                       (['select', '--input', judge, '--judge', 'codex', '--timeout', '30'], None)],
             'override': [(['override', '--list', '--usage-cache', c], None),
                          (['override', '--clear', 'all'], None),
                          (['override', '--account', 'codex', '--model', 'gpt-6.1-sol', '--basis', 'b', '--intent', 'i',

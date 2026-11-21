@@ -194,10 +194,6 @@ def disabled_text(cause):
     return detail if kind == 'legacy' else "档位 " + ", ".join(detail) + " 在模型管理中未勾选（不参与自动派发）"
 
 
-def judge_allowed(policy, name, account):
-    return account_allowed(policy, account) and (policy is None or 'judges' not in policy or name in policy['judges'])
-
-
 def usage_providers(policy, defaults):
     if policy is None or 'usage_providers' not in policy:
         return list(defaults)

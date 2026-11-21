@@ -79,7 +79,7 @@ class CatalogueTests(unittest.TestCase):
                     patch.object(decision_ledger, 'capacity_alerts', return_value=[{'code': 'capacity-proof'}]) as alerts:
                 result = {'stage': 'plan', 'selected_bundle': {
                     'provider': provider, 'account': 'workspace-account', 'expected_usd': 0}}
-                decision_ledger.finalize(result, None, 'auto', 0, records=[])
+                decision_ledger.finalize(result, 0, records=[])
                 alerts.assert_called_once()
                 self.assertIn('capacity-proof', [row['code'] for row in result['alerts']])
 

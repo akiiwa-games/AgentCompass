@@ -11,7 +11,7 @@ SNAPSHOT_CAPACITY_KEYS = ('window', 'remaining', 'after', 'step_pct', 'chain_pct
                           'opportunity_cost', 'line_now_usd', 'used_usd', 'quota_source', 'period_hours', 'elapsed_hours',
                           'priced', 'cost', 'quota_price', 'need_start', 'need_end', 'spend_before_reset',
                           'spend_after_reset', 'stale')
-SNAPSHOT_DECISION_KEYS = ('action', 'needs_user_decision', 'margin', 'needs_judgment', 'reason', 'alternatives', 'continuity',
+SNAPSHOT_DECISION_KEYS = ('action', 'needs_user_decision', 'margin', 'reason', 'alternatives', 'continuity',
                           'fast', 'fast_reason', 'wait_hours', 'start_after_hours', 'better_if_waiting', 'warnings')
 
 

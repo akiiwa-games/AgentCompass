@@ -13,7 +13,6 @@ import route_judge as router
 import decision_ledger
 import dispatch_registry
 import subscription_cli
-import subscription_judge
 import usage_reading
 
 from router_test_support import isolated_router_state, profile, temporary_root
@@ -67,20 +66,10 @@ class HostPolicyTests(unittest.TestCase):
         return allocator.plan(task or {'work_kind': 'code_implementation', 'difficulty': 'hard'},
                               {'accounts': {}}, now=self.now, accounts=self.accounts, **kwargs)
 
-    def candidate(self, account):
-        return {'provider': account, 'account': account, 'model': 'verified', 'effort': 'high',
-                'quality_fit': 'review', 'available': True}
-
-    def request(self, stage='select', accounts=('claude', 'codex', 'codex-work', 'grok', 'api-proxy', 'dot', 'chatgpt-web', 'antigravity')):
-        with patch.object(usage_reading, 'usage_snapshot', return_value={'accounts': {}}):
-            return subscription_judge.build_request(stage, {'task': {'objective': 'review'},
-                                               'candidates': {a: self.candidate(a) for a in accounts}})
-
     def test_missing_default_preserves_defaults(self):
         self.path.unlink()
         self.assertIsNone(host_policy.load_policy())
         self.assertTrue(host_policy.account_allowed(None, 'claude'))
-        self.assertEqual(subscription_judge.judge_order({}, 'auto'), ['codex', 'sonnet'])
 
     def test_missing_explicit_override_is_error(self):
         self.path.unlink()
@@ -98,14 +87,11 @@ class HostPolicyTests(unittest.TestCase):
     def test_invalid_profiles_fail_closed(self):
         for value in ('{', '[]', '{}', '{"allowed_accounts":"codex"}',
                       '{"allowed_accounts":[1]}', '{"allowed_accounts":[],"judge":[]}',
-                      '{"allowed_accounts":[],"judges":["claude"]}',
                       '{"allowed_accounts":[],"usage_providers":null}'):
             with self.subTest(value=value):
                 self.path.write_text(value, encoding='utf-8')
                 with self.assertRaises(host_policy.HostPolicyError):
                     self.plan()
-                with self.assertRaises(host_policy.HostPolicyError):
-                    self.request('delegate')
         self.path.write_bytes(b'\xff')
         with self.assertRaisesRegex(host_policy.HostPolicyError, 'UTF-8'):
             host_policy.load_policy()
@@ -125,46 +111,34 @@ class HostPolicyTests(unittest.TestCase):
     def test_empty_whitelist_is_not_default(self):
         self.write({'allowed_accounts': []})
         self.assertEqual(self.plan()['choice'], 'none')
-        self.assertEqual(subscription_judge.judge_order({}, 'auto'), [])
+
+    def test_a_policy_a_released_version_wrote_with_judges_loads_plans_and_syncs_untouched(self):
+        """AGENTS.md, what a released version wrote for the user is kept: `judges` (read by the removed select and
+        delegate stages) is accepted, left in the file as written, and changes nothing a plan decides."""
+        import state_upgrade
+        without = {'allowed_accounts': ['codex', 'claude'], 'known_accounts': ['codex', 'claude']}
+        self.write(without)
+        plain = self.plan()
+        for judges in (['codex'], ['sonnet'], ['codex', 'sonnet'], [], ['a-name-no-release-wrote']):
+            with self.subTest(judges=judges):
+                document = {**without, 'judges': judges}
+                self.write(document)
+                written = self.path.read_bytes()
+                self.assertEqual(host_policy.load_policy(), document)
+                self.assertIsNone(state_upgrade.check_host_policy(self.path))
+                self.assertFalse([i for i in state_upgrade.collect_issues(environ={'ROUTER_HOST_POLICY': str(self.path)})
+                                  if 'host-policy' in i])                 # what `agentcompass doctor` reports
+                self.assertEqual(self.plan(), plain)
+                self.assertEqual(host_policy.sync_discovered(self.registered(codex='ready', claude='ready'))['added'], [])
+                self.assertEqual(self.path.read_bytes(), written)
+                host_policy.sync_discovered(self.registered(codex='ready', claude='ready', **{'codex-work': 'ready'}))
+                self.assertEqual(host_policy.load_policy()['judges'], judges)
 
     def test_excluded_coupled_owner_is_blocked(self):
         result = self.plan({'work_kind': 'code_implementation', 'difficulty': 'coupled',
                             'chain': {'id': 'a', 'coupling': 'high', 'worker': {'bundle': 'opus55_high'}}})
         self.assertIn('excluded by host policy', result['decision']['resume_blocked_by'])
         self.assertTrue(result['decision']['needs_user_decision'])
-
-    def test_select_filters_all_disallowed_accounts(self):
-        request = self.request()
-        self.assertEqual(set(request['state']['candidates']), set(LS['allowed_accounts']))
-        self.assertEqual(set(request['state']['host_policy_excluded']), {'claude', 'codex-work', 'grok', 'api-proxy'})
-
-    def test_judges_auto_explicit_and_account_intersection(self):
-        self.assertEqual(subscription_judge.judge_order({}, 'auto'), ['codex'])
-        self.assertEqual(subscription_judge.judge_order({}, 'codex'), ['codex'])
-        with self.assertRaisesRegex(host_policy.HostPolicyError, 'excluded by host policy'):
-            subscription_judge.judge_order({}, 'sonnet')
-        self.write({'allowed_accounts': ['codex'], 'judges': ['sonnet']})
-        self.assertEqual(subscription_judge.judge_order({}, 'auto'), [])
-
-    def test_delegate_and_select_denied_explicit_judge_never_call_cli(self):
-        with patch.object(subscription_cli, 'cli_prefix', side_effect=AssertionError('model call forbidden')):
-            for stage in ('delegate', 'select'):
-                with self.assertRaises(host_policy.HostPolicyError):
-                    subscription_judge.evaluate(self.request(stage), requested='sonnet')
-
-    def test_no_allowed_judge_continues_self_without_cli(self):
-        self.write({'allowed_accounts': ['codex'], 'judges': []})
-        with patch.object(subscription_cli, 'cli_prefix', side_effect=AssertionError('model call forbidden')):
-            result = subscription_judge.evaluate(self.request('delegate'))
-        self.assertEqual(result['source'], 'judge_unavailable')
-        self.assertIn('continue feasible parent work', result['next'])
-
-    def test_prepared_select_rechecks_current_policy(self):
-        request = self.request(accounts=('codex',))
-        self.write({'allowed_accounts': []})
-        with patch.object(subscription_cli, 'cli_prefix', side_effect=AssertionError('model call forbidden')):
-            result = subscription_judge.evaluate(request)
-        self.assertEqual(result['choice'], 'none')
 
     def record(self, constraint='user_override', model='claude-opus-5-5', usage=None):
         """record_constraint for a route on `claude`, an account outside LS (out of automatic routing)."""
@@ -248,14 +222,14 @@ class HostPolicyTests(unittest.TestCase):
         launch_rows = {                                          # writer -> row it hands append_ledger
             **{f'finalize:{stage}': {'stage': stage, 'choice': 'opus55_high', 'bundle': bundle,
                                      'constraint': constraint}
-               for stage, constraint in (('plan', None), ('select', None), ('record', 'user_override'),
-                                         ('record', 'explicit_resume'))},
+               for stage, constraint in (('plan', None), ('record', 'user_override'), ('record', 'explicit_resume'))},
             **{f'fallback_retry:{stage}': {'stage': stage, 'source': 'fallback_retry', 'choice': 'opus55_high',
                                            'bundle': bundle, 'action': 'start'} for stage in ('plan', 'record')},
         }
         quiet_rows = {
             'fallback': {'stage': 'fallback', 'action': 'relaunch', 'failed': bundle},
             'split': {'stage': 'split', 'choice': 'split'},
+            'select': {'stage': 'select', 'choice': 'opus55_high', 'bundle': bundle},      # a stage removed 2026-11-21
             'scorer_unavailable': {'stage': 'plan', 'choice': 'none', 'error': 'scorer_unavailable'},
             'self': {'stage': 'plan', 'choice': 'self', 'bundle': bundle},
             'override': {'stage': 'override', 'action': 'upsert', 'account': 'claude', 'model': 'claude-opus-5-5'},

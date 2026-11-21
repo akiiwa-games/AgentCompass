@@ -18,7 +18,6 @@ import decision_ledger
 import env_vars
 import scorer_client
 import subscription_cli
-import subscription_judge
 import usage_reading
 import task_intake
 from router_test_support import isolated_router_state, profile, profile_for, temporary_root
@@ -74,10 +73,6 @@ class RoutingTests(unittest.TestCase):
     def snapshot(self, providers):
         with tempfile.TemporaryDirectory() as directory:
             return usage_reading.usage_snapshot(self.write_cache(directory, providers), now=self.now)
-
-    def candidate(self, provider='codex', account='codex', **extra):
-        return {'provider': provider, 'account': account, 'model': 'runtime-verified-model',
-                'effort': 'high', 'quality_fit': 'Supports the required code review', **extra}
 
     def run_plan(self, directory, task, down=None, unavailable=(), records=(), extra=()):
         source = Path(directory) / 'in.json'
@@ -233,39 +228,7 @@ class RoutingTests(unittest.TestCase):
             persisted = json.loads((Path(directory) / '.agent-compass' / 'rate-limits.json').read_text(encoding='utf-8'))
             self.assertEqual(persisted['claude-lab']['resets_at'], '2026-10-28T13:50:00+00:00')
 
-    def test_request_building_validation_and_metered_fallback(self):
-        candidate = self.candidate(account='distinct-account')
-        with patch.object(usage_reading, 'usage_snapshot', return_value={'read_ok': True}):
-            delegate = subscription_judge.build_request('delegate', {'task': {'objective': 'Review'}})
-            select = subscription_judge.build_request('select', {'task': {'objective': 'Review'}, 'candidates': {'reviewer': candidate}})
-        self.assertEqual(subscription_judge.validate_response(select, {'choice': 'reviewer', 'reason': 'Fits'}, subscription_judge.JUDGES['codex'])['selected_bundle'], candidate)
-        good = {'choice': 'self', 'specialty': 'code_audit', 'reason': 'Parent can review directly'}
-        self.assertEqual(subscription_judge.validate_response(delegate, good, subscription_judge.JUDGES['codex'])['choice'], 'self')
-        for bad in ({**good, 'choice': 'invented'}, {**good, 'specialty': 'invented'},
-                    {**good, 'reason': ''}, {**good, 'reason': True}, {'choice': 'self'}):
-            with self.assertRaises(ValueError):
-                subscription_judge.validate_response(delegate, bad, subscription_judge.JUDGES['codex'])
-
-        sub = self.candidate()
-        metered = self.candidate('proxy', 'proxy', billing_source='metered')
-        for candidates, status, expected in (
-            ({'sub': sub, 'proxy': metered}, 'unknown', {'sub', 'none'}),
-            ({'proxy': metered}, 'unknown', {'none'}),
-            ({'sub': {**sub, 'available': False}, 'proxy': metered}, 'unavailable', {'proxy', 'none'}),
-        ):
-            with patch.object(usage_reading, 'usage_snapshot', return_value={'read_ok': True}), \
-                    patch.object(env_vars, 'user_env', return_value=None):
-                req = subscription_judge.build_request('select', {'task': {'objective': 'Review'},
-                                                      'candidates': candidates, 'subscription_status': status})
-            self.assertEqual(set(req['response_schema']['properties']['choice']['enum']), expected)
-
-    def test_judge_cli_ordering_and_env(self):
-        with tempfile.TemporaryDirectory() as directory:
-            for kind, bundle in subscription_judge.JUDGES.items():
-                cmd = subscription_judge.judge_command(kind, ['native-cli'], Path(directory), {'type': 'object'})
-                self.assertIn(bundle['model'], cmd)
-                self.assertIn('low', cmd if kind == 'sonnet' else ' '.join(cmd))
-
+    def test_subscription_env_drops_api_keys_and_points_at_the_account_home(self):
         with patch.dict(router.os.environ, {'OPENAI_API_KEY': 'secret', 'ROUTER_CUSTOM': 'keep'}), \
                 patch.object(router.provider_inventory, 'current', return_value={'accounts': {
                     'claude-lab': {'family': 'claude', 'home': str(Path.home() / '.claude-lab')}}}):
@@ -273,15 +236,6 @@ class RoutingTests(unittest.TestCase):
             self.assertNotIn('OPENAI_API_KEY', env)
             self.assertEqual(env['ROUTER_CUSTOM'], 'keep')
             self.assertTrue(env['CLAUDE_CONFIG_DIR'].endswith('.claude-lab'))
-
-        # Primary exhausted -> the Sonnet judge switches to claude-lab
-        claude_empty = self.row(used=100)
-        claude_empty['windows'][0].update({'id': 'seven_day', 'resets_at': '2026-10-08T00:00:00Z'})
-        claude_2_ok = self.row(used=17)
-        claude_2_ok['windows'][0].update({'id': 'seven_day', 'resets_at': '2026-10-04T01:30:00Z'})
-        snap_ok = self.snapshot({'claude': claude_empty, 'claude-lab': claude_2_ok, 'codex': self.row(used=50)})
-        self.assertEqual(subscription_judge.resolve_judge('sonnet', snap_ok)['account'], 'claude-lab')
-        self.assertEqual(subscription_judge.judge_order(snap_ok, 'auto'), ['sonnet', 'codex'])
 
     def test_capacity_alerts_ledger_and_constraint_recording(self):
         reset = (self.now + timedelta(days=3)).isoformat()
@@ -303,19 +257,16 @@ class RoutingTests(unittest.TestCase):
         pro = {'provider': 'chatgpt-web', 'account': 'fixture-advisor', 'model': 'gpt-6-pro', 'effort': 'max'}
         accounts = account_fleet.load_accounts(account_fleet.reference_fleet_path())
         accounts['accounts']['fixture-advisor'] = {'cadence': {'window_seconds': 6 * 3600, 'limit': 5}}
-        history = [{'at': (now - timedelta(hours=h)).isoformat(), 'stage': 'select', 'choice': 'pro_web', 'bundle': pro} for h in (1, 2, 3, 4, 5)]
-        u_low = {'accounts': {'codex': {'status': 'fresh', 'fetched_at': now.isoformat(), 'windows': [
-            {'id': 'usage', 'used_pct': 98, 'resets_at': (now + timedelta(days=5)).isoformat(),
-             'seconds_until_reset': 5 * 86400, 'remaining_pct_before_reset': 2}]}}}
-        res = {'stage': 'select', 'choice': 'pro_web', 'source': 'subscription_model_judgment',
-               'reason': 'r', 'judge': dict(subscription_judge.JUDGES['codex']), 'selected_bundle': pro, 'usage': u_low}
+        history = [{'at': (now - timedelta(hours=h)).isoformat(), 'stage': 'record', 'choice': 'constraint', 'bundle': pro} for h in (1, 2, 3, 4, 5)]
+        res = {'stage': 'record', 'choice': 'constraint', 'source': 'constraint_record', 'constraint': 'user_override',
+               'basis': 'User: ask Pro', 'selected_bundle': pro, 'usage': {'accounts': {}}}
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(decision_ledger, 'ledger_path', return_value=Path(directory) / 'ledger.jsonl'), \
                 patch.object(account_fleet, 'load_accounts', return_value=accounts):
-            out = decision_ledger.finalize(res, {'stage': 'select'}, 'codex', time.monotonic(),
-                                  {'objective': 'Advise', 'work_kind': 'architecture_reasoning'}, history)
-            self.assertEqual({a['code'] for a in out['alerts']},
-                             {'advisor_cadence', 'pinned_judge_account_low', 'telemetry_missing'})
+            with patch.object(decision_ledger, 'LEDGER_WRITES', False):     # the alerts only: no reservation for a fixture row
+                out = decision_ledger.finalize(res, time.monotonic(),
+                                               {'objective': 'Advise', 'work_kind': 'architecture_reasoning'}, history)
+            self.assertEqual({a['code'] for a in out['alerts']}, {'advisor_cadence', 'telemetry_missing'})
             args = router.argparse.Namespace(basis='User: Sol xhigh', provider='codex', account='codex',
                                              model='gpt-6.1-sol', effort='xhigh', input=None, usage_cache=None,
                                              accounts=None, constraint='user_override', specialty=None)
@@ -328,7 +279,7 @@ class RoutingTests(unittest.TestCase):
             with patch.object(usage_reading, 'usage_snapshot', return_value={'read_ok': True, 'accounts': {}}):
                 rec = router.record_constraint(args)
             self.assertEqual(rec['trigger'], 'workflow')
-            decision_ledger.finalize(rec, {'stage': 'record'}, None, time.monotonic(), {'parent_agent_id': 'session-1'}, [])
+            decision_ledger.finalize(rec, time.monotonic(), {'parent_agent_id': 'session-1'}, [])
             row = json.loads((Path(directory) / 'ledger.jsonl').read_text(encoding='utf-8').splitlines()[-1])
             self.assertEqual((row['stage'], row['trigger'], row['constraint']), ('record', 'workflow', 'user_override'))
             del args.trigger
@@ -367,7 +318,7 @@ class RoutingTests(unittest.TestCase):
                 self.assertEqual(worker_context.own_session_ids(), expected or [])
                 for stage in ('plan', 'record'):
                     decision_ledger.finalize({'stage': stage, 'choice': 'x', 'source': 's', 'selected_bundle': {}},
-                                    {'stage': stage}, None, time.monotonic(), {'parent_agent_id': 'P'}, [])
+                                             time.monotonic(), {'parent_agent_id': 'P'}, [])
                 rows = [json.loads(line) for line in
                         (Path(directory) / 'ledger.jsonl').read_text(encoding='utf-8').splitlines()]
                 self.assertEqual([row['stage'] for row in rows], ['plan', 'record'])

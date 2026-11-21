@@ -1362,7 +1362,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
                 save(connection, row)
             return row
         if parse(decision['valid_until']) <= now or not decision['dispatchable']:
-            raise ValueError('Decision expired, deferred or requires a new route; run plan/select/record again')
+            raise ValueError('Decision expired, deferred or requires a new route; run plan or record again')
         if canon_ws and access != 'read_only':
             # Same transaction as the insert: of two concurrent rolls only the first becomes the writer.
             holders = writers_in(connection, canon_ws, now, task['parent_agent_id'], exempt)

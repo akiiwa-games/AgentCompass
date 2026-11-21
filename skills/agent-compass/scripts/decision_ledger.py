@@ -10,7 +10,6 @@ import dispatch_registry
 import env_vars
 import public_data
 import scorer_client
-import subscription_judge
 import usage_reading
 from worker_context import own_session_ids
 
@@ -32,13 +31,13 @@ def ledger_path():
 LEDGER_WRITES = True    # `plan --dry-run` turns this off so a trial run leaves no decision on record
 
 
-LAUNCH_STAGES = ('plan', 'select', 'record')
+LAUNCH_STAGES = ('plan', 'record')
 BASIS_LIMIT = 400      # characters of a record's --basis a row keeps; `record` refuses a longer quote instead of cutting it
 
 
 def automatic_routing_marker(entry):
     """`outside_automatic_routing` of a ledger row: the switches (`host_policy.automatic_routing_exclusions`, the switches
-    in effect now) its launch reaches past. Only a row that carries a launch has one: a plan/select/record row with a
+    in effect now) its launch reaches past. Only a row that carries a launch has one: a plan/record row with a
     chosen bundle that its writer did not refuse (`host_policy_violation`)."""
     bundle = entry.get('bundle')
     if (entry.get('stage') not in LAUNCH_STAGES or entry.get('choice') in (None, 'none', 'self', 'split')
@@ -206,7 +205,7 @@ def account_cadence_alert(records, now, account, spec):
     if not usage_reading.finite_number(seconds, 1, 365 * 86400) or not usage_reading.finite_number(limit, 1, 1000000):
         return None
     recent = [r for r in records if (r.get('bundle') or {}).get('account') == account
-              and r.get('stage') in ('select', 'record') and r.get('choice') not in (None, 'none')
+              and r.get('stage') == 'record' and r.get('choice') not in (None, 'none')
               and (t := usage_reading.timestamp(r.get('at'))) and 0 <= (now - t).total_seconds() <= seconds]
     if len(recent) < limit:
         return None
@@ -226,7 +225,7 @@ def decision_snapshot(result, task=None):
         return None
 
 
-def finalize(result, payload, requested, started, task=None, records=None):
+def finalize(result, started, task=None, records=None):
     """Attach capacity alerts and write the ledger record. Returns the result unchanged otherwise."""
     now = datetime.now(timezone.utc)
     records = read_ledger() if records is None else records
@@ -243,21 +242,10 @@ def finalize(result, payload, requested, started, task=None, records=None):
                                   {bundle['account']: spec})
         cadence = account_cadence_alert(records, now, bundle['account'], spec)
         alerts += [cadence] if cadence else []
-    judge = result.get('judge')
-    if judge and requested != 'auto':
-        row = (usage.get('accounts') or {}).get(judge['account'], {})
-        window = usage_reading.tightest_window(row, judge['model'], subscription_judge.judge_account_spec(judge['account']))
-        if window and window['remaining_pct_before_reset'] <= subscription_judge.LOW_REMAINING_PCT:
-            alerts.append({'code': 'pinned_judge_account_low', 'severity': 'warn', 'account': judge['account'],
-                           'message': f'--judge {requested} is pinned but {judge["account"]} has '
-                                      f'{window["remaining_pct_before_reset"]:.0f}% left in {window["id"]}.'})
     decision = result.get('decision') or {}
     if decision.get('needs_user_decision'):
         alerts.append({'code': 'needs_user_decision', 'severity': 'warn', 'account': bundle.get('account'),
                        'message': (decision.get('reason') or 'The allocator cannot choose without a user decision.')[:300]})
-    if decision.get('needs_judgment'):
-        alerts.append({'code': 'needs_judgment', 'severity': 'info', 'account': bundle.get('account'),
-                       'message': f'Top two bundles are within {decision.get("margin")}; run the select stage to break the tie.'})
     result['alerts'] = alerts
     task = task if isinstance(task, dict) else {}
     allocation_task = result.pop('_allocation_task', task)
@@ -273,7 +261,7 @@ def finalize(result, payload, requested, started, task=None, records=None):
         result.setdefault('expected_usd', expected_usd)
     listed_rows = result.pop('_listed_rows', None)
     route = result.pop('_route', None)
-    if LEDGER_WRITES and result.get('stage') in ('plan', 'select', 'record'):
+    if LEDGER_WRITES and result.get('stage') in LAUNCH_STAGES:
         result.update(dispatch_registry.issue(result, task, now, allocation_task=allocation_task, listed_rows=listed_rows,
                                               route=route))
     append_ledger({
@@ -290,7 +278,6 @@ def finalize(result, payload, requested, started, task=None, records=None):
         **({'trigger': result['trigger']} if result.get('trigger') else {}),
         **({'reason_category': result['reason_category']} if result.get('reason_category') else {}),
         **({'host_policy_violation': result['host_policy_violation']} if 'host_policy_violation' in result else {}),
-        'judge': (judge or {}).get('model'), 'judge_pinned': requested != 'auto' if judge else None,
         'bundle': {k: bundle.get(k) for k in ('provider', 'account', 'model', 'effort', 'bundle_id', 'expected_usd', 'fast')
                    if bundle.get(k) is not None} if bundle else None,
         'chain': chain.get('id'), 'action': decision.get('action'), 'margin': decision.get('margin'),
@@ -317,7 +304,6 @@ def finalize(result, payload, requested, started, task=None, records=None):
            if (kept := next((a for a in alerts if a.get('code') == 'kept_whole'), None)) else {}),
         'objective': objective[:200] if isinstance(objective, str) else None,
         'reason': (result.get('reason') or decision.get('reason') or result.get('error') or '')[:600] or None,
-        'payload_bytes': len(json.dumps(payload, ensure_ascii=False).encode()) if payload else None,
         'duration_ms': int((time.monotonic() - started) * 1000),
         'usage': usage_digest(usage), 'alerts': [a['code'] for a in alerts],
         **({'decision_snapshot': snapshot} if (snapshot := decision_snapshot(result, allocation_task)) else {})})

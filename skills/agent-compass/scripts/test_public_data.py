@@ -687,31 +687,6 @@ class HeldSetTests(ChannelCase):
             self.assertEqual(self.fail_on_fetched(KeyError, before=classify), ['fetched', 'bundled'])
         self.assertEqual(calls, ['fetched', 'fetched'])                          # one scorer, one structured call
 
-    def test_the_judge_call_is_an_effect_and_never_repeated(self):
-        """Rule (round 4): a select/delegate judge call is an effect; what follows it is only the ledger row."""
-        import subscription_cli
-        import subscription_judge
-        judged = []
-
-        def run_process(command, directory, prompt=None, timeout=None, account=None):
-            if prompt is None:
-                return 0, 'Logged in using ChatGPT', ''
-            judged.append(public_data._EFFECTS[0])
-            (Path(directory) / 'answer.json').write_text('{"choice": "none", "reason": "x"}', encoding='utf-8')
-            return 0, '', ''
-        payload = {'stage': 'delegate', 'state': {'usage': {}, 'now': 'now'}, 'response_schema': {'type': 'object'}}
-        before = []
-        with patch.object(subscription_judge, 'judge_order', lambda usage, requested: ['codex']), \
-                patch.object(subscription_judge, 'resolve_judge', lambda kind, usage, availability: {'account': None}), \
-                patch.object(subscription_judge.host_policy, 'load_policy', lambda: None), \
-                patch.object(subscription_cli, 'cli_prefix', lambda provider: ['codex']), \
-                patch.object(subscription_cli, 'run_process', run_process):
-            seen = self.fail_on_fetched(KeyError, before=lambda: before.append(public_data._EFFECTS[0]) or
-                                        subscription_judge.evaluate(payload, 'codex', 30))
-        self.assertEqual(seen, ['fetched'])
-        self.assertEqual(len(judged), 1)
-        self.assertEqual(judged[0], before[0] + 1)                               # marked before the judge ran
-
     def test_an_error_after_an_effect_propagates_and_nothing_is_re_run(self):
         """Rule (finding 1): a re-run never repeats an effect."""
         self.assertEqual(self.fail_on_fetched(KeyError, before=lambda: public_data.effect('ledger row')), ['fetched'])

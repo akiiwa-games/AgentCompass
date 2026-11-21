@@ -121,14 +121,13 @@ class ModelResolverTests(RouterCase):
         self.assertEqual(dated['bundle']['effort'], plain['bundle']['effort'])
 
     def test_one_model_under_two_spellings_is_no_rival_of_itself(self):
-        """1.2: a second spelling counted as the best other model, so the margin collapsed and asked for a judge."""
+        """1.2: a second spelling counted as the best other model, so the margin collapsed to a false near tie."""
         accounts = self.only('claude',
                              plain={'model': 'claude-opus-5-5', 'effort': 'high', 'provider': 'claude'},
                              spelled={'model': 'claude-opus-5', 'effort': 'high', 'provider': 'claude'})
         plan = self.plan(self.task(), accounts)
         self.assertEqual(len([c for c in plan['ranking'] if not c['excluded']]), 2)
         self.assertIsNone(plan['decision']['margin'])
-        self.assertFalse(plan['decision']['needs_judgment'])
 
     def test_superseded_survives_any_spelling(self):
         """1.3: the data's old id must be found through a prefix, a date and case alike."""

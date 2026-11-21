@@ -44,7 +44,7 @@ OPEN_STATES = ("prepared", "launching", "launched", "started")
 ENDINGS = ("completed", "failed", "relaunched", "canceled", "other_terminal", "open")
 USER_PIN = "user_override"
 NON_DISPATCH_CHOICES = (None, "none", "self", "split")   # a decision that deliberately starts no worker
-DECISION_STAGES = ("plan", "select", "record")
+DECISION_STAGES = ("plan", "record")
 
 
 class ReportError(Exception):
