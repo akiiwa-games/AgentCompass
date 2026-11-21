@@ -284,5 +284,19 @@ class RestartSingleFlightTests(unittest.TestCase):
             self.assertIsNone(deploy.consume_restart_marker(now=marker["at"] + 500.0))
 
 
+class StartupTaskScriptTests(unittest.TestCase):
+    def test_startup_script_and_cli_action_share_one_unlimited_normal_priority_definition(self):
+        script = deploy.startup_script()
+        self.assertIn("-ExecutionTimeLimit ([TimeSpan]::Zero)", script)
+        self.assertIn("-MultipleInstances IgnoreNew", script)
+        self.assertIn("-Priority 4", script)
+        self.assertIn(f"$t.Delay = '{deploy.TASK_DELAY}'", script)
+        self.assertIn("-LogonType Interactive -RunLevel Limited", script)
+        self.assertIn("-WorkingDirectory ", script)
+        with mock.patch.object(deploy, "powershell") as ps, mock.patch.object(deploy.sys, "argv", ["deploy.py", "startup"]):
+            self.assertEqual(deploy.main(), 0)
+        ps.assert_called_once_with(script, check=True)
+
+
 if __name__ == "__main__":
     unittest.main()

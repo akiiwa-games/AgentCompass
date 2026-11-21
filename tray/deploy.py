@@ -137,25 +137,34 @@ def startup_enabled() -> bool:
     return startup_fields() is not None
 
 
-def write_startup() -> None:
-    """Register the login task: normal priority (tasks default to below normal, which the services would inherit),
-    no time limit (the default stops a task after 72 hours), and on battery too."""
-    user = f"{os.environ.get('USERDOMAIN', '')}\\{os.environ['USERNAME']}"
+def startup_script() -> str:
+    """PowerShell script for the single `AgentCompass` logon task shared by `deploy.py` and the Windows installer:
+    normal priority (tasks default to below normal, which the services would inherit), no 72-hour execution time limit,
+    20 s logon delay for taskbar readiness, interactive limited principal, explicit working directory, and on battery too."""
+    domain = os.environ.get("USERDOMAIN", "").strip()
+    username = os.environ["USERNAME"]
+    user = f"{domain}\\{username}" if domain else username
     launcher = sys.executable if component_launch.frozen() else str(PYTHONW)
     arguments = "" if component_launch.frozen() else f" -Argument '\"{str(APP).replace(chr(39), chr(39) * 2)}\"'"
     working = Path(sys.executable).parent if component_launch.frozen() else services.ROOT
+
     def quote(value):
         return str(value).replace("'", "''")
-    script = (
+
+    return (
         f"$a = New-ScheduledTaskAction -Execute '{quote(launcher)}'{arguments} -WorkingDirectory '{quote(working)}'; "
-        f"$t = New-ScheduledTaskTrigger -AtLogOn -User '{user}'; $t.Delay = '{TASK_DELAY}'; "
-        f"$p = New-ScheduledTaskPrincipal -UserId '{user}' -LogonType Interactive -RunLevel Limited; "
+        f"$t = New-ScheduledTaskTrigger -AtLogOn -User '{quote(user)}'; $t.Delay = '{TASK_DELAY}'; "
+        f"$p = New-ScheduledTaskPrincipal -UserId '{quote(user)}' -LogonType Interactive -RunLevel Limited; "
         "$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries "
         "-ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -Priority 4; "
         f"Register-ScheduledTask -TaskName '{TASK_NAME}' -Description 'AgentCompass tray' "
         "-Action $a -Trigger $t -Principal $p -Settings $s -Force | Out-Null"
     )
-    powershell(script, check=True)
+
+
+def write_startup() -> None:
+    """Register the login task using `startup_script()`."""
+    powershell(startup_script(), check=True)
 
 
 def remove_startup() -> None:

@@ -188,6 +188,67 @@ class PackagingTests(unittest.TestCase):
         self.assertIn(r'Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"', icons)
         self.assertIn("Tasks: desktopicon", icons)                  # the desktop icon stays opt-in
 
+    def test_the_installer_registers_the_scheduled_task_through_deploy_startup_with_no_72h_limit(self):
+        import json
+        import os
+        import sys
+
+        iss = (ROOT / "packaging" / "agentcompass.iss").read_text(encoding="utf-8")
+        run_sec = iss.split("\n[Run]\n", 1)[1].split("\n[", 1)[0] if "\n[Run]\n" in iss else ""
+        # One scheduled-task definition only: the installer runs the product's own `deploy startup` component.
+        self.assertIn(r'Filename: "{app}\{#MyAppExeName}"; Parameters: "--run-component deploy startup"', run_sec)
+        self.assertNotIn("Register-ScheduledTask", iss)
+        self.assertNotIn("New-ScheduledTaskSettingsSet", iss)
+
+        tray_dir = ROOT / "tray"
+        saved_path = list(sys.path)
+        try:
+            if str(tray_dir) not in sys.path:
+                sys.path.insert(0, str(tray_dir))
+            import component_launch
+            import deploy
+        finally:
+            sys.path[:] = saved_path
+
+        self.assertIn("deploy", component_launch.COMPONENTS)
+        with mock.patch.object(sys, "frozen", True, create=True), \
+                mock.patch.object(sys, "executable", "C:/Apps/AgentCompass/AgentCompass.exe"):
+            script = deploy.startup_script()
+        self.assertIn("-WorkingDirectory 'C:\\Apps\\AgentCompass'" if "\\" in str(Path("C:/Apps/AgentCompass")) else "-WorkingDirectory 'C:/Apps/AgentCompass'", script)
+        self.assertIn("-ExecutionTimeLimit ([TimeSpan]::Zero)", script)
+        self.assertIn("-MultipleInstances IgnoreNew", script)
+        self.assertIn("-Priority 4", script)
+        self.assertIn(f"$t.Delay = '{deploy.TASK_DELAY}'", script)
+        self.assertIn("-LogonType Interactive -RunLevel Limited", script)
+
+        if os.name == "nt":
+            # Evaluate the action, trigger, principal, and settings objects in-memory without touching Task Scheduler.
+            in_memory = script.split("Register-ScheduledTask", 1)[0] + (
+                "[pscustomobject]@{"
+                "Execute=$a.Execute; WorkingDirectory=$a.WorkingDirectory; "
+                "Delay=$t.Delay; LogonType=[string]$p.LogonType; RunLevel=[string]$p.RunLevel; "
+                "ExecutionTimeLimit=$s.ExecutionTimeLimit; Priority=$s.Priority; "
+                "MultipleInstances=[string]$s.MultipleInstances; "
+                "DisallowStartIfOnBatteries=$s.DisallowStartIfOnBatteries; StopIfGoingOnBatteries=$s.StopIfGoingOnBatteries"
+                "} | ConvertTo-Json -Compress"
+            )
+            completed = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", in_memory],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            props = json.loads(completed.stdout.strip())
+            self.assertEqual(props["ExecutionTimeLimit"], "PT0S")
+            self.assertEqual(props["Priority"], 4)
+            self.assertEqual(props["MultipleInstances"], "IgnoreNew")
+            self.assertEqual(props["Delay"], deploy.TASK_DELAY)
+            self.assertEqual(props["LogonType"], "Interactive")
+            self.assertEqual(props["RunLevel"], "Limited")
+            self.assertFalse(props["DisallowStartIfOnBatteries"])
+            self.assertFalse(props["StopIfGoingOnBatteries"])
+            self.assertTrue(props["WorkingDirectory"].endswith("AgentCompass"))
+
     def test_release_gate_profiles_pass_validation(self):
         """The release gate plans with these literals; an invalid one stops the release, and no unit suite runs them."""
         import ast
