@@ -18,7 +18,7 @@ import sys
 from agentcompass import __version__
 from agentcompass import locations
 
-STAGES = ("roll", "plan", "providers", "score", "scorer", "delegate", "select", "record", "override", "dispatch", "launch")
+STAGES = ("roll", "plan", "providers", "score", "scorer", "record", "override", "dispatch", "launch")
 
 RUNNERS = {"continuation-verdict": ("agent-compass", "worker_sessions.py"),
            "dot": ("dot-subagent", "run_dot_task.py"), "grok-bot": ("agent-compass", "run_grok_bot.py"),
@@ -43,7 +43,7 @@ install and health:
   doctor      read-only report of Python, CLIs, accounts, cache, reference data, plugins, ports, hooks and upgrade checks
   data        which reference data routing reads (shipped, or published between releases); `data --refresh` checks now; maintainers: `data publish [--check]`, `data refresh [--no-fetch] [--accept-panel-change] [--model ID]` in a checkout
 
-other stages: score, scorer, delegate, select, dispatch, launch
+other stages: score, scorer, dispatch, launch
 follow-up of a roll result (its next_argv already spells these): dot status, grok-bot status, chatgpt-web, herdr status
 Options of one command: agentcompass <command> -h   (every option: --help-all)
 """

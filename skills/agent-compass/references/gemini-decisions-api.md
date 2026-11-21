@@ -4,8 +4,7 @@ Google's Gemini Decisions API answers closed questions (yes/no, one option, a ra
 calibrated probabilities and no generated text. Reference: <https://aistudio.google.com/docs/decisions-api>
 (Gemini Developer API, `v1beta`, model `gemini-decision-1`).
 
-Like [TypeSafe Jev](jev-api.md), it is never a routing judge: the `delegate` / `select` judgments use only the
-subscription judges (see the [low-effort judge workflow](judge-workflow.md)). It may be selected as the
+Like [TypeSafe Jev](jev-api.md), it may be selected as the
 **System-One task scorer** (`scorer_type: gemini_decision`): the router then sends
 `POST {base_url}/v1beta/decisions` (default `https://generativelanguage.googleapis.com`, model `gemini-decision-1`)
 with the key in the `x-goog-api-key` header. The request carries:

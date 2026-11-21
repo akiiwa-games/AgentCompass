@@ -231,12 +231,11 @@ def plan(raw_task, usage, now=None, unavailable=(), records=None, accounts=None,
                          'reason': (f"The chain owner {resume['id']} cannot continue now ({'; '.join(candidate_eval.said_exclusions(resume))})"
                                     + (f"; it can continue in {advised_hours(resume['wait_until_hours'])}h" if isinstance(resume.get('wait_until_hours'), (int, float)) and resume['wait_until_hours'] != float('inf') else '')
                                     + '. Waiting keeps one owner; switching delivers sooner with handoff and drift risk.')})
-    # The judge weighs models, not efforts, harnesses or accounts of one model: the margin is to the best other model.
+    # The margin is to the best other model, not to another effort, harness or account of the same model.
     rival = next((c for c in pool if c is not top
                   and account_fleet.row_key(c['bundle']['model'], accounts) != account_fleet.row_key(top['bundle']['model'], accounts)), None)
     margin = round(top['score'] - rival['score'], 4) if rival is not None and not forced else None
     decision['margin'] = margin
-    decision['needs_judgment'] = bool(margin is not None and margin < policy['needs_judgment_margin'])
     if top.get('data_errors'):
         for note in top.get('notes') or ():
             if str(note).startswith('data error:'):

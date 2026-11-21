@@ -460,7 +460,7 @@ class FallbackTests(unittest.TestCase):
             out = self.handle(root['dispatch_id'])
             spawned = registry.utcnow()
         self.assertEqual(out['action'], 'relaunched')
-        routed = [e for e in self.ledger if e.get('stage') in ('plan', 'select', 'record')]
+        routed = [e for e in self.ledger if e.get('stage') in ('plan', 'record')]
         self.assertEqual(len(routed), 1)
         self.assertEqual((routed[0]['choice'], routed[0]['decision_id'], routed[0]['root_dispatch_id']),
                          (root['bundle']['bundle_id'], registry.inspect(out['dispatch_id'])['decision_id'],
@@ -541,7 +541,7 @@ class FallbackTests(unittest.TestCase):
             out = self.handle(root['dispatch_id'])
         self.assertEqual(out['action'], 'relaunched')
         self.assertEqual(self.host.creates, ['claude-lab/claude-sonnet-5-5'] * 2)
-        routed = [e for e in self.ledger if e.get('stage') in ('plan', 'select', 'record')]
+        routed = [e for e in self.ledger if e.get('stage') in ('plan', 'record')]
         self.assertEqual([(e['stage'], e['constraint']) for e in routed], [('record', 'user_override')])
 
     def test_an_owner_named_retry_keeps_what_its_record_decided(self):

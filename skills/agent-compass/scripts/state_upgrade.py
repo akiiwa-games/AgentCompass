@@ -40,6 +40,8 @@ HOST_RULE_UPGRADES = {
 # The files `host_rules.load` reads; the others in `host-rules/` (dispatch.md, personal-routing-policy.md) are the user's own
 # documents, which no release or check reads as an overlay.
 HOST_RULE_OVERLAYS = ('shared.md', 'codex.md', 'daemon-append.md')
+# `judges` was read by the select and delegate stages (removed 2026-11-21); a file a released version wrote may still carry
+# it, so it is accepted and kept as written, and nothing reads it.
 HOST_POLICY_KEYS = frozenset({'allowed_accounts', 'judges', 'usage_providers', 'known_accounts'})
 RETIRED_PLACEHOLDER = '@@ROUTE_JUDGE@@'     # no current meaning on its own; `python -X utf8 @@ROUTE_JUDGE@@` is renamed above
 RULE_BEGIN = '<!-- agentcompass:begin -->'
@@ -239,7 +241,7 @@ def check_accounts_override(path: Path) -> str | None:
 
 def host_policy_fix(path: Path | str) -> str:
     return ('edit the file to a JSON object with "allowed_accounts" (a list of account names) and, if wanted, '
-            '"known_accounts", "usage_providers" (lists of names) and "judges" (codex or sonnet), or '
+            '"known_accounts", "usage_providers" (lists of names), or '
             + fix_delete(path, 'this discards which accounts take part in automatic routing on this machine; every '
                                'account does again until you set them in the tray'))
 
@@ -259,10 +261,6 @@ def validate_host_policy_doc(doc, path: Path | str) -> dict:
             raise ValueError(format_issue(
                 path, f'host-policy configuration {key} must be a list of nonempty names', host_policy_fix(path),
             ))
-    if any(v not in ('codex', 'sonnet') for v in doc.get('judges', [])):
-        raise ValueError(format_issue(
-            path, 'host-policy configuration judges must name codex or sonnet', host_policy_fix(path),
-        ))
     return doc
 
 

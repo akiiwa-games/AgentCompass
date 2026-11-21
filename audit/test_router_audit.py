@@ -7,10 +7,9 @@ UTC = dt.timezone.utc
 T0 = dt.datetime(2026, 10, 8, 0, 0, tzinfo=UTC)
 
 
-def row(minutes, stage="select", choice="x", reason="", bundle=None, usage=None, **extra):
+def row(minutes, stage="record", choice="x", reason="", bundle=None, usage=None, **extra):
     return {"at": T0 + dt.timedelta(minutes=minutes), "stage": stage, "choice": choice, "reason": reason,
-            "bundle": bundle, "usage": usage or {}, "source": "subscription_model_judgment", "judge": "gpt-6.1-sol",
-            **extra}
+            "bundle": bundle, "usage": usage or {}, "source": "explicit_resume", **extra}
 
 
 class FakeRouter:
@@ -20,7 +19,7 @@ class FakeRouter:
 
 
 def context(rows, **extra):
-    base = {"rows": rows, "usage_now": {"accounts": {}}, "router": FakeRouter, "usage_reading": FakeRouter, "pinned": {}, "now_row": {"usage": {}},
+    base = {"rows": rows, "usage_now": {"accounts": {}}, "router": FakeRouter, "usage_reading": FakeRouter, "now_row": {"usage": {}},
             "heavy_by_day": {}, "heavy_detail": {}, "sessions": [], "dot": None, "ledger_rows": [row(0)], "peaks": {}}
     base.update(extra)
     return base
@@ -36,7 +35,6 @@ class ClassifyTests(unittest.TestCase):
 
     def test_instruction_fields_mark_a_fixed_route_and_free_text_reason_stays_open(self):
         codex = {"provider": "codex", "model": "gpt-6.1-sol"}
-        self.assertEqual(audit.classify(row(0, pinned=True, bundle=codex)), "fixed:instruction")
         self.assertEqual(audit.classify(row(0, action="retained", bundle=codex)), "fixed:instruction")
         self.assertEqual(audit.classify(row(0, choice="same_owner", bundle=codex)), "fixed:instruction")
         self.assertEqual(audit.classify(row(0, reason="Honors the explicit model requirement", bundle=codex)), "open")
@@ -45,19 +43,6 @@ class ClassifyTests(unittest.TestCase):
 
 
 class DecisionPlumbingTests(unittest.TestCase):
-    def test_pairs_join_a_delegate_with_the_select_that_follows(self):
-        rows = [row(0, "delegate"), row(2, "select"), row(60, "select"), row(120, "delegate")]
-        pairs = audit.pair_decisions(rows)
-        self.assertEqual([(d is not None, s is not None) for d, s in pairs],
-                         [(True, True), (False, True), (True, False)])
-
-    def test_ledger_record_supersedes_its_transcript_twin_only_within_minutes(self):
-        ledger = [row(3, origin="ledger")]
-        transcript = [row(1, origin="transcript"), row(30, origin="transcript")]
-        merged = audit.merge(ledger, transcript)
-        self.assertEqual([r["origin"] for r in merged], ["ledger", "transcript"])
-        self.assertEqual(merged[1]["at"], T0 + dt.timedelta(minutes=30))
-
     def test_sliding_window_counts_the_densest_burst(self):
         times = [T0 + dt.timedelta(hours=h) for h in (0, 1, 2, 3, 20, 21)]
         self.assertEqual(audit.sliding_max(times, 12), 4)
@@ -73,31 +58,38 @@ class QuotaSeriesTests(unittest.TestCase):
                 row(120, usage=self.usage(120, 2)), row(180, usage=self.usage(180, 10))]
         self.assertEqual([p[1] for p in audit.quota_series(rows)], [2, 10])
 
-    def test_stripped_usage_falls_back_to_the_percentage_in_the_reason(self):
-        codex = {"provider": "codex", "account": "codex", "model": "gpt-6.1-sol"}
-        rows = [row(0, usage=self.usage(0, 10)),
-                row(60, reason="Fresh Codex telemetry shows 86% remaining", bundle=codex)]
-        series = audit.quota_series(rows)
-        self.assertEqual([(round(u), d) for _, u, d in series], [(10, False), (14, True)])
-
-
 class FindingTests(unittest.TestCase):
     def keys(self, ctx):
         return {f["key"] for f in audit.build_findings(ctx)}
 
-    def test_a_gate_that_always_says_delegate_is_reported(self):
-        rows = [row(i, "delegate", "delegate") for i in range(25)] + [row(99, "delegate", "self")]
-        self.assertIn("gate", self.keys(context(rows)))
-        quiet = [row(i, "delegate", "delegate" if i % 2 else "self") for i in range(26)]
-        self.assertNotIn("gate", self.keys(context(quiet)))
-
-    def test_fixed_routes_dominating_selects_is_reported_with_the_open_count(self):
+    def test_fixed_routes_dominating_decisions_are_reported_with_the_open_count(self):
         codex = {"provider": "codex", "account": "codex", "model": "gpt-6.1-sol"}
         rows = [row(i, action="retained", bundle=codex) for i in range(9)]
         rows.append(row(50, reason="Opus has headroom", bundle={"provider": "claude", "model": "claude-opus-5-5"}))
         found = {f["key"]: f for f in audit.build_findings(context(rows))}
         self.assertIn("fixed", found)
         self.assertIn("open 1", found["fixed"]["evidence"])
+
+    def test_fixed_holds_over_plan_and_record_rows_where_override_does_not(self):
+        """`fixed` is the share of plan/record decisions whose route was fixed (FIXED_SHARE); `override` counts only
+        constraint records and needs PLAN_MIN_SAMPLES. A period of resumes or of few dispatches is reported by `fixed`."""
+        codex = {"provider": "codex", "account": "codex", "model": "gpt-6.1-sol", "effort": "high"}
+        plan = row(40, "plan", source="deterministic_allocator", bundle=codex, hours=1, origin="ledger")
+        named = [row(i, "constraint", source="constraint_record", constraint="user_override", bundle=codex, origin="ledger")
+                 for i in range(9)]
+        for r in named:
+            r["stage"] = "record"
+        resumes = [row(20 + i, source="explicit_resume", constraint="explicit_resume", bundle=codex, origin="ledger")
+                   for i in range(5)]
+        both = self.keys(context(named + resumes[:3] + [plan]))
+        self.assertTrue({"fixed", "override"} <= both, both)
+        few = self.keys(context(resumes + [plan]))
+        self.assertIn("fixed", few)
+        self.assertNotIn("override", few)
+        pro = {"provider": "chatgpt-web", "account": "chatgpt-web", "model": "gpt-6-pro"}
+        specialist = [row(60 + i, source="explicit_resume", bundle=pro, origin="ledger") for i in range(5)]
+        self.assertEqual({audit.classify(r) for r in specialist}, {"specialist:pro"})
+        self.assertIn("fixed", self.keys(context(specialist + [plan])))
 
     def test_planned_dispatches_are_not_counted_as_pinned(self):
         self.assertEqual(audit.classify(row(0, source="deterministic_allocator")), "planned")
@@ -261,7 +253,6 @@ class FindingTests(unittest.TestCase):
             now=T0 + dt.timedelta(minutes=20),
             ledger_rows=rows,
             ledger_skipped=skipped[0],
-            transcript_rows=[],
             spawns=[],
             codex_days={},
             claude_days={},
@@ -271,6 +262,33 @@ class FindingTests(unittest.TestCase):
         ctx["findings"] = audit.build_findings(ctx)
         report = audit.render(ctx, days=7, detail_days=2, commentary="")
         self.assertIn("(已跳过旧格式 1 条)", report)
+
+    def test_rows_of_the_removed_select_and_delegate_stages_are_skipped(self):
+        """Derived state an older version wrote: neither a decision, nor a usage observation, nor an error."""
+        import json
+        import tempfile
+        from pathlib import Path
+
+        usage = {"codex": {"fetched_at": T0.isoformat(), "windows": [{"id": "usage", "used_pct": 70}]}}
+        lines = [
+            {"at": T0.isoformat(), "stage": "select", "choice": "sol_high", "source": "subscription_model_judgment",
+             "judge": "gpt-6.1-sol", "bundle": {"account": "codex", "model": "gpt-6.1-sol"}, "usage": usage},
+            {"at": T0.isoformat(), "stage": "delegate", "choice": "delegate", "source": "subscription_model_judgment",
+             "judge": "claude-sonnet-5", "usage": usage},
+            {"at": (T0 + dt.timedelta(minutes=1)).isoformat(), "stage": "plan", "choice": "sol_high",
+             "source": "deterministic_allocator", "bundle": {"account": "codex"}},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "router-ledger.jsonl"
+            ledger.write_text("".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8")
+            skipped: list[int] = []
+            rows = audit.from_ledger(ledger, skipped=skipped)
+        self.assertEqual([r["stage"] for r in rows], ["plan"])
+        self.assertEqual(skipped, [0])                      # not counted as an old-shape row either
+        self.assertEqual(audit.quota_series(rows), [])
+        spawn = [{"at": T0 + dt.timedelta(minutes=2), "kind": "paseo", "label": "paseo:codex", "cwd": ""}]
+        self.assertEqual(audit.find_unrouted_spawns(spawn, rows), [])
+        self.assertEqual(len(audit.find_unrouted_spawns(spawn, [row(0, "select", "sol_high")])), 1)
 
 
 if __name__ == "__main__":

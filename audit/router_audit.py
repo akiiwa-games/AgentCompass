@@ -1,6 +1,6 @@
 """Daily router inspection. Read-only; spends no model tokens.
 
-Rebuilds every routing decision (ledger first, then session transcripts for history), joins it with the
+Reads every routing decision from the ledger, joins it with the
 usage-float cache, Codex/Claude token logs and the dot2api task table, applies fixed rules, and writes a
 Markdown report. Thresholds are the named constants below, not measured limits.
 
@@ -32,11 +32,9 @@ DOT_DB = HOME / ".dot2api" / "data" / "dot2api.sqlite3"
 REPORT_DIR = Path(__file__).resolve().parent / "reports"
 UTC = dt.timezone.utc
 
-GATE_MIN_SAMPLES = 20      # delegate verdicts needed before the gate's discrimination is judged
-GATE_YES_SHARE = 0.95      # a gate that says yes this often filters nothing
 PLAN_SHARE = 0.99          # target share of worker dispatches chosen by `plan` rather than pinned by hand
 PLAN_MIN_SAMPLES = 10      # dispatches needed before that share is judged
-FIXED_SHARE = 0.80         # selects whose route was fixed by instruction or by the specialist table
+FIXED_SHARE = 0.80         # plan/record decisions whose route was fixed by instruction or by the specialist table
 LOW_REMAINING_PCT = 20
 STALE_FLAG_SECONDS = 24 * 3600
 HEAVY_SESSION_CALLS = 500  # calls in one local day for a session to count as heavy
@@ -46,8 +44,9 @@ LONG_SESSION_CALLS = 1000
 POLL_OUTPUT_PER_CALL = 300
 PRO_BURST = 5              # Pro web dispatches inside PRO_WINDOW_HOURS
 PRO_WINDOW_HOURS = 12
-PAIR_GAP_SECONDS = 15 * 60
-MARKERS = ("subscription_model_judgment", "judge_unavailable", "local_candidate_filter", "constraint_record")
+# Ledger rows of the select and delegate stages (removed 2026-11-21): derived state an older version wrote, skipped.
+RETIRED_STAGES = ("select", "delegate")
+DECISION_STAGES = ("plan", "record")     # the stages whose row decides a route
 METERED = {"api-proxy"}
 CAPACITY = Path(os.environ.get("ROUTER_CAPACITY", HOME / ".agent-compass" / "capacity.json"))
 USAGE_STATS = Path(os.environ.get("ROUTER_USAGE_STATS", HOME / ".agent-compass" / "usage-stats.json"))
@@ -77,28 +76,6 @@ def load_usage_reading():
 
 # ---------------------------------------------------------------- decisions
 
-def iter_strings(obj):
-    if isinstance(obj, str):
-        yield obj
-    elif isinstance(obj, dict):
-        for value in obj.values():
-            yield from iter_strings(value)
-    elif isinstance(obj, list):
-        for value in obj:
-            yield from iter_strings(value)
-
-
-def find_results(text: str):
-    decoder = json.JSONDecoder()
-    for match in re.finditer(r'\{\s*"stage"\s*:', text):
-        try:
-            obj, _ = decoder.raw_decode(text[match.start():])
-        except ValueError:
-            continue
-        if isinstance(obj, dict) and obj.get("stage") in ("delegate", "select") and "source" in obj:
-            yield obj
-
-
 def usage_points(usage: dict) -> dict:
     points = {}
     for account, row in (usage.get("accounts") or {}).items():
@@ -106,37 +83,6 @@ def usage_points(usage: dict) -> dict:
                            "windows": [{"id": w.get("id"), "used_pct": w.get("used_pct"), "resets_at": w.get("resets_at")}
                                        for w in row.get("windows") or []]}
     return points
-
-
-def from_transcripts(files):
-    found = {}
-    for path in files:
-        try:
-            stream = open(path, encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        with stream:
-            for line in stream:
-                if not any(marker in line for marker in MARKERS):
-                    continue
-                try:
-                    record = json.loads(line)
-                except ValueError:
-                    continue
-                for text in iter_strings(record):
-                    if not any(marker in text for marker in MARKERS):
-                        continue
-                    for obj in find_results(text):
-                        key = (obj.get("observed_at"), obj.get("stage"))
-                        bundle = obj.get("selected_bundle") or {}
-                        found.setdefault(key, {
-                            "at": parse_ts(obj.get("observed_at")), "stage": obj["stage"], "choice": obj.get("choice"),
-                            "specialty": obj.get("specialty"), "source": obj.get("source"),
-                            "judge": (obj.get("judge") or {}).get("model"), "pinned": None,
-                            "bundle": {k: bundle.get(k) for k in ("provider", "account", "model", "effort")} if bundle else None,
-                            "reason": (obj.get("reason") or obj.get("error") or "")[:600],
-                            "usage": usage_points(obj.get("usage") or {}), "origin": "transcript"})
-    return [row for row in found.values() if row["at"]]
 
 
 def from_ledger(path: Path, skipped: list[int] | None = None):
@@ -154,7 +100,7 @@ def from_ledger(path: Path, skipped: list[int] | None = None):
             r = json.loads(line)
         except ValueError:
             continue
-        if not isinstance(r, dict):
+        if not isinstance(r, dict) or r.get("stage") in RETIRED_STAGES:
             continue
         if state_upgrade.row_has_old_profile(r):
             skipped_count += 1
@@ -162,10 +108,9 @@ def from_ledger(path: Path, skipped: list[int] | None = None):
         at = parse_ts(r.get("at"))
         if at:
             rows.append({"at": at, "stage": r.get("stage"), "choice": r.get("choice"), "specialty": r.get("specialty"),
-                         "source": r.get("source"), "judge": r.get("judge"), "pinned": r.get("judge_pinned"),
-                         "constraint": r.get("constraint"), "bundle": r.get("bundle"), "reason": r.get("reason") or "",
+                         "source": r.get("source"), "constraint": r.get("constraint"), "bundle": r.get("bundle"), "reason": r.get("reason") or "",
                          "usage": r.get("usage") or {}, "alerts": r.get("alerts") or [], "origin": "ledger",
-                         "payload_bytes": r.get("payload_bytes"), "duration_ms": r.get("duration_ms"),
+                         "duration_ms": r.get("duration_ms"),
                          "chain": r.get("chain"), "action": r.get("action"), "margin": r.get("margin"),
                          "hours": r.get("hours"), "agrees": r.get("agrees"), "router_choice": r.get("router_choice"),
                          "needs_user_decision": r.get("needs_user_decision"), "reason_category": r.get("reason_category"),
@@ -176,19 +121,8 @@ def from_ledger(path: Path, skipped: list[int] | None = None):
     return rows
 
 
-def merge(ledger_rows, transcript_rows):
-    """A ledger record supersedes the transcript copy of the same decision (clocks differ by minutes)."""
-    kept = list(ledger_rows)
-    for row in transcript_rows:
-        twin = any(l["stage"] == row["stage"] and l["choice"] == row["choice"]
-                   and abs((l["at"] - row["at"]).total_seconds()) <= 180 for l in ledger_rows)
-        if not twin:
-            kept.append(row)
-    return sorted(kept, key=lambda r: r["at"])
-
-
 def classify(row: dict) -> str:
-    """Why this select landed where it did: fixed by instruction, fixed by the specialist table, or open."""
+    """Why this decision landed where it did: planned, fixed by instruction, fixed by the specialist table, or open."""
     if row.get("source") == "deterministic_allocator":
         return "planned"
     if row.get("source") == "constraint_record":
@@ -200,58 +134,11 @@ def classify(row: dict) -> str:
     if "astra" in model:
         return "specialist:astra"
     choice = str(row.get("choice") or "")
-    if (row.get("constraint") or row.get("pinned") is True or row.get("chain")
+    if (row.get("constraint") or row.get("chain")
             or row.get("action") in ("resume", "retained")
             or choice.startswith("same_") or choice == "retained"):
         return "fixed:instruction"
     return "open"
-
-
-def pair_decisions(rows):
-    """Join each delegate verdict with the select that follows it."""
-    pairs, pending = [], None
-    for row in rows:
-        if row["stage"] == "delegate":
-            if pending:
-                pairs.append((pending, None))
-            pending = row
-        elif row["stage"] in ("select", "record", "plan"):
-            if pending and (row["at"] - pending["at"]).total_seconds() <= PAIR_GAP_SECONDS:
-                pairs.append((pending, row))
-            else:
-                if pending:
-                    pairs.append((pending, None))
-                pairs.append((None, row))
-            pending = None
-    if pending:
-        pairs.append((pending, None))
-    return pairs
-
-
-def count_pinned(files):
-    """Distinct explicit route_judge delegate/select command lines by --judge value (approximate)."""
-    pinned = collections.Counter()
-    pattern = re.compile(r"route_judge\.py[^\n]{0,12}?\s+(delegate|select)\b(.{0,300})")
-    for path in files:
-        try:
-            stream = open(path, encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        seen = set()
-        with stream:
-            for line in stream:
-                if "route_judge.py" not in line or not ('"function_call"' in line or '"custom_tool_call"' in line or '"tool_use"' in line):
-                    continue
-                for stage, rest in pattern.findall(line):
-                    if "--help" in rest[:200] or "--dry-run" in rest[:200]:
-                        continue
-                    key = (stage, rest[:140])
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    flag = re.search(r"--judge\s+(\w+)", rest)
-                    pinned[flag.group(1) if flag else "auto"] += 1
-    return pinned
 
 
 # ---------------------------------------------------------------- token logs
@@ -265,7 +152,7 @@ def scan_codex(files):
         model = effort = None
         calls = 0
         prev_total = None
-        total = last = None
+        total = None
         first_ts = last_ts = None
         peak = 0
         calls_by_day = collections.Counter()
@@ -302,7 +189,6 @@ def scan_codex(files):
                         calls += 1
                         calls_by_day[local(ts).date().isoformat()] += 1
                         peak = max(peak, step.get("input_tokens", 0))
-                        last = step
         if total and calls:
             subagent = isinstance(meta.get("source"), dict) and "subagent" in meta["source"]
             sessions[name] = {"name": name, "model": model, "effort": effort, "calls": calls, "total": total["total_tokens"],
@@ -493,10 +379,10 @@ def scan_subagent_spawns(paseo_files, claude_subagent_files, codex_sessions, sin
 
 
 def find_unrouted_spawns(spawns: list[dict], rows: list[dict], window_seconds: int = UNROUTED_WINDOW_SECONDS) -> list[dict]:
-    """Return child-agent spawns that had no plan/select/record decision within window_seconds prior."""
+    """Return child-agent spawns that had no plan/record decision within window_seconds prior."""
     valid_routes = [
         r["at"] for r in rows
-        if r.get("stage") in ("plan", "select", "record")
+        if r.get("stage") in DECISION_STAGES
         and r.get("choice") not in (None, "", "none", "self")
         and r.get("at") is not None
     ]
@@ -520,14 +406,8 @@ def sliding_max(times, hours):
     return best
 
 
-REMAIN = re.compile(r"(\d{1,3}(?:\.\d+)?)%\s+(?:remain|left|remaining)", re.I)
-
-
 def quota_series(rows, account="codex", window="usage"):
-    """(time, used_pct, derived) points of the latest stretch with no reset.
-
-    Some callers stripped the usage block from the saved verdict; for those the percentage the judge
-    quoted in its reason is used and marked derived."""
+    """(time, used_pct) points of the latest stretch with no reset."""
     points = {}
     ids = (window, "seven_day") if account.startswith("codex") and window == "usage" else (window,)
     for row in rows:
@@ -536,17 +416,13 @@ def quota_series(rows, account="codex", window="usage"):
         used = next((w["used_pct"] for w in entry.get("windows") or []
                      if w.get("id") in ids and isinstance(w.get("used_pct"), (int, float))), None)
         if used is not None and fetched:
-            points[fetched] = (used, False)
-        elif (row.get("bundle") or {}).get("account") == account and row["stage"] == "select":
-            match = REMAIN.search(row.get("reason") or "")
-            if match:
-                points.setdefault(row["at"], (100 - float(match.group(1)), True))
+            points[fetched] = used
     ordered = sorted(points.items())
     start = 0
     for i in range(1, len(ordered)):
-        if ordered[i][1][0] < ordered[i - 1][1][0] - 10:   # usage fell: the window was reset
+        if ordered[i][1] < ordered[i - 1][1] - 10:   # usage fell: the window was reset
             start = i
-    return [(t, u, d) for t, (u, d) in ordered[start:]]
+    return ordered[start:]
 
 
 def peak_used(rows):
@@ -614,17 +490,10 @@ def build_findings(ctx: dict) -> list[dict]:
     def add(level, key, title, evidence, action):
         out.append({"level": level, "key": key, "title": title, "evidence": evidence, "action": action})
 
-    rows, selects = ctx["rows"], [r for r in ctx["rows"] if r["stage"] in ("select", "record", "plan") and r.get("choice") != "none"]
-    delegates = [r for r in rows if r["stage"] == "delegate" and r.get("choice")]
-    if len(delegates) >= GATE_MIN_SAMPLES:
-        yes = sum(1 for r in delegates if r["choice"] == "delegate")
-        if yes / len(delegates) >= GATE_YES_SHARE:
-            add("warn", "gate", "delegate 闸门几乎恒为 delegate",
-                f"{yes}/{len(delegates)} 次判 delegate(阈值 {GATE_YES_SHARE:.0%});仅 {len(delegates) - yes} 次 self。",
-                "闸门没有过滤作用:调用方只在已决定委派时才调用它。选 worker 直接用 `agentcompass plan`(无模型调用)。")
-    kinds = collections.Counter(classify(r) for r in selects)
-    planned = [r for r in selects if r.get("source") == "deterministic_allocator"]
-    overrides = [r for r in selects if r.get("source") == "constraint_record" and r.get("origin") == "ledger"]
+    rows, decisions = ctx["rows"], [r for r in ctx["rows"] if r["stage"] in DECISION_STAGES and r.get("choice") != "none"]
+    kinds = collections.Counter(classify(r) for r in decisions)
+    planned = [r for r in decisions if r.get("source") == "deterministic_allocator"]
+    overrides = [r for r in decisions if r.get("source") == "constraint_record" and r.get("origin") == "ledger"]
     dispatches = len(planned) + len(overrides)
     if dispatches >= PLAN_MIN_SAMPLES and len(planned) / dispatches < PLAN_SHARE:
         off = [r for r in overrides if r.get("agrees") is False]
@@ -645,24 +514,13 @@ def build_findings(ctx: dict) -> list[dict]:
             + f"。其中 {waits} 次需要用户决定(owner 无法继续,或要等的时间超过 can_wait)。",
             "对照各账户的额度窗口(plan 结果 `decision.system.quota_windows`):长期偏向某个本会短缺的账户,说明该窗口的容量或消耗估计需要核对(见 capacity 相关发现)。")
     fixed = sum(v for k, v in kinds.items() if k not in ("open", "planned"))
-    if selects and fixed / len(selects) >= FIXED_SHARE:
-        add("warn", "fixed", "绝大多数分配由指令/路由表钉死,judge 不改变结果",
-            f"{fixed}/{len(selects)} 次 select 的路由已固定({', '.join(f'{k} {v}' for k, v in kinds.most_common())});"
-            f"真正做额度/质量权衡的只有 {kinds.get('open', 0)} 次。",
+    if decisions and fixed / len(decisions) >= FIXED_SHARE:
+        add("warn", "fixed", "绝大多数分配由指令/路由表钉死,不经 plan 权衡",
+            f"{fixed}/{len(decisions)} 次决策的路由已固定({', '.join(f'{k} {v}' for k, v in kinds.most_common())});"
+            f"由 plan 权衡的 {kinds.get('planned', 0)} 次,其余 open {kinds.get('open', 0)} 次。",
             "路由本该由 `plan` 综合类别适配/额度经济/连贯性来定;只有用户对本任务的明确指令才 `record --constraint user_override`。")
     now_usage = ctx["usage_now"]
     accounts = now_usage.get("accounts", {})
-    judge_calls = collections.Counter(r["judge"] for r in rows if r.get("judge"))
-    if judge_calls:
-        top, n = judge_calls.most_common(1)[0]
-        account = "codex" if top and "sol" in top else "claude"
-        window = ctx["usage_reading"].tightest_window(accounts.get(account, {}), top or "")
-        if window and window["remaining_pct_before_reset"] <= LOW_REMAINING_PCT:
-            pins = ctx["pinned"]
-            add("warn", "judge-account", f"judge 调用集中在额度见底的账户({account})",
-                f"{n}/{sum(judge_calls.values())} 次 judge 是 {top};该账户当前仅剩 {window['remaining_pct_before_reset']:.0f}%。"
-                f"显式调用里 `--judge` 固定情况:{dict(pins)}。",
-                "auto 已加健康门槛(≤10% 排后);调用方固定 `--judge codex` 时会给 `pinned_judge_account_low` 告警。")
     for name, row in accounts.items():
         if name.lower() in METERED:
             continue
@@ -683,13 +541,12 @@ def build_findings(ctx: dict) -> list[dict]:
                 "路由按 fetched_at 判断因而没被误导,但该账户容量实际未知;确认它是否仍是可用订阅。")
     series = quota_series(rows + [ctx["now_row"]])
     if len(series) >= 2:
-        (t0, u0, _), (t1, u1, _) = series[0], series[-1]
+        (t0, u0), (t1, u1) = series[0], series[-1]
         hours = (t1 - t0).total_seconds() / 3600
-        derived = sum(1 for p in series if p[2])
         if hours >= 1 and u1 > u0:
             add("info", "burn", "codex 当前额度窗口的燃烧速度",
                 f"{local(t0):%m-%d %H:%M} 已用 {u0:.0f}% → {local(t1):%m-%d %H:%M} 已用 {u1:.0f}%,{hours:.1f}h 内 {(u1 - u0) / hours:.1f}%/h"
-                f"({len(series)} 个观测点,其中 {derived} 个取自 judge 理由文字)。",
+                f"({len(series)} 个观测点)。",
                 "判决里每次都写“其他账户需求未知”—— 路由没有累计视角;账本 + `exhaustion_before_reset` 告警补这一块。")
     heavy = {d: c for d, c in ctx["heavy_by_day"].items() if c >= HEAVY_SESSIONS_PER_DAY}
     if heavy:
@@ -712,7 +569,7 @@ def build_findings(ctx: dict) -> list[dict]:
                 f"{x['name'][8:30]} {x['model']}/{x['effort']}:{x['calls']} 次调用平均仅输出 {x['output'] / x['calls']:.0f} tokens,"
                 f"上下文 ~{x['input'] / x['calls'] / 1000:.0f}k/次(合计 {x['total'] / 1e6:.0f}M tokens)。",
                 "监看类循环应由脚本/定时器承担,模型只在需要判读时短上下文介入。")
-    pro_times = sorted(r["at"] for r in selects if classify(r) == "specialist:pro")
+    pro_times = sorted(r["at"] for r in decisions if classify(r) == "specialist:pro")
     if sliding_max(pro_times, PRO_WINDOW_HOURS) >= PRO_BURST:
         add("info", "pro", f"Pro 顾问节奏:{PRO_WINDOW_HOURS}h 内最多 {sliding_max(pro_times, PRO_WINDOW_HOURS)} 次",
             f"窗口内累计 {len(pro_times)} 次 Pro 派发。Pro 网页用量不进入用量快照,路由无法衡量其成本。",
@@ -733,7 +590,7 @@ def build_findings(ctx: dict) -> list[dict]:
     if unrouted:
         samples = "; ".join(f"{local(u['at']):%m-%d %H:%M} {u['label']}" for u in unrouted[-5:])
         add("warn", "unrouted", f"检测到 {len(unrouted)} 次未过 router 的子 agent 启动",
-            f"启动前 15 分钟内无 plan/select/record 账本记录。最近样本:{samples}。",
+            f"启动前 15 分钟内无 plan/record 账本记录。最近样本:{samples}。",
             "检查对应宿主是否已挂载 PreToolUse router_gate_hook.py 与全局 AGENTS.md/CLAUDE.md/GEMINI.md。")
     remote = ctx.get("remote_triggers") or []
     if remote:
@@ -743,7 +600,7 @@ def build_findings(ctx: dict) -> list[dict]:
             + f";最近一次 {local(max(r['at'] for r in remote)):%m-%d %H:%M}。",
             "云端 routine 不占本机额度窗口、router 也无法选路,按用户决定不纳入门禁;仅在此计数,数量异常时与用户核对。")
     if not ctx["ledger_rows"]:
-        add("info", "ledger", "账本今日起才开始记录", "历史分配由会话回溯得到,可能漏计无法解析的输出。", "之后每次路由自动写账本。")
+        add("info", "ledger", "账本里没有记录", "统计期内账本没有任何决策行,分配汇总为空。", "之后每次路由自动写账本。")
     order = {"crit": 0, "warn": 1, "info": 2}
     return sorted(out, key=lambda f: order[f["level"]])
 
@@ -765,20 +622,17 @@ def render(ctx: dict, days: int, detail_days: int, commentary: str) -> str:
     for f in ctx["findings"]:
         lines += [f"- **[{labels[f['level']]}] {f['title']}** — {f['evidence']}  ", f"  → {f['action']}"]
     lines += ["", "## 2. 分配汇总(按本地日)", "",
-              "| 日期 | delegate | self | 拆分 | select | plan | 钉死 | Pro 顾问 | open(真权衡) | judge 构成 |", "|---|---|---|---|---|---|---|---|---|---|"]
+              "| 日期 | 拆分 | 决策 | plan | 钉死 | Pro 顾问 | open |", "|---|---|---|---|---|---|---|"]
     by_day = collections.defaultdict(list)
     for r in rows:
         by_day[local(r["at"]).date().isoformat()].append(r)
     for day in sorted(by_day):
         items = by_day[day]
-        sel = [r for r in items if r["stage"] in ("select", "record", "plan") and r.get("choice") != "none"]
+        sel = [r for r in items if r["stage"] in DECISION_STAGES and r.get("choice") != "none"]
         kinds = collections.Counter(classify(r) for r in sel)
-        judges = collections.Counter((r.get("judge") or "").replace("claude-", "").replace("gpt-6.1-", "") or "-" for r in items if r.get("judge"))
-        lines.append(f"| {day} | {sum(1 for r in items if r['stage'] == 'delegate' and r.get('choice') == 'delegate')} | "
-                     f"{sum(1 for r in items if r['stage'] == 'delegate' and r.get('choice') == 'self')} | "
-                     f"{sum(1 for r in items if r['stage'] == 'split')} | {len(sel)} | {kinds.get('planned', 0)} | "
+        lines.append(f"| {day} | {sum(1 for r in items if r['stage'] == 'split')} | {len(sel)} | {kinds.get('planned', 0)} | "
                      f"{sum(v for k, v in kinds.items() if k.startswith('fixed'))} | {kinds.get('specialist:pro', 0)} | "
-                     f"{kinds.get('open', 0)} | {', '.join(f'{k}×{v}' for k, v in judges.most_common()) or '-'} |")
+                     f"{kinds.get('open', 0)} |")
     cutoff = now - dt.timedelta(days=detail_days)
     splits = [r for r in rows if r["at"] >= cutoff and (r["stage"] == "split" or r.get("keep_whole"))]
     if splits:
@@ -788,25 +642,18 @@ def render(ctx: dict, days: int, detail_days: int, commentary: str) -> str:
             text = r["keep_whole"] if r.get("keep_whole") else r["objective"]
             lines.append(f"| {local(r['at']):%m-%d %H:%M} | {'整派' if r.get('keep_whole') else '拆分'} | "
                          f"{r.get('task_count') or '-'} | {' '.join(str(text).split())[:120].replace('|', '/')} |")
-    lines += ["", f"## 3. 逐次分配(最近 {detail_days} 天;delegate→select 成对)", "",
-              "| 时间 | 类型 | 分配 | 分类 | judge | 账户用量(调用时) | 理由 |", "|---|---|---|---|---|---|---|"]
-    for d, s in pair_decisions(rows):
-        anchor = (s or d)["at"]
-        if anchor < cutoff:
+    lines += ["", f"## 3. 逐次分配(最近 {detail_days} 天)", "",
+              "| 时间 | 阶段 | 分配 | 分类 | 账户用量(调用时) | 理由 |", "|---|---|---|---|---|---|"]
+    for r in rows:
+        if r["at"] < cutoff or r["stage"] not in DECISION_STAGES:
             continue
-        bundle = (s or {}).get("bundle") or {}
-        label = f"{bundle.get('account') or '-'}/{bundle.get('model') or '-'}/{bundle.get('effort') or '-'}" if s else "(无 select)"
-        account = bundle.get("account")
-        entry = ((s or d).get("usage") or {}).get(account) or {}
+        bundle = r.get("bundle") or {}
+        label = f"{bundle.get('account') or '-'}/{bundle.get('model') or '-'}/{bundle.get('effort') or '-'}"
+        entry = (r.get("usage") or {}).get(bundle.get("account")) or {}
         windows = [w for w in entry.get("windows") or [] if isinstance(w.get("used_pct"), (int, float))]
-        used = "; ".join(f"{w['id']} 余{100 - w['used_pct']:.0f}%" for w in windows[:2])
-        if not used:
-            quoted = REMAIN.search(((s or d).get("reason") or ""))
-            used = f"余{quoted.group(1)}%(理由)" if quoted and account == "codex" else "—"
-        reason = ((s or d).get("reason") or "").replace("|", "/").replace("\n", " ")[:70]
-        kind = classify(s) if s else ("self" if d and d.get("choice") == "self" else "-")
-        lines.append(f"| {local(anchor):%m-%d %H:%M} | {(d or {}).get('specialty') or '-'} | {label} | {kind} | "
-                     f"{((s or d).get('judge') or '-').replace('claude-', '').replace('gpt-6.1-', '')} | {used} | {reason} |")
+        used = "; ".join(f"{w['id']} 余{100 - w['used_pct']:.0f}%" for w in windows[:2]) or "—"
+        reason = (r.get("reason") or "").replace("|", "/").replace("\n", " ")[:70]
+        lines.append(f"| {local(r['at']):%m-%d %H:%M} | {r['stage']} | {label} | {classify(r)} | {used} | {reason} |")
     lines += ["", "## 4. 当前用量快照", "", "| 账户 | 状态 | 最紧窗口 | 余量 | 重置 | 观测时间 |", "|---|---|---|---|---|---|"]
     for name, row in sorted(ctx["usage_now"].get("accounts", {}).items()):
         window = usage_reading.tightest_window(row)
@@ -817,12 +664,12 @@ def render(ctx: dict, days: int, detail_days: int, commentary: str) -> str:
                      f"{reset_days} | {(row.get('fetched_at') or '—')[:16]} |")
     series = quota_series(rows + [ctx["now_row"]])
     if series:
-        lines += ["", "### codex 额度曲线(同一重置窗口内;“理由”= 取自 judge 理由文字,调用方裁掉了用量块)", "",
-                  "| 观测时间 | 已用 | 来源 |", "|---|---|---|"]
+        lines += ["", "### codex 额度曲线(同一重置窗口内)", "",
+                  "| 观测时间 | 已用 |", "|---|---|"]
         step = max(1, len(series) // 16)
         picked = series[::step] + ([series[-1]] if (len(series) - 1) % step else [])
-        for t, used, derived in picked:
-            lines.append(f"| {local(t):%m-%d %H:%M} | {used:.0f}% | {'理由' if derived else '快照'} |")
+        for t, used in picked:
+            lines.append(f"| {local(t):%m-%d %H:%M} | {used:.0f}% |")
     lines += ["", f"## 5. Codex 实际消耗(rollout 日志,近 {days} 天,token 含缓存读取)", "",
               "| 日期 | 合计(M) | 构成(M) |", "|---|---|---|"]
     for day in sorted(ctx["codex_days"]):
@@ -843,8 +690,7 @@ def render(ctx: dict, days: int, detail_days: int, commentary: str) -> str:
     if dot:
         lines.append(f"- dot2api:任务 {dot['tasks']} 条(非续期 {dot['non_renewal']}),状态 {dict(dot['statuses'])},审计动作 {dict(dot['audit_actions'])}。")
     skipped_note = f"(已跳过旧格式 {ctx['ledger_skipped']} 条)" if ctx.get("ledger_skipped") else ""
-    lines += [f"- 决策来源:账本 {len(ctx['ledger_rows'])} 条{skipped_note} + 会话回溯 {len(ctx['transcript_rows'])} 条,合并后 {len(rows)} 条。",
-              f"- 显式 `route_judge.py delegate/select` 调用的 `--judge` 取值:{dict(ctx['pinned'])}(仅统计能在日志里看到命令行的调用)。",
+    lines += [f"- 决策来源:账本 {len(ctx['ledger_rows'])} 条{skipped_note},统计期内 {len(rows)} 条。",
               "- token 数含缓存读取,不等于额度消耗;额度只能看用量快照的百分比。Pro 网页用量与 Dot 的 ChatGPT 轮次不在任何快照里。",
               "- 本报告判定“规则是否触发”,不判定研究成果好坏;价值是否合理需结合上面的证据由人判断。", ""]
     return "\n".join(lines)
@@ -903,8 +749,7 @@ def main() -> int:
     paseo_files = pick(".paseo/creations/*.json")
     skipped_ledger: list[int] = []
     ledger_rows = from_ledger(LEDGER, skipped=skipped_ledger)
-    transcript_rows = from_transcripts(codex_files + claude_files + pi_files)
-    rows = [r for r in merge(ledger_rows, transcript_rows) if r["at"] >= since_dt]
+    rows = sorted((r for r in ledger_rows if r["at"] >= since_dt), key=lambda r: r["at"])
     sessions, codex_days = scan_codex(codex_files)
     spawns = scan_subagent_spawns(paseo_files, claude_subagent_files, sessions, since_dt, pi_files=pi_files)
     since_day = local(since_dt).date().isoformat()
@@ -917,9 +762,8 @@ def main() -> int:
     usage_now = usage_reading.usage_snapshot()
     now_row = {"usage": usage_points(usage_now)}
     ctx = {"now": now, "rows": rows, "ledger_rows": ledger_rows, "ledger_skipped": skipped_ledger[0] if skipped_ledger else 0,
-           "transcript_rows": transcript_rows, "usage_reading": usage_reading,
+           "usage_reading": usage_reading,
            "usage_now": usage_now, "now_row": now_row, "sessions": sessions, "spawns": spawns,
-           "pinned": count_pinned(codex_files + claude_files),
            "codex_days": {d: v for d, v in codex_days.items() if d >= since_day}, "claude_days": scan_claude(claude_files, since_day),
            "peaks": peak_used(rows), "heavy_by_day": heavy_by_day, "heavy_detail": {d: ", ".join(v[:6]) for d, v in heavy_detail.items()}, "dot": dot_summary(),
            "capacity": load_capacity(), "agent_days": load_agent_days(),

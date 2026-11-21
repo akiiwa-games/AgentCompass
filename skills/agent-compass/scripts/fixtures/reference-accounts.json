@@ -13,7 +13,6 @@
     "defer_if_reset_within_hours": 6,
     "rotate_after_carried_tokens": 2000000,
     "context_burn_extra_at_250k": 0.5,
-    "needs_judgment_margin": 0.02,
     "harness_order": [
       "codex",
       "pi"

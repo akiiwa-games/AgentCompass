@@ -1441,7 +1441,7 @@ def recent_routes(
             continue
         stage = row.get("stage")
         choice = row.get("choice")
-        if stage not in ("plan", "select", "record"):
+        if stage not in ("plan", "record"):
             continue
         if choice in (None, "", "none", "self"):
             continue
@@ -1575,7 +1575,7 @@ def build_deny_reason(trigger: str, window_seconds: int) -> str:
     minutes = max(1, round(window_seconds / 60))
     return (
         f"[Router Gate] 拦截未路由的子 agent 启动 ({trigger})："
-        f"最近 {minutes} 分钟内 ~/.agent-compass/router-ledger.jsonl 中无有效的 plan/select/record 记录。"
+        f"最近 {minutes} 分钟内 ~/.agent-compass/router-ledger.jsonl 中无有效的 plan/record 记录。"
         "把任务书写进 <task.md>，一条命令完成分类、选路与启动：\n"
         f"  {ROUTER_CMD} roll --brief <task.md>\n"
         "（用户在本次请求中点名了 model/effort 时追加 --provider <p> --account <a> --model <m> --effort <e> "
@@ -1643,7 +1643,7 @@ def check_schedule_plan(rows: list[dict], args: dict, context: dict, trigger: st
         return schedule_deny_reason(trigger, f"未指定 {'/'.join(missing)}，无法与路由比对")
     if not identities:
         return schedule_deny_reason(trigger, "hook 输入里没有会话 ID，无法确认 plan 属于本会话")
-    plans = [row for row in rows if row.get("stage") in ("plan", "select") and written_by(row, identities)]
+    plans = [row for row in rows if row.get("stage") == "plan" and written_by(row, identities)]
     if not plans:
         return schedule_deny_reason(trigger, "最近 15 分钟内本会话没有 plan 记录")
     row, diagnostic = match_route(plans, requested, context, trigger, accounts=accounts)

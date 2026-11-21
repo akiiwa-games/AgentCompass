@@ -34,7 +34,8 @@ def direct_prefix(command):
 
 def subscription_env(account=None):
     env = os.environ.copy()
-    # The judge uses subscriptions, never an inherited API key or proxy destination.
+    # The scorer's CLI runs and the workers launched without Paseo (roll's CLI path, Herdr) use subscriptions, never
+    # an inherited API key or proxy destination.
     for name in ('OPENAI_API_KEY', 'OPENAI_BASE_URL', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN',
                  'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX',
                  'CLAUDE_CODE_USE_FOUNDRY'):

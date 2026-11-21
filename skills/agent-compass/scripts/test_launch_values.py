@@ -118,8 +118,8 @@ class BatchLauncherTests(unittest.TestCase):
         self.assertNotIn('EXPANDED', json.dumps(seen))
         self.assert_nothing_injected()
 
-    def test_the_judge_and_scorer_command_passes_values_unchanged(self):
-        """subscription_cli.cli_prefix (the judge's and the scorer's command) on an npm shim."""
+    def test_the_scorer_and_cli_worker_command_passes_values_unchanged(self):
+        """subscription_cli.cli_prefix (the scorer's command and roll's CLI worker command) on an npm shim."""
         self.shim('claude', NPM_SHIM)
         prefix = subscription_cli.cli_prefix('claude')
         for value in self.hostile:

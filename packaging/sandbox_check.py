@@ -496,7 +496,7 @@ PLACEHOLDERS = {"<task.json>": "task.json", "<task.md>": "task.md", "<dispatch_i
 
 
 OPERATIONAL = (r"python[^\n`]*route_judge\.py|(?<![\w/\[`.])route_judge\.py\s+"
-               r"(?:roll|plan|providers|record|score|scorer|delegate|select|override|dispatch|launch|usage)\b|dispatch-state")
+               r"(?:roll|plan|providers|record|score|scorer|override|dispatch|launch|usage)\b|dispatch-state")
 
 
 def scenario_entry_and_docs(ctx, box: Sandbox):

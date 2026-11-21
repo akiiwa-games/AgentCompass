@@ -88,7 +88,9 @@ introduced (2026-11-13), the fit unchanged in both cases: the Claude window pric
 used and 9 h to reset priced at 0.003385 before and 0.006497 after (cost 0.0049 → 0.0097). Equal net scores
 `N` go to the candidate that starts sooner (shorter wait before reset), then finishes sooner, then spends fewer list-price USD,
 then has the higher demand-weighted category level and preferred harness (`candidate_ranking.five_axis_order`). Expiring quota is
-not a tie-break: under-line allowance already lowers `quota_cost`.
+not a tie-break: under-line allowance already lowers `quota_cost`. A near tie needs no caller action: `decision.margin` is the
+winner's lead in `N` over the best candidate of another model (none when the route is forced or no other model is eligible),
+and it is information only.
 
 Hard gates run first: sign-in and credential health, host policy, modality (text-only models never get visual work),
 `local_only`, a demanded category with no data, and per-window safety reserves net of in-flight work. A bundle that draws from
@@ -204,7 +206,7 @@ Companion repositories and runtime directories are separate local checkouts or i
 | Path | Description |
 |---|---|
 | `agentcompass/` | Public console package (`agentcompass`), checkout vs. installed path resolution (`locations.py`), `doctor.py`, and canonical loopback ports (`ports.py`). |
-| `skills/` | Agent skills (`agent-compass`, `dot-subagent`, `chatgpt-pro-consult`, `gemini-web`), including the split allocator modules (`allocator`, `account_fleet`, `task_intake`, `axis_scores`, `quota_economy`, `quota_pools`, `quota_overrides`, `candidate_eval`, `candidate_ranking`, `ledger_snapshot`, `worker_sessions`), the CLI stages (`route_judge`) with their owner modules (`scorer_client`, `decision_ledger`, `subscription_judge`, `subscription_cli`, `usage_reading`, `env_vars`), dispatch/usage scripts, and `calibration/` (`agentcompass data refresh`). |
+| `skills/` | Agent skills (`agent-compass`, `dot-subagent`, `chatgpt-pro-consult`, `gemini-web`), including the split allocator modules (`allocator`, `account_fleet`, `task_intake`, `axis_scores`, `quota_economy`, `quota_pools`, `quota_overrides`, `candidate_eval`, `candidate_ranking`, `ledger_snapshot`, `worker_sessions`), the CLI stages (`route_judge`) with their owner modules (`scorer_client`, `decision_ledger`, `subscription_cli`, `usage_reading`, `env_vars`), dispatch/usage scripts, and `calibration/` (`agentcompass data refresh`). |
 | `setup/` | Onboarding (`onboard.py`), global host rule and skill sync (`sync_host_globals.py`, `host_rules.py`), `PreToolUse` / `tool_call` spawn and rotation gate (`router_gate_hook.py`), and Paseo SDK dispatch bridge (`paseo_dispatch_bridge.mjs`). |
 | `tray/` | Windows tray (`app.pyw`), decision console shell (`router_window.py`) and page mixins (`panel_scoring.py`, `panel_quota.py`, `panel_policy.py`, `panel_models.py`, `panel_strategy.py`, `panel_system.py`, `panel_plugins.py`, `panel_widgets.py`), Tk-free view model (`router_data.py`), `radar_chart.py`, `quota_line.py`, `decision_theatre.py`, updaters, and service supervisor. |
 | `packaging/` & `audit/` | Wheel/PyInstaller/Inno Setup bundling (`app_bundle.py`, `app_bootstrap.py`, `check_payload.py`), behavioral harnesses (`verify_release.py`, `sandbox_check.py`, `foreign_machine_check.py`, `zero_dispatch_check.py`), read-only ledger compliance audit (`audit/router_audit.py`), the maintainer calibration report (`audit/calibration_report.py`), and the gateway coverage check (`audit/gateway_coverage.py` over `audit/gateway-catalogs/`, the known-gap and out-of-scope lists; `audit/magpie_catalog.py` builds the Magpie catalog). |

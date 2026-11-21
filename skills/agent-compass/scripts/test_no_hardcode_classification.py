@@ -141,7 +141,6 @@ ROUTING_MODULES = frozenset({
     'route_judge.py',
     'scorer_client.py',
     'decision_ledger.py',
-    'subscription_judge.py',
     'subscription_cli.py',
     'usage_reading.py',
     'env_vars.py',

@@ -14,7 +14,6 @@ import provider_inventory
 import roll
 import route_judge as router
 import subscription_cli
-import subscription_judge
 import usage_reading
 from router_test_support import isolated_router_state
 
@@ -45,47 +44,17 @@ class AccountIdentityTests(unittest.TestCase):
             'seconds_until_reset': 3600, 'resets_at': (self.now + timedelta(hours=1)).isoformat(),
         }]}}}
 
-    def test_select_uses_configured_reserve_and_neutral_default(self):
-        candidate = {'provider': 'team-backup', 'account': 'team-backup',
-                     'model': 'claude-sonnet-5-5', 'quality_fit': 'sufficient'}
-        for reserve, expected in ((None, True), (25, False), (10, True)):
-            with self.subTest(reserve=reserve):
-                window = self.fleet['accounts']['team-backup']['windows']['five_hour']
-                window.pop('launch_min_remaining_pct', None)
-                if reserve is not None:
-                    window['launch_min_remaining_pct'] = reserve
-                with patch.object(usage_reading, 'usage_snapshot', return_value=self.usage(15)) as snapshot:
-                    result = subscription_judge.build_request('select', {'task': {'objective': 'Review'},
-                                                           'candidates': {'worker': candidate}})
-                self.assertEqual('worker' in result['state']['candidates'], expected)
-                self.assertIn('team-backup', snapshot.call_args.args[1])
-
     def test_record_uses_configured_reserve_and_neutral_default(self):
         args = argparse.Namespace(provider='team-backup', account='team-backup', model='claude-sonnet-5-5',
             effort='high', basis='Explicit test choice', dry_run=True, input=None, usage_cache=None,
             accounts=None, constraint='user_override', specialty=None, parent_id='test-parent')
         with patch.object(usage_reading, 'usage_snapshot', return_value=self.usage(15)):
             self.assertEqual(router.record_constraint(args)['selected_bundle']['account'], 'team-backup')
+            self.fleet['accounts']['team-backup']['windows']['five_hour']['launch_min_remaining_pct'] = 10
+            self.assertEqual(router.record_constraint(args)['selected_bundle']['account'], 'team-backup')
             self.fleet['accounts']['team-backup']['windows']['five_hour']['launch_min_remaining_pct'] = 25
             with self.assertRaisesRegex(ValueError, 'quota|floor|exhausted'):
                 router.record_constraint(args)
-
-    def test_judge_selects_arbitrary_account_and_obeys_reserve(self):
-        empty = self.usage(0)['accounts']['team-backup']
-        self.fleet['accounts']['primary-team'] = copy.deepcopy(self.fleet['accounts']['team-backup'])
-        self.inventory['accounts']['primary-team'] = {'family': 'claude'}
-        self.fleet['accounts']['primary-team']['windows']['five_hour']['launch_min_remaining_pct'] = 25
-        self.fleet['accounts']['team-backup']['windows']['five_hour']['launch_min_remaining_pct'] = 25
-        usage = self.usage(26)
-        usage['accounts']['primary-team'] = empty
-        self.assertEqual(subscription_judge.resolve_judge('sonnet', usage)['account'], 'team-backup')
-        self.assertIn('sonnet', subscription_judge.judge_order(usage, 'auto'))
-        usage['accounts']['team-backup'] = self.usage(15)['accounts']['team-backup']
-        self.assertNotIn('sonnet', subscription_judge.judge_order(usage, 'auto'))
-
-    def test_judge_uses_neutral_reserve_without_private_default(self):
-        self.assertEqual(subscription_judge.resolve_judge('sonnet', self.usage(15))['account'], 'team-backup')
-        self.assertIn('sonnet', subscription_judge.judge_order(self.usage(15), 'auto'))
 
     def test_subscription_credentials_follow_discovered_home(self):
         with patch.dict(router.os.environ, {'CLAUDE_CODE_OAUTH_TOKEN': 'inherited',

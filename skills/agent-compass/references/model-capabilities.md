@@ -171,7 +171,7 @@ Tier is the arena.ai Overall position at High relative to the anchor (or its lin
 
 ## Effective policy
 
-Routes describe task scope and modality requirements and ship a calibrated harness order. A route can fix the harness order or imply a modality flag; it does not rank models. The judge receives this effective policy.
+Routes describe task scope and modality requirements and ship a calibrated harness order. A route can fix the harness order or imply a modality flag; it does not rank models. The allocator applies this effective policy (`candidate_ranking`, `task_intake`).
 
 ## Regeneration
 

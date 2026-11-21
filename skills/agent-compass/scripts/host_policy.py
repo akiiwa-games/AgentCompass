@@ -110,7 +110,7 @@ def account_allowed(policy, account):
     """Whether the account takes part in automatic routing on this host (no policy file: every account does).
 
     An account outside `allowed_accounts` is never chosen by the router: not by a plan, a fallback, an automatic resume
-    of an idle worker, nor as a judge or scorer. It is not banned: a route the user names in the request still
+    of an idle worker, nor as the scorer. It is not banned: a route the user names in the request still
     dispatches on it (`route_judge.record_constraint`, constraint `user_override`), and a turn to an existing session on
     it is not a routing choice. The model-management checkbox is the same kind of switch for a model
     (`model_unchecked`)."""
@@ -192,10 +192,6 @@ def disabled_text(cause):
     """The spawn gate's wording of a `disabled_cause`: the leftover meter text itself, or the unchecked bundles."""
     kind, detail = cause
     return detail if kind == 'legacy' else "档位 " + ", ".join(detail) + " 在模型管理中未勾选（不参与自动派发）"
-
-
-def judge_allowed(policy, name, account):
-    return account_allowed(policy, account) and (policy is None or 'judges' not in policy or name in policy['judges'])
 
 
 def usage_providers(policy, defaults):

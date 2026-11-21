@@ -546,7 +546,7 @@ def cadence_window_state(account, spec, acct_usage, records, now):
             continue
         stage = r.get('stage')
         t = None
-        if stage in ('select', 'record') and r.get('choice') not in (None, 'none'):
+        if stage == 'record' and r.get('choice') not in (None, 'none'):
             cand_t = parse_time(r.get('at'))
             if cand_t is not None and 0.0 <= (now - cand_t).total_seconds() < win_sec:
                 t = cand_t

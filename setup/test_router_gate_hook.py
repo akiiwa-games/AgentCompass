@@ -552,7 +552,7 @@ process.stdout.write(JSON.stringify(out));
             routes = gate.recent_routes(ledger, now=T0)
             self.assertTrue(any(r.get("choice") == route["choice"] for r in routes))
 
-    def test_allows_subagent_when_recent_plan_select_or_record_exists(self):
+    def test_allows_subagent_when_recent_plan_or_record_exists(self):
         with tempfile.TemporaryDirectory() as tmp:
             ledger = self.write_ledger(
                 tmp,
@@ -591,11 +591,28 @@ process.stdout.write(JSON.stringify(out));
                     },
                     {
                         "at": (T0 - dt.timedelta(minutes=1)).isoformat(),
-                        "stage": "delegate",
+                        "stage": "plan",
                         "choice": "self",
                     },
                 ],
             )
+            res = gate.evaluate_payload(
+                {"tool_name": "spawn_agent", "tool_input": {"message": "hi"}},
+                ledger_path=ledger,
+                now=T0,
+            )
+            self.assertEqual(res["decision"], "block")
+
+    def test_rows_of_the_removed_select_and_delegate_stages_authorize_nothing(self):
+        """An old ledger may hold rows of the select and delegate stages (removed 2026-11-21): the gate skips them."""
+        with tempfile.TemporaryDirectory() as tmp:
+            recent = (T0 - dt.timedelta(minutes=1)).isoformat()
+            ledger = self.write_ledger(tmp, [
+                {"at": recent, "stage": "select", "choice": "sol_high", "source": "subscription_model_judgment",
+                 "bundle": {"provider": "codex", "account": "codex", "model": "gpt-6.1-sol", "effort": "high"}},
+                {"at": recent, "stage": "delegate", "choice": "delegate", "source": "subscription_model_judgment"},
+            ])
+            self.assertEqual(gate.recent_routes(ledger, now=T0), [])
             res = gate.evaluate_payload(
                 {"tool_name": "spawn_agent", "tool_input": {"message": "hi"}},
                 ledger_path=ledger,

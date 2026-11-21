@@ -56,9 +56,8 @@ Duplicate launchers share one subscription quota owner.
 
 Account IDs do not determine provider family, credential home or quota reserves.
 Discovery supplies family and home; an explicit account `family` can describe an
-offline configuration. Any named Claude account can participate in judge selection.
-Judge credentials and session-limit logs use the discovered home, including custom
-paths. Per-window `launch_min_remaining_pct` expresses an account's reserve; no
+offline configuration. Worker credentials and session-limit logs use the discovered
+home, including custom paths. Per-window `launch_min_remaining_pct` expresses an account's reserve; no
 additional reserve is inferred from a secondary-account name or plan label.
 
 Quota sharing between independent integrations is explicit: top-level
@@ -170,7 +169,7 @@ starting agents. Each scenario exercises the decision and its recovery or isolat
 - Corrupt sources leave unrelated sign-ins available; host/model policy still wins.
 - Effective secure-storage home and API settings identify the account actually used.
 
-Allocation, judgment, dispatch and host-policy tests isolate discovery from the
+Allocation, dispatch and host-policy tests isolate discovery from the
 machine's live subscriptions. Obsolete documentation of direct OAuth probes and
 gateway discovery has been removed: collection belongs to the existing backend.
 Explicit model overrides cannot bypass account pause, and a prepared dispatch

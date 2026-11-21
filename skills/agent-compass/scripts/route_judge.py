@@ -31,7 +31,6 @@ import roll
 import scorer_client
 import stage_help
 import state_upgrade
-import subscription_judge
 import usage_reading
 
 
@@ -120,7 +119,7 @@ NAMED_ROW_FIELDS = ('modeId', 'draws', 'launch_model', 'harness', 'billing')
 
 
 def record_constraint(args, task=None, classified=None):
-    """Log a route the caller is forcing. No judge is called; the allocator is run on the same task so the
+    """Log a route the caller is forcing. The allocator is run on the same task so the
     ledger shows whether the router would have chosen it and, if not, what the override cost.
 
     `classified` is classify_pinned's answer for a pinned roll: the allocator then plans the classified task, the
@@ -275,7 +274,7 @@ def record_constraint(args, task=None, classified=None):
               'constraint': args.constraint, 'basis': basis, 'specialty': args.specialty,
               **({'trigger': args.trigger} if getattr(args, 'trigger', None) else {}),
               'reason_category': getattr(args, 'reason_category', None),
-              'selected_bundle': bundle, 'judge': None, 'observed_at': now.isoformat(), 'usage': usage}
+              'selected_bundle': bundle, 'observed_at': now.isoformat(), 'usage': usage}
     overlaid_accounts = axis_scores.five_axis_overlay(accounts)
     overlaid_spec = (overlaid_accounts.get('accounts') or {}).get(args.account) or {}
     if overlaid_spec.get('capacity_unknown') and overlaid_spec.get('five_axis_free_pool'):
@@ -337,7 +336,7 @@ def record_constraint(args, task=None, classified=None):
         result.setdefault('warnings', []).append(
             f'data error: {listed_gap}; launched because the user named it and provider {args.provider} lists it')
     _compare_with_router(result, task, usage, now, chosen, fast_requested, classified)
-    return decision_ledger.finalize(result, None, 'auto', started, reviewed_task if classified else task)
+    return decision_ledger.finalize(result, started, reviewed_task if classified else task)
 
 
 def record_resume(args, task, classified, bundle, agent_id):
@@ -356,7 +355,7 @@ def record_resume(args, task, classified, bundle, agent_id):
                  **({'parent_agent_id': task['parent_agent_id']} if task.get('parent_agent_id') else {})}
     chosen = bundle.get('bundle_id') or bundle.get('id')
     result = {'stage': 'record', 'choice': 'constraint', 'source': 'explicit_resume', 'constraint': 'explicit_resume',
-              'basis': f'roll --resume {agent_id}', 'selected_bundle': dict(bundle), 'judge': None,
+              'basis': f'roll --resume {agent_id}', 'selected_bundle': dict(bundle),
               'observed_at': now.isoformat(), 'usage': usage, '_allocation_task': plan_task}
     if classified.get('scorer') is not None:
         result.update(scorer=classified['scorer'], task_profile=plan_task.get('profile'))
@@ -375,7 +374,7 @@ def record_resume(args, task, classified, bundle, agent_id):
                         f"(--resume); the router would otherwise have chosen {result['router_choice']!r}.")
     if warnings:
         result['warnings'] = warnings
-    return decision_ledger.finalize(result, None, 'auto', started, task)
+    return decision_ledger.finalize(result, started, task)
 
 
 def unclassified_data_error(result, reason, hours):
@@ -826,7 +825,7 @@ def plan_stage(document, args):
         planned = {'stage': 'plan', 'choice': 'none', 'ranking': [], 'usage': usage, '_unavailable': unavailable,
                    'decision': {'action': 'none', 'needs_user_decision': True}}
         apply_readiness_gap(planned, loaded_accounts, usage)
-        return decision_ledger.finalize(planned, None, 'auto', started, reviewed_task), 2
+        return decision_ledger.finalize(planned, started, reviewed_task), 2
     if should_score:
         profile, task, needs, scorer, hours_estimate, alerts = classify_task(
             task, needs, capabilities, policy, args.score_timeout, use_model=bool(args.score) or not args.dry_run)
@@ -884,7 +883,7 @@ def plan_stage(document, args):
     if scorer is not None:
         planned['scorer'], planned['task_profile'] = scorer, task['profile']
     planned['_allocation_task'] = task     # carries the profile, so the launch-time re-plan scores alike
-    result = decision_ledger.finalize(planned, None, 'auto', started, reviewed_task)
+    result = decision_ledger.finalize(planned, started, reviewed_task)
     return result, 0 if result.get('choice') != 'none' else 2
 
 
@@ -1017,7 +1016,7 @@ def build_parser():
     parser.add_argument('--base-url', help='scorer set: API base URL for jev/gemini_decision/openai_compatible ("" clears it).')
     parser.add_argument('--fallback-to-agy', choices=('on', 'off'), help='scorer set: fall back to agy when the chosen scorer fails.')
     parser.add_argument('--objective', help='scorer test: the sample task to classify.')
-    parser.add_argument('--input', type=Path, help='plan/score/delegate/select/dispatch prepare: the input JSON document. '
+    parser.add_argument('--input', type=Path, help='plan/score/dispatch prepare: the input JSON document. '
                         'record: a task document ({"task": ...}), to compare the forced route with the router\'s own choice.')
     parser.add_argument('--dispatch-action', choices=('prepare', 'start', 'status', 'reconcile', 'release', 'fallback', 'settle'), default='prepare')
     parser.add_argument('--dispatch-id')
@@ -1031,9 +1030,7 @@ def build_parser():
     parser.add_argument('--show', action='store_true', help='usage: print the merged usage windows (this is what the stage does; the flag only tells `agentcompass usage` not to collect).')
     parser.add_argument('--accounts', nargs='+', help='usage: exact account keys to inspect. record (and a roll that names its route): read usage of only these '
                         'accounts; an account left out has no window read, and the result says so.')
-    parser.add_argument('--judge', choices=('auto', 'sonnet', 'codex'), default='auto')
-    parser.add_argument('--timeout', type=int, default=120, help='Bounded CLI timeout, in seconds.')
-    parser.add_argument('--dry-run', action='store_true', help='delegate/select: print the reviewed payload without a model call. plan/record: compute the result but write no ledger row. roll: record and launch nothing.')
+    parser.add_argument('--dry-run', action='store_true', help='plan/record: compute the result but write no ledger row. roll: record and launch nothing.')
     parser.add_argument('--demo', action='store_true', help='plan --dry-run: offline reference fleet and synthetic quotas; no local credentials needed.')
     parser.add_argument('--format', choices=('json', 'table'), help='Plan output (default: table for --demo, JSON otherwise).')
     parser.add_argument('--constraint', choices=CONSTRAINTS, help='record: why the route is forced (user_override, hard_constraint, dot_closed_loop).')
@@ -1091,7 +1088,7 @@ def main():
     if args.help or args.stage is None:
         print(stage_help.stage_help(parser, args.stage) if args.stage else stage_help.overview())
         return 0 if args.help else 2
-    if args.stage in ('roll', 'plan', 'providers', 'select') and not args.demo:
+    if args.stage in ('roll', 'plan', 'providers') and not args.demo:
         # This run keeps the reference set it takes; a due check runs in its own process and applies to the next run.
         public_data.refresh_in_background()
         antigravity_plan.refresh_in_background(state_upgrade.state_dir())
@@ -1206,8 +1203,6 @@ def _run_stage(args):
             notes.extend(roll_path_notes(args))
     if args.demo and (args.stage != 'plan' or not args.dry_run):
         raise ValueError('--demo requires plan --dry-run; remove --demo to use live providers.')
-    if not 1 <= args.timeout <= 600:
-        raise ValueError('Timeout must be 1 to 600 seconds.')
     if not 1 <= args.score_timeout <= 120:
         raise ValueError('Score timeout must be 1 to 120 seconds.')
     if (args.stage not in ('scorer', 'score') and args.can_wait_hours is not None
@@ -1261,7 +1256,7 @@ def _stage_result(args):
         # A record the host's switches do not let launch is still written (the spawn gate reads it and refuses the
         # launch); its answer says so, and the exit is not success.
         code = 2 if result.get('status') == 'blocked' else 0
-    elif args.stage == 'plan':
+    else:   # plan: the last of stage_help.STAGES
         if args.input is None and args.demo:
             from demo_plan import sample_document
             document = sample_document()
@@ -1270,18 +1265,6 @@ def _stage_result(args):
         else:
             document = json.loads(caller_input.read_text(args, args.input))
         result, code = plan_stage(document, args)
-    else:
-        if args.input is None:
-            raise ValueError('Routing stages require --input.')
-        document = json.loads(caller_input.read_text(args, args.input))
-        payload = subscription_judge.build_request(args.stage, document, args.usage_cache)
-        started = time.monotonic()
-        if args.dry_run:
-            result = payload
-        else:
-            result = decision_ledger.finalize(subscription_judge.evaluate(payload, args.judge, args.timeout), payload, args.judge,
-                              started, document.get('task'))
-        code = 1 if result.get('source') == 'judge_unavailable' else 0
     return result, code, args.stage == 'plan' and (args.format == 'table' or (args.demo and args.format is None))
 
 

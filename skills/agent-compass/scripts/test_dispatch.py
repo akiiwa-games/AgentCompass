@@ -209,8 +209,8 @@ class DispatchTests(unittest.TestCase):
         value.update(changes)
         return value
 
-    def test_bare_plan_select_record_do_not_reserve_or_allow_unbound_dispatch(self):
-        for stage in ('plan', 'select', 'record'):
+    def test_bare_plan_and_record_do_not_reserve_or_allow_unbound_dispatch(self):
+        for stage in ('plan', 'record'):
             decision = self.issue(stage=stage)
             self.assertTrue(decision['bound'])
         self.assertEqual(registry.reservations(self.now), [])
@@ -218,7 +218,7 @@ class DispatchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'actual addressable parent'):
             registry.prepare(unbound['decision_id'], {'objective': 'legacy'}, self.launch, self.usage, now=self.now)
         spec = self.accounts['accounts']['claude-lab']
-        for stage in ('plan', 'select', 'record'):
+        for stage in ('plan', 'record'):
             self.assertEqual(quota_pools.inflight_reserved_usd('claude-lab', spec, 'five_hour', spec['windows']['five_hour'],
                 {'remaining': 40}, 18, [{'stage': stage, 'expected_usd': 100, 'bundle': self.bundle}],
                 self.accounts, self.accounts['scoring'], self.now), 0)
