@@ -11,7 +11,9 @@ AgentCompass v0.7.5 makes a worker's completion notice reach its parent when the
 
 Answers that changed: `notify_end` can answer `fallback_pending` and `notice_resend_wait`; `end_notice.source` in the dispatch registry gains `relaunched`, `continued`, `watcher_found`, `watcher_resent`, `catchup_found`, `catchup_resent`, `watcher_undelivered` and `catchup_undelivered`; `plan --format table` names no undelivered notice (the JSON answer does).
 
-Not verified: the tray's pass was run against a stand-in Paseo host and real watcher processes, not against a live Antigravity session after this build. A watcher that is alive but stalled is not recovered by the pass. An installer that fails to register the logon task does not say so; it starts the tray once directly. The boards were not read again for this release: scores are those of the 2026-11-18 snapshot plus what was published since.
+Verified: the full suite and the offline release checks ran before the Hosted Services change; after it, the tests of the tray, setup and package folders, the product layout check and the Windows Sandbox installer check (install, logon task, update, rollback, uninstall) ran again on the released code.
+
+Not verified: the full suite was not run again after the Hosted Services change. The tray's pass was run against a stand-in Paseo host and real watcher processes, not against a live Antigravity session after this build. A watcher that is alive but stalled is not recovered by the pass. An installer that fails to register the logon task does not say so; it starts the tray once directly. The boards were not read again for this release: scores are those of the 2026-11-18 snapshot plus what was published since.
 
 The Windows tray installer is unsigned; Windows SmartScreen may warn on first launch. See [packaging/SIGNING.md](https://github.com/akiiwa-games/AgentCompass-Router/blob/v0.7.5/packaging/SIGNING.md).
 
