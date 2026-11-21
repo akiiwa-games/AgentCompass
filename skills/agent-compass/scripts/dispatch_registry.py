@@ -816,7 +816,9 @@ def _note_end_notice(row, receipt):
 
     `sent` is never sent again. A follow-up turn belongs to Paseo's notifyOnFinish; the event kind records that,
     and the reason text is not read. A receipt the watcher already delivered, or one it intentionally did not send,
-    is recorded as sent. Anything else is due for one catch-up."""
+    is recorded as sent, with the id the notice ended on. Anything else is due for one catch-up: so is a receipt that
+    claims a later dispatch (`continued` with `continued_by`, decided by `due_end_notices`) and one the watcher gave up
+    as `undelivered` (the catch-up reports it)."""
     if row.get('state') not in _END_NOTICE_STATES:
         return False
     notice = row.get('end_notice')
@@ -835,40 +837,75 @@ def _note_end_notice(row, receipt):
         # timeline or sent it once under a new id (paseo_dispatch_bridge.mjs deliverNotice).
         outcome = receipt.get('delivery_outcome')
         source = 'watcher_' + outcome if outcome in _UNKNOWN_OUTCOME_ENDINGS else 'watcher'
-        row['end_notice'] = {'state': 'sent', 'message_id': message_id, 'source': source}
+        used = receipt.get('delivery_message_id')
+        row['end_notice'] = {'state': 'sent', 'message_id': used if _is_message_id(used) else message_id, 'source': source}
         return True
-    if status in _SKIP_CATCHUP_STATUS:
+    claim = status == 'continued' and isinstance(receipt.get('continued_by'), str)
+    if status in _SKIP_CATCHUP_STATUS and not claim:
         row['end_notice'] = {'state': 'sent', 'message_id': message_id, 'source': status}
         return True
+    if isinstance(notice, dict) and notice.get('state') == 'due':
+        return False
     row['end_notice'] = {'state': 'due', 'message_id': message_id}
     return True
 
 
-def _continued_by(all_rows, row):
-    """The dispatch id of a later turn this row's parent gave this row's worker, or None.
+def _is_message_id(value):
+    return isinstance(value, str) and len(value) == 64 and all(c in '0123456789abcdef' for c in value)
 
-    A resume carries the worker's agent id and the parent that asked (the bridge refuses a resume from any other
-    parent), and it counts once the host showed the worker on that turn (`observed_at`): a resume that was refused or
-    never landed did not continue anything, and an end notice recorded `sent` is never sent later."""
+
+def _at_or_after(value, ref):
+    try:
+        return isinstance(value, str) and isinstance(ref, str) and parse(value) >= parse(ref)
+    except ValueError:
+        return False
+
+
+def _own_turn_landed(row):
+    """Whether this dispatch's own turn reached its worker: a seen run (`started_at`), or its prompt on the worker after
+    its launch, as its watcher recorded it (`started`, `user_message_at`) or as the worker's agent JSON shows it while
+    it carries this dispatch's labels. `observed_at` is not this: `observe` stamps it on a resume bound before its turn
+    lands too."""
+    if row.get('started_at'):
+        return True
+    launched = row.get('launched_at')
+    receipt = watcher_receipt(row['dispatch_id'])
+    if isinstance(receipt, dict) and (receipt.get('started') is True or _at_or_after(receipt.get('user_message_at'), launched)):
+        return True
+    doc = _agent_doc_for(row)
+    return _bound_dispatch(doc) == row['dispatch_id'] and _turn_landed(row, doc)
+
+
+def _later_turn(all_rows, row):
+    """What later turns this row's parent gave this row's worker say about its end notice: (`landed`, id) when one
+    landed, (`pending`, id) when one is still on its way, else (None, None): none, or each ended without landing.
+
+    A later turn is a `resume` row on the same worker from the same parent, launched after this one (the bridge refuses
+    a resume from any other parent)."""
     agent_id, parent = row.get('agent_id'), row.get('parent_id')
     if not agent_id or not parent:
-        return None
+        return None, None
     ref = row.get('launched_at') or row.get('created_at')
+    waiting = None
     for other in all_rows:
         if (other['dispatch_id'] == row['dispatch_id'] or other.get('operation') != 'resume'
-                or other.get('agent_id') != agent_id or other.get('parent_id') != parent or not other.get('observed_at')):
+                or other.get('agent_id') != agent_id or other.get('parent_id') != parent
+                or not (ref and later(other.get('launched_at') or other.get('created_at'), ref))):
             continue
-        if ref and later(other.get('launched_at') or other.get('created_at'), ref):
-            return other['dispatch_id']
-    return None
+        if _own_turn_landed(other):
+            return 'landed', other['dispatch_id']
+        if other['state'] not in TERMINAL:
+            waiting = waiting or other['dispatch_id']
+    return ('pending', waiting) if waiting else (None, None)
 
 
 def due_end_notices(path=None):
     """Terminal rows whose one end notice has not been sent. An open row is not due, even if an older flag remains.
 
-    A due row whose parent has since given the same worker a later turn (`_continued_by`) is recorded here as `sent`
-    with source `continued`, the rule of a parent continuation: that parent owns the end message, and the later
-    dispatch's own notice reports the worker. It is not returned."""
+    The parent owns the end message of a worker it gave a later turn that landed (`_later_turn`): such a row is recorded
+    here as `sent` with source `continued` and `continued_by`, and the later dispatch's own notice reports the worker;
+    this turn's reply is not sent separately. A row whose later turn is still on its way is not returned and stays due:
+    a later read decides. Once every later turn ended without landing, the row is returned and its own notice is sent."""
     target = Path(path or db_path())
     if not target.exists():
         return []
@@ -879,10 +916,12 @@ def due_end_notices(path=None):
             notice = row.get('end_notice')
             if row.get('state') not in _END_NOTICE_STATES or not isinstance(notice, dict) or notice.get('state') != 'due':
                 continue
-            later_id = _continued_by(all_rows, row)
-            if later_id:
+            verdict, later_id = _later_turn(all_rows, row)
+            if verdict == 'landed':
                 row['end_notice'] = dict(notice, state='sent', source='continued', continued_by=later_id)
                 save(connection, row)
+                continue
+            if verdict == 'pending':
                 continue
             found.append({'dispatch_id': row['dispatch_id'], 'parent_id': row.get('parent_id'),
                           'agent_id': row.get('agent_id'), 'message_id': notice.get('message_id'),
@@ -890,8 +929,9 @@ def due_end_notices(path=None):
         return found
 
 
-def mark_end_notice_sent(dispatch_id, source, path=None):
-    """Record that this dispatch's one end notice was sent. A second call, or a row that is no longer due, changes nothing."""
+def mark_end_notice_sent(dispatch_id, source, path=None, message_id=None):
+    """Record that this dispatch's one end notice was sent, with the id it ended on when the bridge named one. A second
+    call, or a row that is no longer due, changes nothing."""
     if not _safe_dispatch_id(dispatch_id) or not Path(path or db_path()).exists():
         return False
     with transaction(path, upkeep=True) as connection:
@@ -902,7 +942,8 @@ def mark_end_notice_sent(dispatch_id, source, path=None):
         notice = row.get('end_notice')
         if not isinstance(notice, dict) or notice.get('state') != 'due':
             return False
-        row['end_notice'] = dict(notice, state='sent', source=source)
+        row['end_notice'] = dict(notice, state='sent', source=source,
+                                 **({'message_id': message_id} if _is_message_id(message_id) else {}))
         save(connection, row)
         return True
 
@@ -1716,6 +1757,7 @@ def missing_agent(dispatch_id, agent_id, now=None, path=None):
             raise ValueError('Missing-agent observation does not match an acknowledged agent')
         if row['state'] in ACTIVE or row['state'] == 'expired':
             event(row, 'canceled', now, 'host_confirmed_agent_removed')
+            _note_end_notice(row, watcher_receipt(dispatch_id))
             save(connection, row)
         return row
 
@@ -1972,6 +2014,10 @@ def observe(dispatch_id, snapshot, now=None, path=None, terminal=None):
             target = 'launched'
         if target is None:
             raise ValueError('Unrecognized host status; reservation retained until lease expiry')
+        # A prompt after this launch is this round's turn landing, like a seen run: kept so a later read knows it
+        # (the end notice of an earlier round on the same worker reads it, `_own_turn_landed`).
+        if delivered:
+            row.setdefault('started_at', stamp(now))
         # A fresh host observation can recover an expired lease, but never outlive the hard bound.
         if target in ACTIVE and now >= parse(row['hard_until']):
             target = 'expired'

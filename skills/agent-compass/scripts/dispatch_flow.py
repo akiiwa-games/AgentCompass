@@ -583,16 +583,19 @@ def workspace_holders(directory, parent_id, host=None, path=None):
     return holders, None, probe
 
 
-def deliver_end_notices(now=None, path=None, host=None):
+def deliver_end_notices(now=None, path=None, host=None, undelivered=None):
     """Send each due end notice once. Without an explicit daemon, and without an injected host, send nothing.
 
     A failed send leaves the notice due so the next read retries it. The bridge computes the message id, the same
-    one the watcher uses, so a race with a late watcher is one message. A send, a receipt that already shows the
-    terminal was delivered (`evidence` `delivered`), an intentional skip (`evidence` `skipped`), and a parent that
-    can no longer be reached are recorded. `already` without that evidence is not a delivery: the notice stays due.
-    When Paseo answered that an earlier send's outcome is unknown, the bridge looks for the notice in the parent's
-    timeline: found is recorded `catchup_found`, not found and sent once under the next derived id `catchup_resent`.
-    A notice whose worker the same parent continued under a later dispatch is not offered here
+    one the watcher uses, so a race with a late watcher is one message, and names the id the notice ended on, which the
+    row records. A send, a receipt that already shows the terminal was delivered (`evidence` `delivered`), an
+    intentional skip (`evidence` `skipped`), and a parent that can no longer be reached are recorded. `already` without
+    that evidence is not a delivery: the notice stays due. When Paseo answered that an earlier send's outcome is
+    unknown, the bridge looks for the notice in the parent's timeline: found is `catchup_found`, not found and sent
+    once under the next derived id `catchup_resent`; a receipt the watcher resolved that way is `watcher_found` or
+    `watcher_resent`. A notice whose ids are used up without Paseo confirming a send or the timeline showing it is
+    `undelivered`: nothing more is sent, and its dispatch id is appended to `undelivered` when the caller passes a list.
+    A notice whose worker the same parent continued under a later dispatch is decided before this
     (`dispatch_registry.due_end_notices`). A second call sends nothing."""
     del now
     if host is None and 'daemon' not in paseo_config():
@@ -600,28 +603,36 @@ def deliver_end_notices(now=None, path=None, host=None):
     sender = host or host_call
     sent = []
     for notice in registry.due_end_notices(path):
+        dispatch_id = notice['dispatch_id']
         try:
-            response = sender({'operation': 'notify_end', 'dispatch_id': notice['dispatch_id'],
+            response = sender({'operation': 'notify_end', 'dispatch_id': dispatch_id,
                                'parent_id': notice.get('parent_id'), 'ended_as': notice['ended_as']})
         except Exception:
             continue
         if not isinstance(response, dict) or not response.get('ok'):
             continue
-        outcome = response.get('outcome')
+        used = response.get('message_id')
         if response.get('error') == 'parent_unavailable':
-            registry.mark_end_notice_sent(notice['dispatch_id'], 'parent_unavailable', path=path)
+            registry.mark_end_notice_sent(dispatch_id, 'parent_unavailable', path=path)
+        elif response.get('error') == 'notice_undelivered':
+            # the catch-up gave up itself, or read a receipt the watcher gave up
+            source = 'catchup_undelivered' if response.get('outcome') == 'undelivered' else 'watcher_undelivered'
+            if registry.mark_end_notice_sent(dispatch_id, source, path=path, message_id=used) and undelivered is not None:
+                undelivered.append(dispatch_id)
         elif response.get('sent'):
-            source = 'catchup_resent' if outcome == 'resent' else 'catchup'
-            registry.mark_end_notice_sent(notice['dispatch_id'], source, path=path)
-            sent.append(notice['dispatch_id'])
+            source = 'catchup_resent' if response.get('outcome') == 'resent' else 'catchup'
+            registry.mark_end_notice_sent(dispatch_id, source, path=path, message_id=used)
+            sent.append(dispatch_id)
         elif response.get('already') and response.get('evidence') == 'delivered':
-            source = 'catchup_found' if outcome == 'found' else 'watcher'
-            registry.mark_end_notice_sent(notice['dispatch_id'], source, path=path)
+            resolved = response.get('delivery_outcome')
+            source = ('catchup_found' if response.get('outcome') == 'found'
+                      else 'watcher_' + resolved if resolved in ('found', 'resent') else 'watcher')
+            registry.mark_end_notice_sent(dispatch_id, source, path=path, message_id=used)
         elif response.get('already') and response.get('evidence') == 'skipped':
             source = response.get('skipped')
             if not isinstance(source, str) or not source.isidentifier() or len(source) > 64:
                 source = 'skipped'
-            registry.mark_end_notice_sent(notice['dispatch_id'], source, path=path)
+            registry.mark_end_notice_sent(dispatch_id, source, path=path)
     return sent
 
 
@@ -857,11 +868,15 @@ def _noted(answer, no_ending):
 
 def end_notices(answer, now=None, path=None):
     """Send the end notices that are due. One that fails stays due for the next read; the answer carries the error
-    class in `end_notices_error`, never its text."""
+    class in `end_notices_error`, never its text. A notice this read gave up as undelivered is named once, in
+    `end_notices_undelivered`: the row is no longer due, so no later read names it again."""
+    undelivered = []
     try:
-        deliver_end_notices(now=now, path=path)
+        deliver_end_notices(now=now, path=path, undelivered=undelivered)
     except Exception as exc:
         answer['end_notices_error'] = type(exc).__name__
+    if undelivered:
+        answer['end_notices_undelivered'] = undelivered
     return answer
 
 

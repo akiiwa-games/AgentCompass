@@ -1377,66 +1377,153 @@ except ValueError as e:
             registry.save(connection, current)
         return registry.inspect(row['dispatch_id']), state, when
 
-    def _later_turn(self, stored, task_id, **changes):
+    def _resume(self, stored, task_id, parent_id=None, launched=None):
+        """A later `roll --resume` of the stored row's worker, claimed and relabeled, its turn not yet observed."""
         task = dict(self.task, task_id=task_id)
         later = self.prepare(self.issue(task), task)
+        launched = launched or self.now + timedelta(minutes=5)
+        registry.claim(later['request'], now=self.now)
         with registry.transaction() as connection:
             row = registry.get(connection, 'dispatches', later['dispatch_id'])
-            fields = dict(state='started', operation='resume', agent_id=stored['agent_id'], parent_id=stored['parent_id'],
-                          launched_at=registry.stamp(self.now + timedelta(minutes=5)),
-                          observed_at=registry.stamp(self.now + timedelta(minutes=5)))
-            fields.update(changes)
-            for key, value in fields.items():
-                if value is None:
-                    row.pop(key, None)
-                else:
-                    row[key] = value
+            row.update(operation='resume', agent_id=stored['agent_id'], parent_id=parent_id or stored['parent_id'],
+                       launched_at=registry.stamp(launched))
             registry.save(connection, row)
-        return later['dispatch_id']
+        return later, launched
 
-    def test_a_due_notice_whose_worker_the_same_parent_continued_under_a_later_dispatch_is_not_sent(self):
-        # dispatch-lifecycle.md: a parent who continued the worker owns the end message; the registry's later row of
-        # that parent on that worker is the fact, not the first user message a late observer sees.
-        calls = []
+    def _observe_resume(self, later, stored, launched, landed):
+        """What `observe` writes for the resume: its prompt landed and its turn already finished (a newer user message,
+        idle/finished: no run was seen), or the worker still shows the previous turn, idle/finished with no newer one."""
+        changes = {'attentionReason': 'finished'}
+        if landed:
+            changes['lastUserMessageAt'] = (launched + timedelta(seconds=2)).isoformat()
+        registry.observe(later['dispatch_id'], self.snapshot(later, 'idle', id=stored['agent_id'],
+                         updatedAt=(launched + timedelta(seconds=5)).isoformat(), **changes), now=launched + timedelta(seconds=6))
+        return registry.inspect(later['dispatch_id'])
 
-        def host(payload):
-            calls.append(payload)
-            return {'ok': True, 'sent': True}
+    def test_a_later_turn_of_the_same_parent_decides_a_due_notice_only_once_it_landed(self):
+        # dispatch-lifecycle.md: the parent owns the end message of a worker it gave a later turn that landed. A later
+        # turn still on its way decides nothing; one that ended without landing leaves this notice to be sent.
+        # Two paths: the watcher saw the later labels and left a claim; the watcher died with the notice pending.
+        paths = {
+            'claim': dict(receipt_status='continued', continued_by='set-below',
+                          pending={'key': 'terminal', 'text': 'notice'},
+                          terminal={'reason': 'superseded by a later dispatch', 'status': 'idle'}),
+            'pending': dict(pending={'key': 'terminal', 'text': 'notice'}),
+        }
+        for path_name, receipt in paths.items():
+            calls = []
 
-        stored, state, when = self._due_notice()
-        self.assertEqual(stored['end_notice']['state'], 'due')
-        later_id = self._later_turn(stored, 'continued-turn')
-        with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}):
-            self.assertEqual(flow.deliver_end_notices(now=when, host=host), [])
-        self.assertEqual(calls, [])
-        self.assertEqual(registry.inspect(stored['dispatch_id'])['end_notice'], {
-            'state': 'sent', 'message_id': registry.end_notice_message_id(stored['dispatch_id']),
-            'source': 'continued', 'continued_by': later_id})
-        # Another parent's turn, a resume the host never showed on its turn, and an earlier turn continue nothing.
-        for task_id, changes in (('other-parent', {'parent_id': 'parent-b'}), ('never-landed', {'observed_at': None}),
-                                 ('earlier', {'launched_at': registry.stamp(self.now - timedelta(minutes=5))})):
-            calls.clear()
-            stored, state, when = self._due_notice()
-            self._later_turn(stored, task_id, **changes)
+            def host(payload):
+                calls.append(payload)
+                return {'ok': True, 'sent': True, 'message_id': registry.end_notice_message_id(payload['dispatch_id'])}
+
+            # landed: the parent continued the worker, nothing is sent
+            stored, state, when = self._due_notice(**receipt)
+            self.assertEqual(stored['end_notice']['state'], 'due', path_name)
+            later, launched = self._resume(stored, f'{path_name}-landed')
+            self.assertTrue(self._observe_resume(later, stored, launched, landed=True).get('started_at'))
             with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}):
-                self.assertEqual(flow.deliver_end_notices(now=when, host=host), [stored['dispatch_id']], task_id)
-            self.assertEqual(registry.inspect(stored['dispatch_id'])['end_notice']['source'], 'catchup', task_id)
+                self.assertEqual(flow.deliver_end_notices(now=when, host=host), [])
+            self.assertEqual(calls, [], path_name)
+            self.assertEqual(registry.inspect(stored['dispatch_id'])['end_notice'], {
+                'state': 'sent', 'message_id': registry.end_notice_message_id(stored['dispatch_id']),
+                'source': 'continued', 'continued_by': later['dispatch_id']}, path_name)
 
-    def test_a_notice_whose_send_outcome_was_unknown_records_how_it_ended(self):
-        # paseo_dispatch_bridge.mjs deliverNotice: found in the parent's timeline, or sent once under a new id.
+            # on its way: observed bound, its prompt not landed (the shape `observe` writes), nothing decided
+            stored, state, when = self._due_notice(**receipt)
+            later, launched = self._resume(stored, f'{path_name}-unlanded')
+            observed = self._observe_resume(later, stored, launched, landed=False)
+            self.assertTrue(observed.get('observed_at'))
+            self.assertIsNone(observed.get('started_at'))
+            with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}):
+                self.assertEqual(flow.deliver_end_notices(now=when, host=host), [])
+            self.assertEqual(calls, [], path_name)
+            self.assertEqual(registry.inspect(stored['dispatch_id'])['end_notice']['state'], 'due', path_name)
+
+            # it ended without landing (a refused or rolled-back resume): this notice is sent with its own reply
+            with registry.transaction() as connection:
+                row = registry.get(connection, 'dispatches', later['dispatch_id'])
+                registry.event(row, 'create_failed', launched + timedelta(seconds=30), 'host_resume_failed')
+                registry.save(connection, row)
+            with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}):
+                self.assertEqual(flow.deliver_end_notices(now=when, host=host), [stored['dispatch_id']])
+            self.assertEqual([call['dispatch_id'] for call in calls], [stored['dispatch_id']], path_name)
+            self.assertEqual(registry.inspect(stored['dispatch_id'])['end_notice']['source'], 'catchup', path_name)
+
+        # Another parent's turn and an earlier turn continue nothing, landed or not.
+        for task_id, parent_id, launched in (('other-parent', 'parent-b', None),
+                                             ('earlier', None, self.now - timedelta(minutes=5))):
+            stored, state, when = self._due_notice()
+            later, launched = self._resume(stored, task_id, parent_id=parent_id, launched=launched)
+            with registry.transaction() as connection:
+                row = registry.get(connection, 'dispatches', later['dispatch_id'])
+                row['started_at'] = registry.stamp(launched)
+                registry.save(connection, row)
+            with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}):
+                self.assertEqual(flow.deliver_end_notices(now=when, host=lambda _p: {'ok': True, 'sent': True}),
+                                 [stored['dispatch_id']], task_id)
+
+    def test_a_notice_whose_send_outcome_was_unknown_records_how_it_ended_and_the_id_it_ended_on(self):
+        # paseo_dispatch_bridge.mjs deliverNotice: found in the parent's timeline, sent once under a new id, or given up.
+        used = hashlib.sha256(b'another id').hexdigest()
         for answer, source, sent in (
-                ({'ok': True, 'sent': False, 'already': True, 'evidence': 'delivered', 'outcome': 'found'}, 'catchup_found', False),
-                ({'ok': True, 'sent': True, 'message_id': 'x', 'outcome': 'resent'}, 'catchup_resent', True)):
+                ({'ok': True, 'sent': False, 'already': True, 'evidence': 'delivered', 'outcome': 'found', 'message_id': used},
+                 'catchup_found', False),
+                ({'ok': True, 'sent': True, 'message_id': used, 'outcome': 'resent'}, 'catchup_resent', True),
+                # a catch-up that reads a receipt the watcher resolved
+                ({'ok': True, 'sent': False, 'already': True, 'evidence': 'delivered', 'delivery_outcome': 'resent',
+                  'message_id': used}, 'watcher_resent', False),
+                ({'ok': True, 'sent': False, 'already': True, 'evidence': 'delivered', 'delivery_outcome': 'found',
+                  'message_id': used}, 'watcher_found', False)):
             stored, state, when = self._due_notice()
             with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}):
                 got = flow.deliver_end_notices(now=when, host=lambda _payload, answer=answer: answer)
             self.assertEqual(got, [stored['dispatch_id']] if sent else [])
-            self.assertEqual(registry.inspect(stored['dispatch_id'])['end_notice']['source'], source)
+            notice = registry.inspect(stored['dispatch_id'])['end_notice']
+            self.assertEqual((notice['source'], notice['message_id']), (source, used))
         for outcome in ('found', 'resent'):
-            stored, _state, _when = self._due_notice('delivered', delivered=['terminal'], delivery_outcome=outcome)
-            self.assertEqual(stored['end_notice']['source'], 'watcher_' + outcome)
+            stored, _state, _when = self._due_notice('delivered', delivered=['terminal'], delivery_outcome=outcome,
+                                                     delivery_message_id=used)
+            self.assertEqual((stored['end_notice']['source'], stored['end_notice']['message_id']), ('watcher_' + outcome, used))
         stored, _state, _when = self._due_notice('delivered', delivered=['terminal'])
-        self.assertEqual(stored['end_notice']['source'], 'watcher')
+        self.assertEqual((stored['end_notice']['source'], stored['end_notice']['message_id']),
+                         ('watcher', registry.end_notice_message_id(stored['dispatch_id'])))
+
+    def test_a_notice_given_up_as_undelivered_stops_being_due_and_one_answer_names_it(self):
+        used = hashlib.sha256(b'third id').hexdigest()
+        answers = {'catchup': {'ok': True, 'sent': False, 'error': 'notice_undelivered', 'outcome': 'undelivered', 'message_id': used},
+                   'watcher': {'ok': True, 'sent': False, 'error': 'notice_undelivered', 'message_id': used}}
+        for who, answer in answers.items():
+            receipt = {'pending': {'key': 'terminal', 'text': 'notice'}} if who == 'catchup' else {'pending': None}
+            stored, state, when = self._due_notice('watching' if who == 'catchup' else 'undelivered', **receipt)
+            self.assertEqual(stored['end_notice']['state'], 'due', who)
+            with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}), \
+                    patch.object(flow, 'paseo_config', return_value={'daemon': 'fixture'}), \
+                    patch.object(flow, 'host_call', return_value=answer):
+                first = flow.end_notices({}, now=when)
+                second = flow.end_notices({}, now=when)
+            self.assertEqual(first, {'end_notices_undelivered': [stored['dispatch_id']]}, who)
+            self.assertEqual(second, {}, who)
+            notice = registry.inspect(stored['dispatch_id'])['end_notice']
+            self.assertEqual((notice['state'], notice['source'], notice['message_id']), ('sent', who + '_undelivered', used))
+
+    def test_a_removed_worker_leaves_its_notice_due_for_the_catch_up(self):
+        # missing_agent is a terminal writer like settle_create and observe: it records the end notice too.
+        row = self.launched()
+        stored = registry.inspect(row['dispatch_id'])
+        state = self.root / 'state'
+        self._receipt(stored, {'dispatch_id': stored['dispatch_id'], 'parent_id': stored['parent_id'], 'status': 'watching',
+                               'delivered': [], 'pending': None, 'seen': True}, state)
+        calls = []
+        with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}):
+            registry.missing_agent(stored['dispatch_id'], stored['agent_id'], now=self.now + timedelta(minutes=1))
+            removed = registry.inspect(stored['dispatch_id'])
+            self.assertEqual(removed['state'], 'canceled')
+            self.assertEqual(removed['end_notice']['state'], 'due')
+            sent = flow.deliver_end_notices(now=self.now, host=lambda payload: calls.append(payload) or {'ok': True, 'sent': True})
+        self.assertEqual(sent, [stored['dispatch_id']])
+        self.assertEqual([(c['operation'], c['ended_as']) for c in calls], [('notify_end', 'canceled')])
+        self.assertEqual(registry.inspect(stored['dispatch_id'])['end_notice']['source'], 'catchup')
 
     def test_one_report_channel_is_injected_and_a_watched_prompt_can_be_rebuilt_unwatched(self):
         import roll
