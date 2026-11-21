@@ -255,6 +255,9 @@ class ReleasedReaderKeyTests(unittest.TestCase):
     def test_keys_only_released_readers_index_stay_until_the_schema_moves(self):
         scoring = read_json(public_data.BUNDLED / 'accounts.json')['scoring']
         scripts = Path(public_data.__file__).resolve().parent
+        root = scripts.parents[2]
+        code = [f for folder in (scripts, root / 'setup', root / 'tray', root / 'audit', root / 'agentcompass', root / 'packaging')
+                for f in folder.glob('*.py')]
         for key, (schema, readers) in RELEASED_READER_KEYS.items():
             with self.subTest(key):
                 self.assertEqual(public_data.SCHEMA_VERSION, schema,
@@ -265,7 +268,7 @@ class ReleasedReaderKeyTests(unittest.TestCase):
                               f'{key!r} is read by released versions that fetch published sets of schema {schema} '
                               f'({readers}), not by this code; it stays in references/accounts.json `scoring` until the data '
                               f'schema moves')
-                readers_here = [f.name for f in scripts.glob('*.py')
+                readers_here = [f.name for f in code
                                 if not f.name.startswith('test_') and key in f.read_text(encoding='utf-8')]
                 self.assertEqual(readers_here, [], f'{key!r} is declared read only by released versions, but this code '
                                                    f'reads it in {readers_here}')

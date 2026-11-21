@@ -89,7 +89,7 @@ used and 9 h to reset priced at 0.003385 before and 0.006497 after (cost 0.0049 
 `N` go to the candidate that starts sooner (shorter wait before reset), then finishes sooner, then spends fewer list-price USD,
 then has the higher demand-weighted category level and preferred harness (`candidate_ranking.five_axis_order`). Expiring quota is
 not a tie-break: under-line allowance already lowers `quota_cost`. A near tie needs no caller action: `decision.margin` is the
-winner's lead in `N` over the best candidate of another model (none when the route is forced or no other model is eligible),
+winner's lead in `N` over the best candidate of another model (none when the route is forced or no other model is in the pool the winner was chosen from: the candidates that can start now, else the eligible ones),
 and it is information only.
 
 Hard gates run first: sign-in and credential health, host policy, modality (text-only models never get visual work),

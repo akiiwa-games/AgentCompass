@@ -351,7 +351,7 @@ class FleetEconomyTests(unittest.TestCase):
 
     def test_speed_only_breaks_ties_on_n_and_a_faster_candidate_never_displaces_a_higher_n(self):
         """Owner decision of round 13b: the post-ranking speed rule is gone. The order is N, then wait, then the
-        earliest-expiring quota, then the faster completion, then fewer USD. (1) A fast variant is its own candidate at its
+        faster completion, then fewer USD (expiring quota is not a tie-break: it already lowers the quota cost). (1) A fast variant is its own candidate at its
         real spend; 2h before the weekly reset the cost of both is below N's resolution, so the fast one wins on time (round 15). (2) The under-line mid-week case keeps a plain variant on top instead of Opus+fast.
         (3) Where the quota costs nothing the fast variant and its base tie on N and the faster one wins by completion time."""
         sprint = self.fleet.plan(0.6, 0.5, ec=1 - 2 / WEEK)
@@ -416,7 +416,7 @@ class FleetEconomyTests(unittest.TestCase):
 
     def test_fable_5_1_cannot_beat_opus_5_5(self):
         """Advisor test 8, without the speed rule: at equal fit Fable 5.1 trails Opus 5.5 on N, and in the creative task, where
-        their fits are equal, nothing but N, the earliest expiring quota or speed could separate them."""
+        their fits are equal, nothing but N, the wait or speed could separate them."""
         d = self.fleet.plan(0.3, 0.5, axes=FRONTIER, hours=6.0)
         opus, fable = row(d, 'opus55_high'), row(d, 'fable51_high')
         self.assertGreaterEqual(opus['components']['fit'], fable['components']['fit'])

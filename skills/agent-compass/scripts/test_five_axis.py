@@ -630,7 +630,7 @@ class FiveAxisTests(unittest.TestCase):
             self.assertGreater(w_b0['need_start'], 0.4)                  # on its line, a week to run: a coin flip
             self.assertLessEqual(pool_a['components']['opportunity_cost'], pool_b['components']['opportunity_cost'])
             # both cost less than N's resolution (round 15: Pool A can take Pool B's work, Pool B's price is nil); the
-            # earliest-expiring quota goes first, then the faster completion
+            # order after N decides (candidate_ranking.FIVE_AXIS_ORDER_KEYS; expiring quota is not in it)
             self.assertEqual((d['ranking'][0].get('base_id') or d['ranking'][0]['id']), 'opus55_high')
             w_a = pool_a['economy']['windows'][0]
             self.assertEqual(w_a['window'], 'seven_day')
