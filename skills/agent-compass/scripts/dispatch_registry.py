@@ -434,11 +434,12 @@ def launch_record(row, now):
     `at` is when it was launched, or None when it never was. A dispatch is launched from `launched_at` (the Paseo claim,
     a started host CLI, an external runner's launch) unless the host refused its create (`create_failed`: the prompt
     never left); a reservation still holding its lease before launch counts from its creation, as it holds the account's
-    other windows."""
+    other windows. A row that carries neither time (hand-made or damaged; the registry is derived state) is no launch in
+    any window: no default time is made up for it."""
     if row.get('launched_at') and row.get('state') != 'create_failed':
         at = row['launched_at']
-    elif row.get('state') in ACTIVE and parse(row['lease_until']) > now:
-        at = row['created_at']
+    elif row.get('state') in ACTIVE and row.get('lease_until') and parse(row['lease_until']) > now:
+        at = row.get('created_at')
     else:
         at = None
     return {'stage': 'launch', 'dispatch_id': row['dispatch_id'], 'decision_id': row.get('decision_id'),
@@ -447,13 +448,15 @@ def launch_record(row, now):
 
 def launches(stored, accounts, now):
     """The stored dispatches a declared cadence window can still hold (launch_record each): those launched or created
-    since the longest cadence window of `accounts` began. [] when no account declares one."""
+    since the longest cadence window of `accounts` began, and those carrying no time at all (read as no launch, so their
+    decision is still known to the count). [] when no account declares one."""
     import quota_pools
     horizon = quota_pools.cadence_horizon(accounts)
     if horizon is None:
         return []
     since = now - timedelta(seconds=horizon)
-    return [launch_record(r, now) for r in stored if parse(r.get('launched_at') or r['created_at']) >= since]
+    return [launch_record(r, now) for r in stored
+            if (t := r.get('launched_at') or r.get('created_at')) is None or parse(t) >= since]
 
 
 def launch_records(accounts, now=None, path=None):

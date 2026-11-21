@@ -178,6 +178,21 @@ class RegistryLaunchRecords(unittest.TestCase):
         self.assertEqual([r['decision_id'] for r in registry.launch_records(self.accounts, NOW, path=self.path)],
                          ['decision-1'])
 
+    def test_a_row_with_no_launch_or_creation_time_is_no_launch_in_any_window(self):
+        # A hand-made or damaged row: no `launched_at`, no `created_at`, no bundle. It is read as no launch (no default
+        # time), and the good rows beside it still count.
+        self.claim(0, launched=True)
+        self.claim(1, launched=True)
+        with registry.transaction(self.path) as connection:
+            stored = registry.rows(connection, 'dispatches')
+        timeless = {'dispatch_id': 'd-old', 'decision_id': 'dec-old', 'state': 'launched', 'dispatch_mode': 'cli',
+                    'lease_until': '2026-11-18T00:00:00Z', 'events': [], 'parent_id': 'p'}
+        read = registry.launches([*stored, timeless, {'dispatch_id': 'd-bare', 'state': 'prepared'}],
+                                 self.accounts, NOW)
+        self.assertEqual({r['dispatch_id']: r['at'] for r in read if r['dispatch_id'] in ('d-old', 'd-bare')},
+                         {'d-old': None, 'd-bare': None})
+        self.assertEqual(used(read), 2)
+
     def test_no_cadence_reads_nothing(self):
         self.claim(0, launched=True)
         self.assertEqual(registry.launch_records({'accounts': {ACCOUNT: {}}}, NOW, path=self.path), [])
