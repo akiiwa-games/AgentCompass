@@ -495,7 +495,14 @@ def reconcile(dispatch_id=None, host=None, now=None, path=None, timeout=None, no
     bridge's error code, never a host's text."""
     host = host or host_call
     now = now or registry.utcnow()
-    targets = [registry.inspect(dispatch_id, path)] if dispatch_id else registry.pending(path)
+    if dispatch_id:
+        targets = [registry.inspect(dispatch_id, path)]
+    else:
+        # Beside the open dispatches, a failed attempt whose covered failure no fallback step took yet, inside its hold,
+        # whichever reader settled it: observing it restarts its watcher, which runs the fallback.
+        targets = registry.pending(path)
+        open_ids = {row['dispatch_id'] for row in targets}
+        targets += [row for row in registry.awaiting_fallback(path, now) if row['dispatch_id'] not in open_ids]
     results = []
     skipped = not_observed if not_observed is not None else []
 
@@ -509,8 +516,9 @@ def reconcile(dispatch_id=None, host=None, now=None, path=None, timeout=None, no
         if row['state'] in registry.TERMINAL and row['state'] != 'expired':
             pending_chain = registry.fallback_guard(row, now)
             candidates = (failed_attempts(row, path) if pending_chain
-                          else [row] if dispatch_id and row['state'] == 'failed'
-                          and row.get('launched_at') and row.get('agent_id') else [])
+                          else [row] if (dispatch_id and row['state'] == 'failed' and row.get('launched_at')
+                                         and row.get('agent_id')) or registry.awaits_fallback(row, now, path)
+                          else [])
             if not candidates:
                 skip(row, NOT_OBSERVED['terminal'].format(state=row['state']))
             for target in candidates:
@@ -893,13 +901,14 @@ NAMING_STAGES = ('roll', 'plan', 'record', 'launch')
 NAMING_ACTIONS = ('reconcile', 'start', 'status', 'release', 'prepare')
 
 
-def name_undelivered(answer, args, path=None):
+def name_undelivered(answer, args, table=False, path=None):
     """Name, in the answer of a router call the parent makes itself, the end notices of its dispatches that were given up
     as undelivered (`dispatch_registry.name_undelivered`): that call is the first sign the parent takes turns again.
     The parent is the actual Paseo agent (`PASEO_AGENT_ID`), never a caller-given id, so no notice is ever named to
-    another parent; each is named once."""
+    another parent; each is named once. An answer printed as the plan table (`table`) shows no such key, so nothing is
+    named in it."""
     parent = os.environ.get('PASEO_AGENT_ID', '').strip()
-    if (not parent or not isinstance(answer, dict) or getattr(args, 'dry_run', False)
+    if (not parent or table or not isinstance(answer, dict) or getattr(args, 'dry_run', False)
             or (args.stage not in NAMING_STAGES
                 and not (args.stage == 'dispatch' and getattr(args, 'dispatch_action', None) in NAMING_ACTIONS))):
         return answer

@@ -1508,15 +1508,18 @@ except ValueError as e:
             self.assertEqual((notice['state'], notice['source'], notice['message_id']), ('sent', who + '_undelivered', used))
             given_up.append(stored['dispatch_id'])
 
-        def answer_of(stage, action=None, actual=parent):
+        def answer_of(stage, action=None, actual=parent, table=False):
             args = SimpleNamespace(stage=stage, dispatch_action=action, dry_run=False)
             with patch.dict(os.environ, {'PASEO_AGENT_ID': actual}):
-                return flow.name_undelivered({'status': 'ok'}, args)
+                return flow.name_undelivered({'status': 'ok'}, args, table)
         # Not to another parent, not to a caller with no Paseo parent (the tray), not to a watcher's own steps.
         self.assertEqual(answer_of('roll', actual='parent-b'), {'status': 'ok'})
         self.assertEqual(answer_of('roll', actual=''), {'status': 'ok'})
         self.assertEqual(answer_of('dispatch', 'settle'), {'status': 'ok'})
         self.assertEqual(answer_of('dispatch', 'fallback'), {'status': 'ok'})
+        # Not in an answer printed as the plan table, which shows no such key; nothing is spent there.
+        self.assertEqual(answer_of('plan', table=True), {'status': 'ok'})
+        self.assertFalse(any(registry.inspect(d)['end_notice'].get('named_at') for d in given_up))
         named = answer_of('roll')
         self.assertEqual(sorted(item['dispatch_id'] for item in named['undelivered_end_notices']), sorted(given_up))
         self.assertEqual(named['undelivered_end_notices_meaning'], flow.UNDELIVERED_MEANING)
@@ -1524,11 +1527,13 @@ except ValueError as e:
         # Every stage's answer goes through it (route_judge._run_stage).
         import route_judge
         seen = []
-        with patch.object(route_judge, '_stage_result', return_value=({'status': 'ok'}, 0, False)), \
-                patch.object(flow, 'name_undelivered', side_effect=lambda result, args: seen.append(args.stage) or result), \
-                patch('builtins.print'):
-            route_judge._run_stage(route_judge.build_parser().parse_args(['plan', '--input', '-']))
-        self.assertEqual(seen, ['plan'])
+        for table in (False, True):
+            with patch.object(route_judge, '_stage_result', return_value=({'status': 'ok'}, 0, table)), \
+                    patch.object(flow, 'name_undelivered',
+                                 side_effect=lambda result, args, table: seen.append((args.stage, table)) or result), \
+                    patch.object(route_judge, 'render', return_value=''), patch('builtins.print'):
+                route_judge._run_stage(route_judge.build_parser().parse_args(['plan', '--input', '-']))
+        self.assertEqual(seen, [('plan', False), ('plan', True)])
 
     def _failed_attempt(self, code=None):
         """A launched dispatch whose worker ended in an error, its watcher dead with the end notice due: the end time."""
@@ -1616,6 +1621,90 @@ except ValueError as e:
         stored, ended = self._failed_attempt()
         with patch.dict(os.environ, {'AGENTCOMPASS_ROLL_FALLBACK': 'off'}):
             self.assertTrue(ask(stored, ended + soon)[0])
+
+    def test_a_covered_failure_settled_by_a_read_without_reconcile_still_gets_its_fallback(self):
+        # dispatch_registry._awaits_fallback: whichever reader settled a dead watcher's failure (here the reservation read
+        # that settles from Paseo's agent JSON, as the gate's read and another watcher's settle do), reconcile observes
+        # the failed attempt inside its hold, so its watcher is restarted and the fallback runs.
+        self._attempts = getattr(self, '_attempts', 0) + 1
+        task = dict(self.task, task_id=f'attempt-{self._attempts}')
+        row = self.prepare(self.issue(task), task)
+        registry.claim(row['request'], now=self.now)
+        registry.observe(row['dispatch_id'], self.snapshot(row), now=self.now)
+        stored = registry.inspect(row['dispatch_id'])
+        state = self.root / 'state'
+        when = self.now + timedelta(seconds=20)
+        self._agent_file(stored, {'status': 'error', 'attentionReason': 'error', 'updatedAt': when.isoformat()})
+        self._receipt(stored, {'dispatch_id': stored['dispatch_id'], 'parent_id': stored['parent_id'], 'status': 'watching',
+                               'delivered': [], 'pending': None, 'seen': True}, state)
+        observed = []
+
+        def host(payload):
+            observed.append((payload['operation'], payload['dispatch_id']))
+            return {'ok': True, 'agent': None}
+        with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}):
+            registry.reservations(now=when)
+            settled = registry.inspect(stored['dispatch_id'])
+            self.assertEqual((settled['state'], settled['end_notice']['state']), ('failed', 'due'))
+            self.assertNotIn('fallback', settled)
+            flow.reconcile(None, host=host, now=when + timedelta(seconds=1))
+            self.assertEqual(observed, [('observe', stored['dispatch_id'])])
+            # The hold is the bound: RUN_LEASE after the registry recorded the end, it is not observed any more.
+            observed.clear()
+            flow.reconcile(None, host=host, now=registry.parse(settled['released_at']) + timedelta(seconds=registry.RUN_LEASE))
+            self.assertEqual(observed, [])
+
+    def test_a_waiting_notice_costs_a_reader_nothing_until_it_can_move(self):
+        # dispatch_registry.due_end_notices returns a notice only once it can move: a resend interval's end, a chain
+        # hold's end, a scheduled retry's guard. needs_reader answers the same, reading only.
+        import re
+        bridge = (Path(registry.__file__).resolve().parents[3] / 'setup' / 'paseo_dispatch_bridge.mjs').read_text(encoding='utf-8')
+        declared = re.search(r'const RESEND_AFTER_MS = Object\.freeze\(\[([^\]]*)\]\)', bridge).group(1)
+        import math
+        self.assertEqual(tuple(math.prod(int(n) for n in part.split('*')) // 1000 for part in declared.split(',')),
+                         registry.RESEND_AFTER_SECONDS)
+        state = self.root / 'state'
+        sent_at = self.now + timedelta(seconds=20)
+        resend, _state, _when = self._due_notice(pending={'key': 'terminal', 'text': 'x', 'saved_at': sent_at.isoformat(),
+                                                          'sent_at': sent_at.isoformat(), 'unknown': True})
+        held, ended = self._failed_attempt()
+        scheduled, ended_too = self._failed_attempt()
+        guard = ended_too + timedelta(seconds=1500)
+
+        def change(fallback):
+            fallback.update(state='retrying', retry_of=scheduled['dispatch_id'], retry_at=registry.stamp(guard - timedelta(seconds=600)),
+                            until=registry.stamp(guard))
+            fallback['handled'] = {scheduled['dispatch_id']: {'action': 'scheduled', 'retry_at': fallback['retry_at']}}
+        registry.update_fallback(scheduled['dispatch_id'], change)
+        times = {resend['dispatch_id']: sent_at + timedelta(seconds=registry.RESEND_AFTER_SECONDS[0]),
+                 held['dispatch_id']: ended + timedelta(seconds=registry.RUN_LEASE), scheduled['dispatch_id']: guard}
+        calls = []
+
+        def host(payload):
+            calls.append(payload['dispatch_id'])
+            return {'ok': True, 'sent': True, 'message_id': registry.end_notice_message_id(payload['dispatch_id'])}
+        with patch.dict(os.environ, {'ROUTER_STATE_DIR': str(state)}):
+            early = ended + timedelta(seconds=60)
+            for _read in range(3):
+                flow.deliver_end_notices(now=early, host=host)
+            self.assertEqual(calls, [], 'three reads, three waiting notices, no host call')
+            answer = registry.needs_reader(now=early)
+            # Only the unhandled failure needs a reader now: reconcile observes it so its fallback runs.
+            self.assertEqual((answer['needed'], answer['due'], answer['observe']), (True, [], [held['dispatch_id']]))
+            self.assertEqual(registry.parse(answer['next_at']), min(times.values()))
+            # Each is returned once its time has come, and not before.
+            for dispatch_id, at in sorted(times.items(), key=lambda item: item[1]):
+                before = registry.needs_reader(now=at - timedelta(seconds=1))
+                self.assertNotIn(dispatch_id, before['due'])
+                self.assertIn(dispatch_id, registry.needs_reader(now=at)['due'])
+                self.assertEqual(registry.inspect(dispatch_id)['end_notice']['state'], 'due', 'needs_reader writes nothing')
+                calls.clear()
+                flow.deliver_end_notices(now=at - timedelta(seconds=1), host=host)
+                self.assertNotIn(dispatch_id, calls)
+                flow.deliver_end_notices(now=at, host=host)
+                self.assertIn(dispatch_id, calls)
+            self.assertEqual(registry.needs_reader(now=guard + timedelta(seconds=1)),
+                             {'needed': False, 'due': [], 'observe': [], 'next_at': None})
 
     def _resume_row(self):
         self._resumes = getattr(self, '_resumes', 0) + 1

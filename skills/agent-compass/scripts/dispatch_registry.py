@@ -904,40 +904,110 @@ NOT_HANDLED_NEXT = ('No observer took this failed attempt to AgentCompass\'s aut
                     'as it is.')
 
 
+# The bridge's intervals before a notice's next id after an unknown outcome (paseo_dispatch_bridge.mjs RESEND_AFTER_MS),
+# in seconds: a notice waiting one out is not handed to a reader before it ends. A test reads both.
+RESEND_AFTER_SECONDS = (15 * 60, 60 * 60)
+
+
+def _plus(value, seconds):
+    try:
+        return stamp(parse(value) + timedelta(seconds=seconds))
+    except (TypeError, ValueError):
+        return None
+
+
+def _unhandled_covered(by_id, row, now):
+    """A failed attempt whose failure the fallback covers and that no fallback step holds or decided: no `handled`
+    entry in its chain, or a claim whose own `until` lapsed (its holder died). The fallback is on."""
+    import dispatch_fallback
+    if row.get('state') not in ('failed', 'create_failed') or not dispatch_fallback.enabled():
+        return False
+    root = by_id.get(chain_root(row), row)
+    handled = ((root.get('fallback') or {}).get('handled') or {}).get(row['dispatch_id'])
+    if isinstance(handled, dict) and handled.get('action') != 'pending':
+        return False
+    if isinstance(handled, dict) and later(handled.get('until'), now):
+        return False
+    return bool(dispatch_fallback.failure_of(row)['covered'])
+
+
+def _hold_end(row):
+    """When the hold of an unhandled covered failure ends: RUN_LEASE after the registry recorded the attempt's end
+    (`released_at`, stamped by the reader that settled it, not when the worker failed)."""
+    return _plus(row.get('released_at') or row.get('updated_at'), RUN_LEASE)
+
+
+def _awaits_fallback(by_id, row, now):
+    """A failed attempt `reconcile` observes so its watcher is restarted and its fallback runs, whichever reader
+    settled it: a worker this dispatch acknowledged (an observation bound it: `observed_at`; a resume the host refused
+    never was), its covered failure unhandled, inside its hold."""
+    return (row.get('dispatch_mode', 'paseo') == 'paseo' and row.get('state') == 'failed' and bool(row.get('launched_at'))
+            and bool(row.get('agent_id')) and bool(row.get('observed_at')) and _unhandled_covered(by_id, row, now) and later(_hold_end(row), now))
+
+
+def awaits_fallback(row, now=None, path=None):
+    """`_awaits_fallback` for one row, its chain's first dispatch read from the registry."""
+    root_id = chain_root(row)
+    root = row if root_id == row['dispatch_id'] else inspect(root_id, path)
+    return _awaits_fallback({root_id: root}, row, now or utcnow())
+
+
+def awaiting_fallback(path=None, now=None):
+    """The failed attempts `reconcile` observes beside the open dispatches (`_awaits_fallback`)."""
+    if not Path(path or db_path()).exists():
+        return []
+    now = now or utcnow()
+    with transaction(path, upkeep=True) as connection:
+        all_rows = rows(connection, 'dispatches')
+        by_id = {row['dispatch_id']: row for row in all_rows}
+        return [row for row in all_rows if _awaits_fallback(by_id, row, now)]
+
+
 def _chain_hold(by_id, row, now):
     """What this attempt's brief says about its end notice now, from the chain's record on its first dispatch
-    (dispatch_fallback): `relaunched` (another attempt carries the brief, and its own notice is the brief's: this one is
-    not owed), `open` (a retry or relaunch may still start: nothing is sent and nothing final is recorded), `close` (no
-    observer took a covered failure within the time a fallback step holds its claim: the caller closes the attempt in
-    the chain, so no later observer relaunches it, and sends the notice), or None (the chain is final for this attempt,
-    or no fallback applies: the notice is sent).
+    (dispatch_fallback), as (hold, not_before): `relaunched` (another attempt carries the brief, and its own notice is
+    the brief's: this one is not owed), `open` (a retry or relaunch may still start: nothing is sent and nothing final is
+    recorded; `not_before` is when that can change), `close` (no observer took a covered failure within its hold: the
+    caller closes the attempt in the chain, so no later observer relaunches it, and sends the notice), or None (the chain
+    is final for this attempt, or no fallback applies: the notice is sent).
 
     What ends `open`: a fallback step's outcome (relaunched, final, scheduled); a scheduled retry's guard lapsing (its
     claim then retires the retry, `dispatch_fallback.Chain.claim`, so it never starts); a claim's own `until` lapsing;
     the fallback switched off (`AGENTCOMPASS_ROLL_FALLBACK=off`: nothing more is relaunched); and, for a failure no
-    observer took (its watcher died and no observation restarted it), RUN_LEASE after the attempt ended."""
+    observer took, the end of its hold (`_hold_end`). `reconcile` observes such a failure meanwhile (`_awaits_fallback`)
+    so its watcher is restarted and the fallback runs. A live watcher's open fallback is one of these: the watcher holds
+    a claim (`pending`) or a scheduled retry while it runs, so no pid is read here."""
     import dispatch_fallback
     root = by_id.get(chain_root(row), row)
     fallback = root.get('fallback') or {}
     handled = (fallback.get('handled') or {}).get(row['dispatch_id'])
     action = handled.get('action') if isinstance(handled, dict) else None
     if action == 'relaunched':
-        return 'relaunched'
+        return 'relaunched', None
     if action == 'final' or not dispatch_fallback.enabled():
-        return None
+        return None, None
     if action == 'scheduled':
-        return 'open' if fallback_guard(root, now) else None
+        return ('open', fallback.get('until')) if fallback_guard(root, now) else (None, None)
     if action == 'pending' and later(handled.get('until'), now):
-        return 'open'
-    if row['state'] not in ('failed', 'create_failed') or not dispatch_fallback.failure_of(row)['covered']:
+        return 'open', handled['until']
+    if not _unhandled_covered(by_id, row, now):
+        return None, None
+    end = _hold_end(row)
+    return ('open', end) if later(end, now) else ('close', None)
+
+
+def _resend_wait(row, now):
+    """When this row's notice may take its next id, while its receipt waits one out (paseo_dispatch_bridge.mjs
+    deliverNotice `waiting`: `pending.unknown`), else None. A read before then would send and read nothing."""
+    receipt = watcher_receipt(row['dispatch_id'])
+    pending = receipt.get('pending') if isinstance(receipt, dict) else None
+    if not isinstance(pending, dict) or pending.get('unknown') is not True:
         return None
-    ended = row.get('released_at') or row.get('updated_at')
-    try:
-        if parse(ended) + timedelta(seconds=RUN_LEASE) > now:
-            return 'open'
-    except (TypeError, ValueError):
-        pass
-    return 'close'
+    attempt = pending.get('attempt') if isinstance(pending.get('attempt'), int) and pending['attempt'] > 0 else 0
+    if attempt >= len(RESEND_AFTER_SECONDS):
+        return None
+    due = _plus(pending.get('sent_at'), RESEND_AFTER_SECONDS[attempt])
+    return due if later(due, now) else None
 
 
 def _close_unhandled(connection, by_id, row, now):
@@ -953,12 +1023,41 @@ def _close_unhandled(connection, by_id, row, now):
     save(connection, root)
 
 
+def _notice_step(all_rows, by_id, row, now):
+    """What a reader does now with one due end notice, decided without writing or a host call, as (action, detail,
+    close): `relaunched` / `continued` (detail: the later dispatch) record it sent; `wait` (detail: when it can first
+    move, or None when another row's change moves it) leaves it due and untouched; `send` hands it to the bridge.
+    `close` says to close the attempt in its chain first (`_close_unhandled`)."""
+    hold, not_before = _chain_hold(by_id, row, now)
+    if hold == 'relaunched':
+        return 'relaunched', None, False
+    if hold == 'open':
+        return 'wait', not_before, False
+    close = hold == 'close'
+    verdict, later_id = _later_turn(all_rows, row)
+    if verdict == 'landed':
+        return 'continued', later_id, close
+    if verdict == 'pending':
+        return 'wait', None, False
+    waiting = _resend_wait(row, now)
+    if waiting:
+        return 'wait', waiting, False
+    return 'send', None, close
+
+
+def _due(row):
+    notice = row.get('end_notice')
+    return row.get('state') in _END_NOTICE_STATES and isinstance(notice, dict) and notice.get('state') == 'due'
+
+
 def due_end_notices(path=None, now=None):
-    """Terminal rows whose one end notice has not been sent. An open row is not due, even if an older flag remains.
+    """Terminal rows whose one end notice can be sent now. An open row is not due, even if an older flag remains.
 
     One brief gets one end notice, when its chain is final (`_chain_hold`): while an attempt's retry or relaunch may still
     start, its notice is not returned; an attempt another attempt replaced is recorded `sent` with source `relaunched`
     (the replacing attempt's notice reports the brief); an attempt no observer took in time is closed in its chain first.
+    A notice waiting out its next id's interval (`_resend_wait`) is not returned until then either, so a read spends no
+    bridge process on a notice that cannot move.
 
     The parent owns the end message of a worker it gave a later turn that landed (`_later_turn`): such a row is recorded
     here as `sent` with source `continued` and `continued_by`, and the later dispatch's own notice reports the worker;
@@ -973,29 +1072,50 @@ def due_end_notices(path=None, now=None):
         all_rows = rows(connection, 'dispatches')
         by_id = {row['dispatch_id']: row for row in all_rows}
         for row in all_rows:
-            notice = row.get('end_notice')
-            if row.get('state') not in _END_NOTICE_STATES or not isinstance(notice, dict) or notice.get('state') != 'due':
+            if not _due(row):
                 continue
-            hold = _chain_hold(by_id, row, now)
-            if hold == 'relaunched':
+            notice = row['end_notice']
+            action, detail, close = _notice_step(all_rows, by_id, row, now)
+            if close:
+                _close_unhandled(connection, by_id, row, now)
+            if action == 'relaunched':
                 row['end_notice'] = dict(notice, state='sent', source='relaunched')
                 save(connection, row)
-                continue
-            if hold == 'open':
-                continue
-            if hold == 'close':
-                _close_unhandled(connection, by_id, row, now)
-            verdict, later_id = _later_turn(all_rows, row)
-            if verdict == 'landed':
-                row['end_notice'] = dict(notice, state='sent', source='continued', continued_by=later_id)
+            elif action == 'continued':
+                row['end_notice'] = dict(notice, state='sent', source='continued', continued_by=detail)
                 save(connection, row)
-                continue
-            if verdict == 'pending':
-                continue
-            found.append({'dispatch_id': row['dispatch_id'], 'parent_id': row.get('parent_id'),
-                          'agent_id': row.get('agent_id'), 'message_id': notice.get('message_id'),
-                          'ended_as': row['state']})
+            elif action == 'send':
+                found.append({'dispatch_id': row['dispatch_id'], 'parent_id': row.get('parent_id'),
+                              'agent_id': row.get('agent_id'), 'message_id': notice.get('message_id'),
+                              'ended_as': row['state']})
         return found
+
+
+def needs_reader(path=None, timeout=0.5, now=None):
+    """Whether any end notice or fallback chain needs a reader now, read without writing, without creating the file and
+    without a host call (a writer holding the database longer than `timeout` seconds raises sqlite3.OperationalError).
+
+    Returns {'needed': bool, 'due': [dispatch ids], 'observe': [dispatch ids], 'next_at': ISO stamp or None}: `due`, the
+    notices a reader would act on now (`due_end_notices` would send, close, or record them sent); `observe`, the failed
+    attempts `reconcile` would observe so their fallback runs (`_awaits_fallback`); `needed`, whether either is not
+    empty; `next_at`, the earliest time a notice that waits now can move (a resend interval's end, a guard's `until`,
+    a claim's `until`, a hold's end), None when no waiting notice has a known time."""
+    now = now or utcnow()
+    all_rows = read_dispatches(path, timeout)
+    by_id = {row['dispatch_id']: row for row in all_rows}
+    due, observe, times = [], [], []
+    for row in all_rows:
+        if _awaits_fallback(by_id, row, now):
+            observe.append(row['dispatch_id'])
+        if not _due(row):
+            continue
+        action, detail, _close = _notice_step(all_rows, by_id, row, now)
+        if action != 'wait':
+            due.append(row['dispatch_id'])
+        elif detail:
+            times.append(detail)
+    return {'needed': bool(due or observe), 'due': due, 'observe': observe,
+            'next_at': min(times, key=parse) if times else None}
 
 
 def mark_end_notice_sent(dispatch_id, source, path=None, message_id=None):
