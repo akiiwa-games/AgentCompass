@@ -62,10 +62,40 @@ class FindingTests(unittest.TestCase):
     def keys(self, ctx):
         return {f["key"] for f in audit.build_findings(ctx)}
 
+    def test_fixed_routes_dominating_decisions_are_reported_with_the_open_count(self):
+        codex = {"provider": "codex", "account": "codex", "model": "gpt-6.1-sol"}
+        rows = [row(i, action="retained", bundle=codex) for i in range(9)]
+        rows.append(row(50, reason="Opus has headroom", bundle={"provider": "claude", "model": "claude-opus-5-5"}))
+        found = {f["key"]: f for f in audit.build_findings(context(rows))}
+        self.assertIn("fixed", found)
+        self.assertIn("open 1", found["fixed"]["evidence"])
+
+    def test_fixed_holds_over_plan_and_record_rows_where_override_does_not(self):
+        """`fixed` is the share of plan/record decisions whose route was fixed (FIXED_SHARE); `override` counts only
+        constraint records and needs PLAN_MIN_SAMPLES. A period of resumes or of few dispatches is reported by `fixed`."""
+        codex = {"provider": "codex", "account": "codex", "model": "gpt-6.1-sol", "effort": "high"}
+        plan = row(40, "plan", source="deterministic_allocator", bundle=codex, hours=1, origin="ledger")
+        named = [row(i, "constraint", source="constraint_record", constraint="user_override", bundle=codex, origin="ledger")
+                 for i in range(9)]
+        for r in named:
+            r["stage"] = "record"
+        resumes = [row(20 + i, source="explicit_resume", constraint="explicit_resume", bundle=codex, origin="ledger")
+                   for i in range(5)]
+        both = self.keys(context(named + resumes[:3] + [plan]))
+        self.assertTrue({"fixed", "override"} <= both, both)
+        few = self.keys(context(resumes + [plan]))
+        self.assertIn("fixed", few)
+        self.assertNotIn("override", few)
+        pro = {"provider": "chatgpt-web", "account": "chatgpt-web", "model": "gpt-6-pro"}
+        specialist = [row(60 + i, source="explicit_resume", bundle=pro, origin="ledger") for i in range(5)]
+        self.assertEqual({audit.classify(r) for r in specialist}, {"specialist:pro"})
+        self.assertIn("fixed", self.keys(context(specialist + [plan])))
+
     def test_planned_dispatches_are_not_counted_as_pinned(self):
         self.assertEqual(audit.classify(row(0, source="deterministic_allocator")), "planned")
         planned = [row(i, "plan", source="deterministic_allocator", bundle={"account": "claude"}, hours=1) for i in range(12)]
         found = {f["key"]: f for f in audit.build_findings(context(planned))}
+        self.assertNotIn("fixed", found)
         self.assertNotIn("override", found)
         self.assertIn("claude 12.0h", found["balance"]["evidence"])
 

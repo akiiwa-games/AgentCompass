@@ -34,6 +34,7 @@ UTC = dt.timezone.utc
 
 PLAN_SHARE = 0.99          # target share of worker dispatches chosen by `plan` rather than pinned by hand
 PLAN_MIN_SAMPLES = 10      # dispatches needed before that share is judged
+FIXED_SHARE = 0.80         # plan/record decisions whose route was fixed by instruction or by the specialist table
 LOW_REMAINING_PCT = 20
 STALE_FLAG_SECONDS = 24 * 3600
 HEAVY_SESSION_CALLS = 500  # calls in one local day for a session to count as heavy
@@ -490,6 +491,7 @@ def build_findings(ctx: dict) -> list[dict]:
         out.append({"level": level, "key": key, "title": title, "evidence": evidence, "action": action})
 
     rows, decisions = ctx["rows"], [r for r in ctx["rows"] if r["stage"] in DECISION_STAGES and r.get("choice") != "none"]
+    kinds = collections.Counter(classify(r) for r in decisions)
     planned = [r for r in decisions if r.get("source") == "deterministic_allocator"]
     overrides = [r for r in decisions if r.get("source") == "constraint_record" and r.get("origin") == "ledger"]
     dispatches = len(planned) + len(overrides)
@@ -511,6 +513,12 @@ def build_findings(ctx: dict) -> list[dict]:
             "; ".join(f"{a} {h:.1f}h" for a, h in sorted(by_account.items(), key=lambda kv: -kv[1]))
             + f"。其中 {waits} 次需要用户决定(owner 无法继续,或要等的时间超过 can_wait)。",
             "对照各账户的额度窗口(plan 结果 `decision.system.quota_windows`):长期偏向某个本会短缺的账户,说明该窗口的容量或消耗估计需要核对(见 capacity 相关发现)。")
+    fixed = sum(v for k, v in kinds.items() if k not in ("open", "planned"))
+    if decisions and fixed / len(decisions) >= FIXED_SHARE:
+        add("warn", "fixed", "绝大多数分配由指令/路由表钉死,不经 plan 权衡",
+            f"{fixed}/{len(decisions)} 次决策的路由已固定({', '.join(f'{k} {v}' for k, v in kinds.most_common())});"
+            f"由 plan 权衡的 {kinds.get('planned', 0)} 次,其余 open {kinds.get('open', 0)} 次。",
+            "路由本该由 `plan` 综合类别适配/额度经济/连贯性来定;只有用户对本任务的明确指令才 `record --constraint user_override`。")
     now_usage = ctx["usage_now"]
     accounts = now_usage.get("accounts", {})
     for name, row in accounts.items():
@@ -614,7 +622,7 @@ def render(ctx: dict, days: int, detail_days: int, commentary: str) -> str:
     for f in ctx["findings"]:
         lines += [f"- **[{labels[f['level']]}] {f['title']}** — {f['evidence']}  ", f"  → {f['action']}"]
     lines += ["", "## 2. 分配汇总(按本地日)", "",
-              "| 日期 | 拆分 | 决策 | plan | 钉死 | Pro 顾问 |", "|---|---|---|---|---|---|"]
+              "| 日期 | 拆分 | 决策 | plan | 钉死 | Pro 顾问 | open |", "|---|---|---|---|---|---|---|"]
     by_day = collections.defaultdict(list)
     for r in rows:
         by_day[local(r["at"]).date().isoformat()].append(r)
@@ -623,7 +631,8 @@ def render(ctx: dict, days: int, detail_days: int, commentary: str) -> str:
         sel = [r for r in items if r["stage"] in DECISION_STAGES and r.get("choice") != "none"]
         kinds = collections.Counter(classify(r) for r in sel)
         lines.append(f"| {day} | {sum(1 for r in items if r['stage'] == 'split')} | {len(sel)} | {kinds.get('planned', 0)} | "
-                     f"{sum(v for k, v in kinds.items() if k.startswith('fixed'))} | {kinds.get('specialist:pro', 0)} |")
+                     f"{sum(v for k, v in kinds.items() if k.startswith('fixed'))} | {kinds.get('specialist:pro', 0)} | "
+                     f"{kinds.get('open', 0)} |")
     cutoff = now - dt.timedelta(days=detail_days)
     splits = [r for r in rows if r["at"] >= cutoff and (r["stage"] == "split" or r.get("keep_whole"))]
     if splits:
