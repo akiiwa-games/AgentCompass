@@ -1155,15 +1155,15 @@ def g_installer():
                 rt = json.loads((INSTALL_DIR / "runtime-info.json").read_text(encoding="utf-8"))
                 if rt.get("runtime_fingerprint") != new_rt_fp:
                     return []
-                pids = [p for p in tray_processes() if p not in (before_full_pids or [])]
-                if not pids:
+                # The installer's own [Run] step is an AgentCompass.exe too, and the status is settled on a read only once the
+                # installer has exited: a new process alone is not the end of the update.
+                if tray_update_status.read_status(HOME / ".agent-compass").get("running"):
                     return []
-                tray_update_status.read_status(HOME / ".agent-compass")
-                return pids
+                return [p for p in tray_processes() if p not in (before_full_pids or [])]
             except Exception:
                 return []
 
-        new_pids = wait_for(_full_installer_done, 90)
+        new_pids = wait_for(_full_installer_done, 180)
         restored_rt = json.loads((INSTALL_DIR / "runtime-info.json").read_text(encoding="utf-8"))
         upd_status_file = HOME / ".agent-compass" / "update-status.json"
         upd_status_text = upd_status_file.read_text(encoding="utf-8") if upd_status_file.is_file() else ""
@@ -1216,8 +1216,8 @@ def g_installer():
             label="frozen-update-iss-040",
             timeout=600,
         )
+        wait_for(lambda: not tray_update_status.read_status(HOME / ".agent-compass").get("running"), 180)
         iss_new_pids = wait_for(lambda: [p for p in tray_processes() if p not in (before_iss_pids or [])], 90)
-        tray_update_status.read_status(HOME / ".agent-compass")
         check("modifying agentcompass.iss (iss_sha256 change) rejects code package and triggers full installer via real frozen AgentCompass.exe",
               old_iss_sha != new_iss_sha and not can_pkg_iss and iss_reason.startswith("iss_sha256_mismatch:") and bool(iss_new_pids),
               (old_iss_sha[:12], new_iss_sha[:12], can_pkg_iss, iss_reason, iss_new_pids))
