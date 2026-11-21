@@ -5,10 +5,12 @@ from __future__ import annotations
 from i18n import translate as _tr
 
 import csv
+from datetime import datetime, timedelta, timezone
 import io
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -32,6 +34,11 @@ BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
+_SKILL_SCRIPTS = ROOT / "skills" / "agent-compass" / "scripts"
+if str(_SKILL_SCRIPTS) not in sys.path:
+    sys.path.append(str(_SKILL_SCRIPTS))
+import dispatch_flow  # noqa: E402
+import dispatch_registry  # noqa: E402
 DOT_ROOT = plugins.plugin_root("dot2api")
 CHATGPT_ROOT = plugins.plugin_root("chatgpt-web")
 CHATGPT_LAUNCHER = CHATGPT_ROOT / "launcher"
@@ -64,23 +71,23 @@ def safe_cwd(cwd: Path | str | None = None) -> Path:
 
 def hidden_popen(args: list[str], env: dict[str, str], cwd: Path, log_path: Path, extra_flags: int = 0) -> subprocess.Popen:
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log = open(log_path, "ab", buffering=0)
     startup = subprocess.STARTUPINFO()
     exe_name = Path(args[0]).name.lower() if args else ""
     if "--hidden" in args or "--quit" in args or not exe_name.startswith(("electron", "pythonw", "agentcompass")):
         startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startup.wShowWindow = 0
-    return subprocess.Popen(
-        args,
-        cwd=str(safe_cwd(cwd)),
-        env=env,
-        stdin=subprocess.DEVNULL,
-        stdout=log,
-        stderr=subprocess.STDOUT,
-        startupinfo=startup,
-        creationflags=CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | extra_flags,
-        close_fds=True,
-    )
+    with open(log_path, "ab", buffering=0) as log:
+        return subprocess.Popen(
+            args,
+            cwd=str(safe_cwd(cwd)),
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            startupinfo=startup,
+            creationflags=CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP | extra_flags,
+            close_fds=True,
+        )
 
 
 def run_hidden(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -921,3 +928,433 @@ def stop_usage_collect() -> None:
     proc = _usage_collect["proc"]
     if proc is not None and proc.poll() is None:
         kill_pid(proc.pid)
+
+
+# Dispatch notice recovery: restarts killed Paseo watchers (e.g. Antigravity's Windows job object) and sends due end notices.
+DISPATCH_NOTICE_INTERVAL = 30
+DISPATCH_NOTICE_MAX_INTERVAL = 600
+DISPATCH_NOTICE_LOG_MAX_BYTES = 1_000_000
+PASEO_REACHABLE_TIMEOUT = 0.2
+_DISPATCH_NOTICE_ACTIVE = ("launching", "launched", "started")
+_WATCHER_DONE_STATUSES = frozenset(
+    {
+        "delivered",
+        "parent_unavailable",
+        "delivery_failed",
+        "creation_failed",
+        "relaunched",
+        "canceled",
+        "resumed",
+        "continued",
+        "undelivered",
+    }
+)
+_dispatch_notice: dict = {
+    "proc": None,
+    "started": None,
+    "last_reasons": None,
+    "interval": DISPATCH_NOTICE_INTERVAL,
+    "doubled": False,
+    "evaluated_reasons": None,
+}
+
+
+def _reset_dispatch_notice() -> None:
+    _dispatch_notice.update(
+        proc=None,
+        started=None,
+        last_reasons=None,
+        interval=DISPATCH_NOTICE_INTERVAL,
+        doubled=False,
+        evaluated_reasons=None,
+    )
+
+
+def _reset_dispatch_notice_backoff() -> None:
+    _dispatch_notice.update(
+        last_reasons=None,
+        interval=DISPATCH_NOTICE_INTERVAL,
+        doubled=False,
+    )
+
+
+def _dispatch_state_dir() -> Path:
+    return Path(os.environ["ROUTER_STATE_DIR"]) if os.environ.get("ROUTER_STATE_DIR") else STATE_DIR
+
+
+def _dispatch_db_path() -> Path:
+    return Path(os.environ["ROUTER_DISPATCH_DB"]) if os.environ.get("ROUTER_DISPATCH_DB") else _dispatch_state_dir() / "dispatch.sqlite3"
+
+
+def _parse_iso(stamp: object) -> datetime | None:
+    if not isinstance(stamp, str) or not stamp:
+        return None
+    try:
+        return datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _in_create_send_window(row: dict | None, now: datetime) -> bool:
+    if not isinstance(row, dict) or row.get("state") != "launching" or row.get("observed_at"):
+        return False
+    launched_at = _parse_iso(row.get("launched_at"))
+    return launched_at is not None and now < launched_at + timedelta(seconds=dispatch_registry.CREATE_SEND_WINDOW)
+
+
+def _sqlite_locked(exc: sqlite3.Error) -> bool:
+    name = getattr(exc, "sqlite_errorname", "") or ""
+    if name in ("SQLITE_BUSY", "SQLITE_LOCKED") or name.startswith(("SQLITE_BUSY_", "SQLITE_LOCKED_")):
+        return True
+    msg = str(exc).lower()
+    return isinstance(exc, sqlite3.OperationalError) and ("locked" in msg or "busy" in msg)
+
+
+def _paseo_daemon_configured() -> bool:
+    return "daemon" in dispatch_flow.paseo_config()
+
+
+def _safe_dispatch_id(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= 128
+        and value[0].isalnum()
+        and all(ch.isalnum() or ch in "-_" for ch in value)
+    )
+
+
+def _is_bridge_watcher_cmdline(cmdline: list[str], dispatch_id: str | None = None) -> bool:
+    for idx, arg in enumerate(cmdline):
+        if arg != "--watch":
+            continue
+        if not any(Path(prev).name == "paseo_dispatch_bridge.mjs" for prev in cmdline[:idx]):
+            continue
+        if dispatch_id is not None:
+            return idx + 1 < len(cmdline) and cmdline[idx + 1] == dispatch_id
+        return True
+    return False
+
+
+def _watcher_process_alive(pid: object, dispatch_id: str) -> bool:
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
+    try:
+        proc = psutil.Process(pid)
+        if not proc.is_running():
+            return False
+        cmdline = proc.cmdline()
+    except (psutil.Error, OSError, ValueError):
+        return False
+    return _is_bridge_watcher_cmdline(cmdline, dispatch_id)
+
+
+def _readable_receipt(dispatch_id: object, state_dir: Path, *, parent_id: object = None) -> dict | None:
+    """Readable watcher receipt dict of `dispatch_id` (and matching `parent_id` when given), or None."""
+    if not _safe_dispatch_id(dispatch_id):
+        return None
+    receipt_path = state_dir / "paseo-notifications" / f"{dispatch_id}.json"
+    try:
+        record = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict) or record.get("dispatch_id") != dispatch_id:
+        return None
+    rec_parent = record.get("parent_id")
+    if not isinstance(rec_parent, str) or not rec_parent:
+        return None
+    if isinstance(parent_id, str) and parent_id and rec_parent != parent_id:
+        return None
+    return record
+
+
+def _watcher_restartable(dispatch_id: object, state_dir: Path) -> bool:
+    """True only where `observe` -> `ensureNotification` in `paseo_dispatch_bridge.mjs` would restart `--watch <id>`."""
+    record = _readable_receipt(dispatch_id, state_dir)
+    if record is None:
+        return False
+    if record.get("status") in _WATCHER_DONE_STATUSES:
+        return False
+    if (state_dir / "paseo-notifications" / f"{dispatch_id}.json.creation-failed").exists():
+        return False
+    return not _watcher_process_alive(record.get("pid"), str(dispatch_id))
+
+
+def _receipt_proves_ending(row: dict, dispatch_id: object, state_dir: Path) -> bool:
+    """True when `row` is not a parent follow-up and its readable receipt already proves an ending to the registry."""
+    if dispatch_registry._followed_up(row):
+        return False
+    record = _readable_receipt(dispatch_id, state_dir)
+    if record is None:
+        return False
+    return dispatch_registry.state_from_receipt(row, record)[0] is not None
+
+
+def _local_dispatch_notice_reasons(now: datetime | None = None) -> frozenset[tuple[str, str]]:
+    """Dispatches and reasons for which a reconcile pass can change something now, before probing the local daemon."""
+    db = _dispatch_db_path()
+    if not db.is_file():
+        return frozenset()
+    current = now or dispatch_registry.utcnow()
+    try:
+        stored = dispatch_registry.read_dispatches(path=db, timeout=0.5)
+    except sqlite3.Error as exc:
+        return frozenset({("*", "sqlite_locked")}) if _sqlite_locked(exc) else frozenset()
+    except (OSError, ValueError):
+        return frozenset()
+
+    state_dir = _dispatch_state_dir()
+    by_id = {
+        r["dispatch_id"]: r
+        for r in stored
+        if isinstance(r, dict) and isinstance(r.get("dispatch_id"), str)
+    }
+    reasons: set[tuple[str, str]] = set()
+    for row in stored:
+        if not isinstance(row, dict) or row.get("dispatch_mode", "paseo") != "paseo":
+            continue
+        state = row.get("state")
+        dispatch_id = row.get("dispatch_id")
+        if state in _DISPATCH_NOTICE_ACTIVE:
+            if not row.get("launched_at") or _in_create_send_window(row, current):
+                continue
+            if _watcher_restartable(dispatch_id, state_dir):
+                reasons.add((str(dispatch_id), f"watcher:{state}"))
+            elif _receipt_proves_ending(row, dispatch_id, state_dir):
+                reasons.add((str(dispatch_id), "settle_receipt"))
+        elif state == "expired" and row.get("launched_at") and dispatch_registry.later(row.get("hard_until"), current):
+            if _watcher_restartable(dispatch_id, state_dir):
+                reasons.add((str(dispatch_id), "watcher:expired"))
+            elif _receipt_proves_ending(row, dispatch_id, state_dir):
+                reasons.add((str(dispatch_id), "settle_receipt"))
+        elif dispatch_registry.fallback_guard(row, current):
+            if not _safe_dispatch_id(dispatch_id):
+                continue
+            try:
+                watch_id = dispatch_registry.current_attempt(dispatch_id, path=db)
+            except sqlite3.Error as exc:
+                if _sqlite_locked(exc):
+                    reasons.add(("*", "sqlite_locked"))
+                continue
+            except (OSError, ValueError):
+                continue
+            cur = by_id.get(watch_id)
+            if isinstance(cur, dict) and cur.get("launched_at"):
+                if _in_create_send_window(cur, current):
+                    continue
+                cur_state = cur.get("state")
+                if cur_state in _DISPATCH_NOTICE_ACTIVE or (
+                    cur_state == "expired" and dispatch_registry.later(cur.get("hard_until"), current)
+                ):
+                    if _watcher_restartable(watch_id, state_dir):
+                        reasons.add((str(watch_id), f"watcher:{cur_state}"))
+                elif cur_state == "failed" and cur.get("agent_id") and _watcher_restartable(watch_id, state_dir):
+                    reasons.add((str(watch_id), "chain_watcher"))
+            else:
+                for cand in stored:
+                    if (
+                        isinstance(cand, dict)
+                        and dispatch_registry.chain_root(cand) == dispatch_id
+                        and cand.get("state") == "failed"
+                        and cand.get("launched_at")
+                        and cand.get("agent_id")
+                        and _watcher_restartable(cand.get("dispatch_id"), state_dir)
+                    ):
+                        reasons.add((str(cand["dispatch_id"]), "chain_watcher"))
+
+    try:
+        needs = dispatch_registry.needs_reader(path=db, timeout=0.5, now=current)
+    except sqlite3.Error as exc:
+        if _sqlite_locked(exc):
+            reasons.add(("*", "sqlite_locked"))
+        return frozenset(reasons)
+    except (OSError, ValueError):
+        return frozenset(reasons)
+
+    if needs["needed"]:
+        for did in needs["observe"]:
+            if _watcher_restartable(did, state_dir):
+                reasons.add((str(did), "awaiting_fallback"))
+        if needs["due"] and _paseo_daemon_configured():
+            for did in needs["due"]:
+                parent_id = (by_id.get(did) or {}).get("parent_id")
+                if _readable_receipt(did, state_dir, parent_id=parent_id) is not None:
+                    reasons.add((str(did), "due_notice"))
+
+    return frozenset(reasons)
+
+
+def dispatch_notice_reasons(now: datetime | None = None) -> frozenset[tuple[str, str]]:
+    """Dispatches and reasons for which a reconcile pass can make progress right now."""
+    local = _local_dispatch_notice_reasons(now=now)
+    if not local:
+        return frozenset()
+    if not dispatch_flow.paseo_reachable(timeout=PASEO_REACHABLE_TIMEOUT):
+        return frozenset()
+    return local
+
+
+def dispatch_notice_needed(now: datetime | None = None) -> bool:
+    """True only when a reconcile pass can change something now and the local Paseo daemon answers."""
+    reasons = dispatch_notice_reasons(now=now)
+    _dispatch_notice["evaluated_reasons"] = reasons
+    if not reasons:
+        _reset_dispatch_notice_backoff()
+        return False
+    return True
+
+
+def dispatch_reconcile_command() -> list[str] | None:
+    """argv for `agentcompass dispatch --dispatch-action reconcile` using the console CLI, never the windowed tray or `route_judge.py`."""
+    if component_launch.frozen():
+        cli = Path(sys.executable).resolve().parent / "cli" / ("agentcompass.exe" if os.name == "nt" else "agentcompass")
+        if cli.is_file():
+            return [str(cli), "dispatch", "--dispatch-action", "reconcile"]
+        found = shutil.which("agentcompass")
+        return [found, "dispatch", "--dispatch-action", "reconcile"] if found else None
+    scripts = component_launch.skill_scripts()
+    if scripts is None:
+        return None
+    try:
+        scripts = scripts.resolve()
+    except OSError:
+        pass
+    python = Path(sys.executable)
+    if os.name == "nt" and python.name.lower() == "pythonw.exe":
+        console = python.with_name("python.exe")
+        if console.is_file():
+            python = console
+    checkout_pkg = scripts.parents[2] / "agentcompass" if len(scripts.parents) > 2 else None
+    if checkout_pkg is not None and (checkout_pkg / "__main__.py").is_file() and (scripts.parents[2] / "pyproject.toml").is_file():
+        return [str(python), "-X", "utf8", str(checkout_pkg), "dispatch", "--dispatch-action", "reconcile"]
+    installed_pkg = scripts.parents[3] if len(scripts.parents) > 3 else None
+    if installed_pkg is not None and installed_pkg.name == "agentcompass" and (installed_pkg / "__main__.py").is_file():
+        return [str(python), "-X", "utf8", str(installed_pkg), "dispatch", "--dispatch-action", "reconcile"]
+    root_pkg = ROOT / "agentcompass"
+    if (root_pkg / "__main__.py").is_file() and (ROOT / "pyproject.toml").is_file():
+        return [str(python), "-X", "utf8", str(root_pkg), "dispatch", "--dispatch-action", "reconcile"]
+    found = shutil.which("agentcompass")
+    return [found, "dispatch", "--dispatch-action", "reconcile"] if found else None
+
+
+def _bound_dispatch_notice_log(log_path: Path) -> None:
+    try:
+        if log_path.stat().st_size > DISPATCH_NOTICE_LOG_MAX_BYTES:
+            os.replace(log_path, log_path.with_name(log_path.name + ".1"))
+    except OSError:
+        pass
+
+
+def dispatch_notice_tick(force: bool = False) -> bool:
+    """Run one low-priority reconcile pass only when a pass can change something now."""
+    proc = _dispatch_notice["proc"]
+    if proc is not None and proc.poll() is None:
+        return False
+    started = _dispatch_notice["started"]
+    if started is None:
+        _reset_dispatch_notice_backoff()
+    now_mono = time.monotonic()
+    if not force and started is not None and now_mono - started < DISPATCH_NOTICE_INTERVAL:
+        return False
+    _dispatch_notice["evaluated_reasons"] = None
+    if not dispatch_notice_needed():
+        _reset_dispatch_notice_backoff()
+        return False
+    reasons = _dispatch_notice["evaluated_reasons"] or frozenset({("*", "needed")})
+    last_reasons = _dispatch_notice["last_reasons"]
+    if last_reasons is not None:
+        if reasons == last_reasons:
+            if not _dispatch_notice["doubled"]:
+                _dispatch_notice["interval"] = min(
+                    _dispatch_notice["interval"] * 2,
+                    DISPATCH_NOTICE_MAX_INTERVAL,
+                )
+                _dispatch_notice["doubled"] = True
+            if not force and started is not None and now_mono - started < _dispatch_notice["interval"]:
+                return False
+        else:
+            _dispatch_notice["interval"] = DISPATCH_NOTICE_INTERVAL
+            _dispatch_notice["doubled"] = False
+    _dispatch_notice["started"] = now_mono
+    cmd = dispatch_reconcile_command()
+    if cmd is None:
+        return False
+    state_dir = _dispatch_state_dir()
+    env = os.environ.copy()
+    default_state = Path.home() / ".agent-compass"
+    if state_dir != default_state:
+        env.setdefault("ROUTER_STATE_DIR", str(state_dir))
+        env.setdefault("ROUTER_DISPATCH_DB", str(_dispatch_db_path()))
+    child_cwd = Path(sys.executable).resolve().parent if component_launch.frozen() else ROOT
+    log_path = state_dir / "dispatch-notice.log"
+    _bound_dispatch_notice_log(log_path)
+    try:
+        _dispatch_notice["proc"] = hidden_popen(
+            cmd,
+            env,
+            child_cwd,
+            log_path,
+            BELOW_NORMAL_PRIORITY_CLASS,
+        )
+    except OSError:
+        _dispatch_notice["proc"] = None
+        return False
+    _dispatch_notice["last_reasons"] = reasons
+    _dispatch_notice["doubled"] = False
+    return True
+
+
+def _non_watcher_descendants(pid: int) -> list[psutil.Process]:
+    to_stop: list[psutil.Process] = []
+    try:
+        queue = list(psutil.Process(pid).children(recursive=False))
+    except psutil.Error:
+        return to_stop
+    while queue:
+        child = queue.pop(0)
+        try:
+            cmdline = child.cmdline()
+        except psutil.Error:
+            continue
+        if _is_bridge_watcher_cmdline(cmdline):
+            continue
+        to_stop.append(child)
+        try:
+            queue.extend(child.children(recursive=False))
+        except psutil.Error:
+            continue
+    return to_stop
+
+
+def stop_dispatch_notice() -> None:
+    """Stop an in-flight reconcile pass and its non-watcher bridge children while preserving `--watch` processes."""
+    proc = _dispatch_notice["proc"]
+    _dispatch_notice["proc"] = None
+    if proc is None or proc.poll() is not None:
+        return
+    children = _non_watcher_descendants(proc.pid) if isinstance(proc, subprocess.Popen) else []
+    for child in reversed(children):
+        try:
+            if child.is_running():
+                child.terminate()
+        except psutil.Error:
+            pass
+    try:
+        proc.terminate()
+    except OSError:
+        pass
+    if children:
+        _gone, alive = psutil.wait_procs(children, timeout=3.0)
+        for child in reversed(alive):
+            try:
+                child.kill()
+            except psutil.Error:
+                pass
+    if isinstance(proc, subprocess.Popen):
+        try:
+            proc.wait(timeout=3.0)
+        except subprocess.TimeoutExpired:
+            try:
+                proc.kill()
+                proc.wait(timeout=1.0)
+            except OSError:
+                pass
