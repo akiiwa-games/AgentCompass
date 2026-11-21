@@ -10,7 +10,7 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
 authors = [{ name = "akiiwa-games" }]
-keywords = ["agents", "router", "quota"]
+keywords = ["ai-agents", "agent-router", "model-routing", "llm-router", "claude-code", "codex", "multi-agent", "subagents", "quota-management", "rate-limit"]
 classifiers = [
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",

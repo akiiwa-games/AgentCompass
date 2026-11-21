@@ -54,10 +54,21 @@ agentcompass roll --task "<what the worker should do>"
 
 | Scenario (illustrative) | How `agentcompass roll` routes it |
 | :-- | :-- |
-| *"Design layout and motion for the showcase page"* | High **aesthetics** demand → selects a visually strong frontier route (e.g., `Opus 5.5 xhigh`). |
-| *"Propose novel cross-domain mechanisms for the retry pipeline, read-only"* | High **creativity** (`creative_ideation`) + read-only scope → dispatches an ideation worker or advisor (e.g., `Argon high`) without modifying files. |
-| *"Add `--timeout` to a Python CLI and run local `pytest`"* (`--demo`) | Routine **coding** + `local_only` → excludes remote `Dot` and `Astra xhigh` (~85% of a weekly window), selecting target-meeting `Sol medium` (~6% spend). |
+| *"Design layout and motion for the showcase page"* | High **aesthetics** demand → selects a visually strong frontier route (e.g., `Claude Opus 5.5 xhigh`). |
+| *"Propose novel cross-domain mechanisms for the retry pipeline, read-only"* | High **creativity** (`creative_ideation`) + read-only scope → dispatches an ideation worker or advisor (e.g., `Gemini 4 Argon high`) without modifying files. |
+| *"Add `--timeout` to a Python CLI and run local `pytest`"* (`--demo`) | Routine **coding** + `local_only` → excludes remote `Dot` and `Codex Astra xhigh` (~85% of a weekly window), selecting target-meeting `Codex Sol medium` (~6% spend). |
 | *Claude is ahead of pace this week; Gemini resets in 2 hours* | Per-window **quota recovery line** → holds back the over-pace Claude window and spends Gemini's under-line surplus first at `0` quota cost (right-hand animation above). |
+
+### How AgentCompass Differs from HTTP Proxy Routers
+
+Most open-source AI routers (such as `claude-code-router`, `9router`, or `LiteLLM`) sit in front of per-token API endpoints to proxy or fall back individual HTTP requests. **AgentCompass** solves a different problem: **delegating full sub-agent tasks across flat-rate coding subscriptions** (`Claude Max / Pro`, `ChatGPT / Codex`, `Google AI / Antigravity`, `Grok`, and OpenAI-compatible pools).
+
+| Dimension | HTTP API proxy routers | AgentCompass |
+| :-- | :-- | :-- |
+| **Unit of routing** | Per-request / per-turn HTTP proxy | Full sub-agent task (`agentcompass roll`) or advisor brief |
+| **Quota model** | Per-token API billing & endpoint failover | Per-account 5h / 7d flat-rate subscription windows & recovery line |
+| **Enforcement & lifecycle** | Transparent endpoint swap | Optional `PreToolUse` spawn gate + carried-token context rotation + auditable ledger |
+| **Scope** | Works inside one CLI's HTTP stream | Cross-host launcher & scheduler across Claude Code, Codex CLI, Antigravity, OpenCode, Pi, Paseo, and Herdr |
 
 ### Key Rules & Controls
 
@@ -121,10 +132,21 @@ agentcompass roll --task "<交给子 Agent 的完整任务>"
 
 | 典型场景（示例） | `agentcompass roll` 的处理 |
 | :-- | :-- |
-| *“设计展柜页面的布局与交互动效”* | 识别高**审美**需求 → 选用视觉长板的旗舰高档位（如 `Opus 5.5 xhigh`）。 |
-| *“评估重试管线的优化方案，只读不改代码”* | 识别高**创意**（发散推演）与只读范围 → 派发分析见长的顾问（如 `Argon high`），不修改工作区。 |
-| *“为 Python CLI 增加 `--timeout` 参数并运行本地 `pytest`”*（`--demo`） | 识别常规**编码** + `local_only` → 排除远端 `Dot` 及需占用约 85% 周额度的 `Astra xhigh`，选择达标且仅占约 6% 额度的 `Sol medium`（到标封顶）。 |
+| *“设计展柜页面的布局与交互动效”* | 识别高**审美**需求 → 选用视觉长板的旗舰高档位（如 `Claude Opus 5.5 xhigh`）。 |
+| *“评估重试管线的优化方案，只读不改代码”* | 识别高**创意**（发散推演）与只读范围 → 派发分析见长的顾问（如 `Gemini 4 Argon high`），不修改工作区。 |
+| *“为 Python CLI 增加 `--timeout` 参数并运行本地 `pytest`”*（`--demo`） | 识别常规**编码** + `local_only` → 排除远端 `Dot` 及需占用约 85% 周额度的 `Codex Astra xhigh`，选择达标且仅占约 6% 额度的 `Codex Sol medium`（到标封顶）。 |
 | *Claude 本周消耗过快，而 Gemini 距周重置仅剩 2 小时* | 对照各窗口**额度恢复线** → 降权超速消耗的 Claude 窗口，将 Gemini 恢复线以下的临期余量按 `0` 额度成本优先使用（见页首右图）。 |
+
+### 与 HTTP 代理路由器的区别
+
+主流开源路由器（如 `claude-code-router`、`9router`、`LiteLLM`）主要工作在单次 API 请求层，解决按 token 计费的接口转发与故障切换；**AgentCompass** 解决的是另一类问题：**面向多套包月编程订阅（Claude Max / Pro、ChatGPT / Codex、Google AI / Antigravity、Grok 及 OpenAI 兼容号池）的子 Agent 任务调度与额度规划**。
+
+| 维度 | HTTP API 代理路由器 | AgentCompass |
+| :--- | :--- | :--- |
+| **路由粒度** | 单次请求 / 单轮 HTTP 代理 | 完整子 Agent 任务（`agentcompass roll`）或顾问派单 |
+| **额度模型** | 按 token API 计费与上游故障转移 | 账号级 5h / 7d 包月订阅窗口与额度恢复线 |
+| **治理与生命周期** | 透明替换接口端点 | 可选 `PreToolUse` 派工门禁 + 上下文轮换 + 可审计决策台账 |
+| **适用范围** | 单个 CLI 内部请求流 | 跨 Claude Code、Codex CLI、Antigravity、OpenCode、Pi、Paseo、Herdr 统一派工 |
 
 ### 关键规则与控制权
 
