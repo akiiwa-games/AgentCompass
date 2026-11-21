@@ -85,7 +85,7 @@ def markdown(accounts, five=None, references=None):
              '## Effective policy', '',
              'Routes describe task scope and modality requirements and ship a calibrated harness order. '
              'A route can fix the harness order or imply a modality flag; it does not rank models. '
-             'The judge receives this effective policy.', '',
+             'The allocator applies this effective policy (`candidate_ranking`, `task_intake`).', '',
              '## Regeneration', '',
              'Run `python -X utf8 skills/agent-compass/scripts/capability_catalog.py` from the repository root. '
              'Use `--check` to verify both generated views without writing them.', '']

@@ -110,7 +110,7 @@ def account_allowed(policy, account):
     """Whether the account takes part in automatic routing on this host (no policy file: every account does).
 
     An account outside `allowed_accounts` is never chosen by the router: not by a plan, a fallback, an automatic resume
-    of an idle worker, nor as a judge or scorer. It is not banned: a route the user names in the request still
+    of an idle worker, nor as the scorer. It is not banned: a route the user names in the request still
     dispatches on it (`route_judge.record_constraint`, constraint `user_override`), and a turn to an existing session on
     it is not a routing choice. The model-management checkbox is the same kind of switch for a model
     (`model_unchecked`)."""
