@@ -62,7 +62,7 @@ An upstream closure becomes visible once a local product or collector records it
 
 ## Host policy and temporary overrides
 
-`~/.agent-compass/host-policy.json` remains the explicit account/judge allowlist.
+`~/.agent-compass/host-policy.json` remains the explicit account allowlist.
 Temporary priority and expiry rules remain in
 `~/.agent-compass/router-overrides.json`, managed by the existing `override` command
 and tray menu. Discovery never rewrites either policy or the product configurations.

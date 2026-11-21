@@ -1,6 +1,6 @@
-# Judge & Scorer Workflow
+# Scorer & Allocation Workflow
 
-The router separates fast structured task classification (**System-One Scorer**) from deterministic mathematical allocation (**Allocator**) and optional tie-break / delegation judgment (**Judge**). Parent agents submit only factual task descriptions (`objective`, `context`, `needs.local_only_reason`, `chain`); classification (`work_kind`) and difficulty scoring (`TaskProfile`) are performed automatically by the System-One model using [`classifier-cases.json`](classifier-cases.json).
+The router separates fast structured task classification (**System-One Scorer**) from deterministic mathematical allocation (**Allocator**). Parent agents submit only factual task descriptions (`objective`, `context`, `needs.local_only_reason`, `chain`); classification (`work_kind`) and difficulty scoring (`TaskProfile`) are performed automatically by the System-One model using [`classifier-cases.json`](classifier-cases.json).
 
 ## 1. Stage Overview
 
@@ -9,8 +9,6 @@ The router separates fast structured task classification (**System-One Scorer**)
 | **`plan`** | `agentcompass plan --input task.json` | The configured System-One scorer cascade (see `score` below) + deterministic `allocator.plan` | Diagnosis: ranks the bundles and shows why, without launching. To delegate, use `agentcompass roll --task "<text>"` (same classifier and allocator, then it launches). |
 | **`score`** | `agentcompass score --input task.json` | The configured System-One scorer cascade (`jev` when keyed -> `claude_haiku_low` -> `codex_terra_low` -> `agy_flash_low`, led by the chosen scorer type when that is another one; returns `status: "blocked", error: "scorer_unavailable"` when all fail) | Standalone inspection and calibration testing of the System-One classifier. |
 | **`scorer`** | `agentcompass scorer --action show\|set\|test` | Reads/writes `~/.agent-compass/scorer-config.json` (`ROUTER_SCORER_CONFIG`, type override `ROUTER_SCORER_TYPE`) | Choose the scorer: `agy_flash_low`, `jev` (TypeSafe `POST /v1/systemone`, key `jev_api_key` / `TYPESAFE_API_KEY` / `JEV_API_KEY`), `gemini_decision` ([Gemini Decisions API](gemini-decisions-api.md) `POST /v1beta/decisions`, key `gemini_api_key` / `GEMINI_API_KEY`; runs only when chosen), `claude_haiku_low`, `codex_terra_low`, `openai_compatible`. Keys are printed masked only; `--api-key -` reads the key from stdin. |
-| **`delegate`** | `agentcompass delegate --input task.json` | Two low-effort judges (`claude-sonnet-5-5 low` + `gpt-6.1-sol low`) | Only when uncertain whether to do work locally vs. delegate. |
-| **`select`** | `agentcompass select --input task.json` | `plan` first; calls low-effort judges only when `decision.needs_judgment` is `true` | Optional tie-breaker when top two bundles are within `tie_margin` (`0.02`). |
 | **`record`** | `agentcompass record --constraint user_override ...` | Deterministic ledger + reservation | When the user explicitly names the target model or effort in the current turn. |
 
 ## 2. System-One Classifier Output Schema (`TASK_PROFILE_SCHEMA`)
@@ -61,6 +59,8 @@ Allocation has three layers. They do not mix.
 ```text
 score = fit + continuity + boost - quota_cost
 ```
+
+A near tie needs no caller action: the higher score wins and the order below decides only between equal scores. `decision.margin` is the top bundle's score lead over the best other model.
 
 `continuity` is the largest positive `t3 - t2` among the categories at the task's highest demand level when resuming a coupled (`coupling` `medium` or `high`: auto-matched continuation or `--resume`) worker within its context rotation limit, else `0`. A temporary `boost` comes only from a user override. The order after the score is: wait before the start, earliest-expiring
 quota, completion time, fewer USD, demand-weighted category level, then the harness place among siblings (same account, model,

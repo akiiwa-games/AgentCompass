@@ -1,8 +1,5 @@
 # TypeSafe Jev
 
-Jev is never a routing judge: the `delegate` / `select` judgments use only Sonnet 5 low or GPT-6.1-sol low on the
-user's subscription (see the [low-effort judge workflow](judge-workflow.md)).
-
 Jev may be selected as the **System-One task scorer** (`scorer_type: jev`): the router then sends
 `POST {base_url}/v1/systemone` (default `https://api.typesafe.ai`, model `jev-latest`) with
 `Authorization: Bearer <key>`, asking 10 concrete questions: `choice` questions for `work_kind`, `secondary_kind`,
