@@ -954,9 +954,11 @@ def _parse_iso(stamp: object) -> datetime | None:
         return None
 
 
-def _iso_after(stamp: object, now: datetime) -> bool:
-    parsed = _parse_iso(stamp)
-    return parsed is not None and parsed > now
+def _in_create_send_window(row: dict | None, now: datetime) -> bool:
+    if not isinstance(row, dict) or row.get("state") != "launching" or row.get("observed_at"):
+        return False
+    launched_at = _parse_iso(row.get("launched_at"))
+    return launched_at is not None and now < launched_at + timedelta(seconds=dispatch_registry.CREATE_SEND_WINDOW)
 
 
 def _sqlite_locked(exc: sqlite3.Error) -> bool:
@@ -1052,25 +1054,38 @@ def dispatch_notice_needed(now: datetime | None = None) -> bool:
         return False
 
     state_dir = _dispatch_state_dir()
+    by_id = {
+        r["dispatch_id"]: r
+        for r in stored
+        if isinstance(r, dict) and isinstance(r.get("dispatch_id"), str)
+    }
     for row in stored:
         if not isinstance(row, dict) or row.get("dispatch_mode", "paseo") != "paseo" or not row.get("launched_at"):
             continue
         state = row.get("state")
         if state in _DISPATCH_NOTICE_ACTIVE:
-            launched_at = _parse_iso(row.get("launched_at"))
-            if (
-                state == "launching"
-                and not row.get("observed_at")
-                and launched_at is not None
-                and current < launched_at + timedelta(seconds=dispatch_registry.CREATE_SEND_WINDOW)
-            ):
+            if _in_create_send_window(row, current):
                 continue
             dispatch_id = row.get("dispatch_id")
             if _safe_dispatch_id(dispatch_id) and not _watcher_healthy(dispatch_id, state_dir, current):
                 return True
-        elif state == "expired" and _iso_after(row.get("hard_until"), current):
+        elif state == "expired" and dispatch_registry.later(row.get("hard_until"), current):
             dispatch_id = row.get("dispatch_id")
             if _safe_dispatch_id(dispatch_id) and not _watcher_healthy(dispatch_id, state_dir, current):
+                return True
+        elif dispatch_registry.fallback_guard(row, current):
+            dispatch_id = row.get("dispatch_id")
+            if not _safe_dispatch_id(dispatch_id):
+                continue
+            try:
+                watch_id = dispatch_registry.current_attempt(dispatch_id, path=db)
+            except sqlite3.Error as exc:
+                return _sqlite_locked(exc)
+            except (OSError, ValueError):
+                continue
+            if _in_create_send_window(by_id.get(watch_id), current):
+                continue
+            if _safe_dispatch_id(watch_id) and not _watcher_healthy(watch_id, state_dir, current):
                 return True
 
     try:

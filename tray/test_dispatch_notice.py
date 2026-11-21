@@ -28,6 +28,7 @@ import account_fleet
 import dispatch_fallback
 import dispatch_registry as registry
 import provider_inventory
+import provider_retry
 import usage_reading
 
 
@@ -475,32 +476,76 @@ class DispatchNoticeUnitTests(unittest.TestCase):
         now = datetime(2026, 11, 21, 12, 0, 0, tzinfo=timezone.utc)
         self.configure_paseo_daemon()
 
-        # 1. A failed attempt whose retry is `scheduled` waits until the guard (`until`): neither `end_notice` nor
-        #    `fallback_guard` starts a pass before `next_at`.
+        # 1. A chain waiting on a `scheduled` retry under an active `fallback_guard`: `needs_reader` holds the due
+        #    end notice until `until`, while the tray gate checks liveness on `registry.current_attempt` (starting no
+        #    pass when its `--watch` process is healthy, and starting a pass when that watcher died during the wait).
+        bridge = str(services.ROOT / "setup" / "paseo_dispatch_bridge.mjs")
         db_sched = self.root / "sched.sqlite3"
         retry_at = (now + timedelta(seconds=180)).isoformat()
         guard_until = (now + timedelta(seconds=1800)).isoformat()
-        sched_row = base_paseo_row(
-            "d-sched",
+        root_row = base_paseo_row(
+            "d-sched-root",
             state="failed",
-            agent_id="w-sched",
-            now=now,
-            end_notice={"state": "due", "message_id": registry.end_notice_message_id("d-sched")},
+            agent_id="w-sched-root",
+            now=now - timedelta(seconds=60),
+            end_notice={"state": "sent", "source": "relaunched", "message_id": registry.end_notice_message_id("d-sched-root")},
         )
-        sched_row["observed_at"] = sched_row["launched_at"]
-        sched_row["fallback"] = {
+        root_row["observed_at"] = root_row["launched_at"]
+        root_row["fallback"] = {
             "state": "retrying",
-            "current": "d-sched",
-            "retry_of": "d-sched",
+            "current": "d-sched-2",
+            "retry_of": "d-sched-2",
             "retry_at": retry_at,
             "until": guard_until,
-            "handled": {"d-sched": {"action": "scheduled", "retry_at": retry_at}},
+            "attempts": [
+                {"attempt": 1, "dispatch_id": "d-sched-root"},
+                {"attempt": 2, "dispatch_id": "d-sched-2"},
+            ],
+            "handled": {
+                "d-sched-root": {"action": "relaunched", "dispatch_id": "d-sched-2"},
+                "d-sched-2": {"action": "scheduled", "retry_at": retry_at},
+            },
         }
+        sched_row = base_paseo_row(
+            "d-sched-2",
+            state="failed",
+            agent_id="w-sched-2",
+            now=now,
+            end_notice={"state": "due", "message_id": registry.end_notice_message_id("d-sched-2")},
+        )
+        sched_row["attempt_of"] = "d-sched-root"
+        sched_row["attempt"] = 2
+        sched_row["observed_at"] = sched_row["launched_at"]
+        seed_dispatch_row(db_sched, root_row)
         seed_dispatch_row(db_sched, sched_row)
-        self.write_receipt("d-sched", status="delivery_failed")
+        # Attempt 1's watcher already exited (`relaunched`); Attempt 2's receipt holds the scheduled retry.
+        self.write_receipt("d-sched-root", status="relaunched", pid=1111)
+        self.write_receipt(
+            "d-sched-2",
+            status="watching",
+            pid=2222,
+            fallback={"status": "scheduled", "at": (now - timedelta(seconds=90)).isoformat(), "retry_at": retry_at},
+            mtime_age_s=90.0,
+        )
+        healthy_sched_proc = mock.Mock()
+        healthy_sched_proc.is_running.return_value = True
+        healthy_sched_proc.cmdline.return_value = ["node", bridge, "--watch", "d-sched-2", "parent-1", "w-sched-2", ""]
+        dead_sched_proc = mock.Mock()
+        dead_sched_proc.is_running.return_value = False
         with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_sched)}):
             self.assertFalse(registry.needs_reader(path=db_sched, now=now)["needed"])
-            self.assertFalse(services.dispatch_notice_needed(now=now))
+            with mock.patch.object(registry, "current_attempt", wraps=registry.current_attempt) as cur_attempt, \
+                    mock.patch.object(services.psutil, "Process", return_value=healthy_sched_proc):
+                self.assertFalse(services.dispatch_notice_needed(now=now))
+                cur_attempt.assert_called_once_with("d-sched-root", path=db_sched)
+            # When the scheduled retry's watcher dies (e.g. tray restart during backoff), `needs_reader` still waits,
+            # while the gate's liveness check on `current_attempt` triggers a pass.
+            with mock.patch.object(services.psutil, "Process", return_value=dead_sched_proc):
+                self.assertFalse(registry.needs_reader(path=db_sched, now=now)["needed"])
+                self.assertTrue(services.dispatch_notice_needed(now=now))
+            self.write_receipt("d-sched-2", status="delivery_failed", pid=2222)
+            self.assertTrue(services.dispatch_notice_needed(now=now))
+            # Past `guard_until`, `needs_reader` releases the due notice too.
             self.assertTrue(services.dispatch_notice_needed(now=registry.parse(guard_until)))
 
         # 2. A completed attempt whose worker has an in-flight `resume` of the same parent waits (`_later_turn` pending),
@@ -1126,12 +1171,21 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
         self.wait_until(lambda: not psutil.pid_exists(watcher_pid))
         self.assertFalse(services.dispatch_notice_needed())
 
-    def seed_routed_started_dispatch(self, task_id: str, agent_id: str, *, parent_id: str = "parent-1") -> dict:
-        now = registry.utcnow()
+    def seed_routed_started_dispatch(
+        self,
+        task_id: str,
+        agent_id: str,
+        *,
+        parent_id: str = "parent-1",
+        can_wait_hours: float | None = None,
+        now: datetime | None = None,
+    ) -> dict:
+        now = now or registry.utcnow()
         task = {
             "task_id": task_id,
             "parent_agent_id": parent_id,
             "expected_hours": 0.5,
+            **({"can_wait_hours": can_wait_hours} if can_wait_hours is not None else {}),
             "profile": {
                 "work_kind": "code_implementation",
                 "primary_level": 2,
@@ -1251,6 +1305,155 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
         self.assertEqual(raw, [expected_second_msg_id])
         self.assertFalse(services.dispatch_notice_needed())
         self.assertFalse(services.dispatch_notice_tick(force=True))
+
+    def test_dead_watcher_during_scheduled_retry_restarts_launches_retry_at_retry_at_and_notifies_once(self):
+        self.assertTrue(dispatch_fallback.enabled())
+        retry_store = self.state_dir / provider_retry.FILE
+        with mock.patch.dict(os.environ, {"ROUTER_PROVIDER_RETRY": str(retry_store)}):
+            now_utc = datetime.now(timezone.utc).replace(microsecond=0)
+            backoff_s = int(provider_retry.retry_seconds(1))
+            launched_dt = now_utc - timedelta(seconds=backoff_s + 15)
+            failed_dt = now_utc - timedelta(seconds=backoff_s - 4)  # retry_at ~4 s in the future
+            first_row = self.seed_routed_started_dispatch(
+                "t-sched-retry",
+                "w-sched-1",
+                can_wait_hours=1.0,
+                now=launched_dt,
+            )
+            first_id = first_row["dispatch_id"]
+            provider_1, _, model_1 = first_row["request"]["provider"].partition("/")
+            terminal = {
+                "reason": "error",
+                "status": "error",
+                "attentionReason": "error",
+                "at": failed_dt.isoformat(),
+                "failure_code": "provider_turn_failed",
+                "provider_message": "503 upstream gateway timeout",
+            }
+            provider_retry.record(
+                first_row["bundle"],
+                terminal,
+                dispatch_id=first_id,
+                at=failed_dt.isoformat(),
+                classify=lambda *_: ("transient", {"source": "system_one", "scorer_type": "fixture"}),
+            )
+            failed_agent = {
+                "id": "w-sched-1",
+                "status": "error",
+                "attentionReason": "error",
+                "lastError": "503 upstream gateway timeout",
+                "provider": provider_1,
+                "model": model_1,
+                "labels": first_row["request"]["labels"],
+                "updatedAt": failed_dt.isoformat(),
+            }
+            self.write_host_state({"parent_id": "parent-1", "agents": {"w-sched-1": failed_agent}, "timelines": {}})
+            # Settle attempt 1 (`provider_turn_failed`) and schedule its transient retry; `handle` starts `--watch`,
+            # which we then terminate mid-wait to simulate a tray restart killing the watcher during backoff.
+            receipt_path = self.write_dead_watcher_receipt(first_id, agent_id="w-sched-1")
+            registry.observe(first_id, failed_agent, now=failed_dt, path=self.db_path, terminal=terminal)
+            scheduled = dispatch_fallback.handle(first_id)
+            self.assertEqual(scheduled["action"], "scheduled")
+            retry_at_iso = scheduled["retry_at"]
+            saved_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            initial_watcher_pid = saved_receipt["pid"]
+            hermetic_run._started.add(initial_watcher_pid)
+            try:
+                proc_obj = psutil.Process(initial_watcher_pid)
+                proc_obj.terminate()
+                proc_obj.wait(timeout=5)
+            except psutil.Error:
+                pass
+            self.assertFalse(psutil.pid_exists(initial_watcher_pid))
+            saved_receipt.update(
+                seen=True,
+                started=True,
+                status="watching",
+                terminal=terminal,
+                fallback={"status": "scheduled", "at": datetime.now(timezone.utc).isoformat(), "retry_at": retry_at_iso},
+            )
+            receipt_path.write_text(json.dumps(saved_receipt), encoding="utf-8")
+
+            # `needs_reader` holds the notice side (`needed: False`), while the tray gate catches the dead watcher on the
+            # guard-active chain (`registry.fallback_guard` + `registry.current_attempt`).
+            needs = registry.needs_reader(path=self.db_path)
+            self.assertFalse(needs["needed"], needs)
+            self.assertEqual((needs["due"], needs["observe"]), ([], []))
+            self.assertTrue(registry.fallback_guard(registry.inspect(first_id, self.db_path), registry.utcnow()))
+            self.assertTrue(services.dispatch_notice_needed())
+
+            # 1. Pass runs `reconcile`, observes `first_id` via `failed_attempts`, and restarts `--watch <first_id>`.
+            self.run_pass_and_wait(force=True)
+            log_text = (self.state_dir / "dispatch-notice.log").read_text(encoding="utf-8")
+            reconcile_out = json.loads(log_text)
+            self.assertEqual([obs["dispatch_id"] for obs in reconcile_out["observations"]], [first_id])
+            restarted_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            restarted_pid = restarted_receipt["pid"]
+            hermetic_run._started.add(restarted_pid)
+            self.assertNotEqual(restarted_pid, initial_watcher_pid)
+            self.assertEqual(restarted_receipt["status"], "watching")
+            self.assertEqual((restarted_receipt.get("fallback") or {}).get("status"), "scheduled")
+            self.assertTrue(psutil.pid_exists(restarted_pid))
+            self.assertEqual(self.read_jsonl("messages.jsonl"), [])
+            if datetime.now(timezone.utc) < registry.parse(retry_at_iso) - timedelta(seconds=1):
+                self.assertEqual(self.read_jsonl("created_agents.jsonl"), [])
+                self.assertFalse(services.dispatch_notice_needed())
+
+            # 2. At `retry_at`, the restarted watcher runs `fallback`, launches the same-bundle retry, and exits quietly.
+            def created_without_early_error():
+                early = self.read_jsonl("messages.jsonl")
+                if early:
+                    self.fail(f"expected no notice before scheduled retry finished, got: {early}")
+                return self.read_jsonl("created_agents.jsonl")
+
+            created = self.wait_until(created_without_early_error, timeout=25.0)
+            self.assertEqual(len(created), 1)
+            second_id = created[0]["id"]
+            self.assertNotEqual(second_id, first_id)
+            self.assertEqual((created[0]["provider"], created[0]["model"]), (provider_1, model_1))
+
+            self.wait_until(
+                lambda: (
+                    (registry.inspect(first_id, self.db_path).get("end_notice") or {}).get("source") == "relaunched"
+                    and not psutil.pid_exists(restarted_pid)
+                ),
+                timeout=20.0,
+            )
+            second_watcher_pid = json.loads(
+                (self.state_dir / "paseo-notifications" / f"{second_id}.json").read_text(encoding="utf-8")
+            )["pid"]
+            hermetic_run._started.add(second_watcher_pid)
+            self.assertEqual(self.read_jsonl("messages.jsonl"), [])
+
+            # 3. Attempt 2 finishes; its watcher sends the single notice for the brief.
+            host_state = json.loads((self.state_dir / "fake-paseo-host.json").read_text(encoding="utf-8"))
+            done_at = datetime.now(timezone.utc).isoformat()
+            host_state["agents"][second_id].update(status="idle", attentionReason="finished", updatedAt=done_at)
+            host_state.setdefault("timelines", {})[second_id] = [
+                {"timestamp": first_row["created_at"], "item": {"type": "user_message", "text": "Run fixture task"}},
+                {"timestamp": done_at, "item": {"type": "assistant_message", "text": "Completed on scheduled retry."}},
+            ]
+            self.write_host_state(host_state)
+
+            msgs = self.wait_until(lambda: self.read_jsonl("messages.jsonl"), timeout=20.0)
+            self.wait_until(
+                lambda: (
+                    registry.inspect(second_id, self.db_path)["state"] == "completed"
+                    and (registry.inspect(second_id, self.db_path).get("end_notice") or {}).get("state") == "sent"
+                    and not psutil.pid_exists(second_watcher_pid)
+                ),
+                timeout=20.0,
+            )
+            self.assertEqual(len(msgs), 1)
+            self.assertIn("State: finished", msgs[0]["text"])
+            self.assertIn("retried the same model after its backoff", msgs[0]["text"])
+            self.assertIn("Completed on scheduled retry.", msgs[0]["text"])
+            self.assertIn(f"Dispatch: {first_id}", msgs[0]["text"])
+            expected_second_msg_id = registry.end_notice_message_id(second_id)
+            raw = [m["options"]["messageId"] for m in self.read_jsonl("raw_sends.jsonl")]
+            self.assertEqual(raw, [expected_second_msg_id])
+            self.assertFalse(services.dispatch_notice_needed())
+            self.assertFalse(services.dispatch_notice_tick(force=True))
 
     def test_worker_removed_or_failed_with_fallback_off_notifies_once(self):
         now = datetime.now(timezone.utc)
