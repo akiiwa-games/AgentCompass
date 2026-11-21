@@ -488,6 +488,12 @@ class WatchTests(TrayTestCase):
 
             now = app.services.datetime.now(app.services.timezone.utc)
             seed_dispatch_row(db_path, base_paseo_row("d-popen-fail", state="started", now=now))
+            notif_dir = state_dir / "paseo-notifications"
+            notif_dir.mkdir(parents=True, exist_ok=True)
+            (notif_dir / "d-popen-fail.json").write_text(
+                '{"dispatch_id": "d-popen-fail", "parent_id": "parent-1", "pid": 999999, "status": "watching"}',
+                encoding="utf-8",
+            )
             refresh_calls = []
             event = mock.Mock()
             event.return_value.wait.side_effect = [None, Stop]
@@ -505,8 +511,10 @@ class WatchTests(TrayTestCase):
                     raise nxt
 
             event.return_value.wait.side_effect = wait_step
+            import dispatch_flow
             with mock.patch.dict("os.environ", {"ROUTER_STATE_DIR": str(state_dir), "ROUTER_DISPATCH_DB": str(db_path)}), \
                     mock.patch.object(app.services, "STATE_DIR", state_dir), \
+                    mock.patch.object(dispatch_flow, "paseo_reachable", return_value=True), \
                     mock.patch.object(app.services, "hidden_popen", side_effect=FileNotFoundError("cli missing")) as popen, \
                     mock.patch.object(app.services.time, "monotonic", side_effect=lambda: clock[0]), \
                     mock.patch.object(app.time, "monotonic", side_effect=lambda: clock[0]), \

@@ -5,10 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
+import socket
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -26,10 +29,40 @@ require_windows("psutil")
 import allocator
 import account_fleet
 import dispatch_fallback
+import dispatch_flow
 import dispatch_registry as registry
 import provider_inventory
 import provider_retry
 import usage_reading
+
+
+def start_loopback_listener() -> tuple[socket.socket, int, threading.Event]:
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(16)
+    srv.settimeout(0.2)
+    port = srv.getsockname()[1]
+    stop = threading.Event()
+
+    def _accept_loop() -> None:
+        while not stop.is_set():
+            try:
+                conn, _ = srv.accept()
+                conn.close()
+            except OSError:
+                if stop.is_set():
+                    break
+
+    threading.Thread(target=_accept_loop, daemon=True).start()
+    return srv, port, stop
+
+
+def bridge_done_statuses() -> set[str]:
+    text = (services.ROOT / "setup" / "paseo_dispatch_bridge.mjs").read_text(encoding="utf-8")
+    match = re.search(r"const DONE = new Set\(\[([^\]]+)\]\);", text)
+    if not match:
+        raise AssertionError("DONE set not found in paseo_dispatch_bridge.mjs")
+    return set(re.findall(r"'([^']+)'", match.group(1)))
 
 
 FAKE_SDK_CLIENT = r"""
@@ -278,18 +311,35 @@ class DispatchNoticeUnitTests(unittest.TestCase):
         state_patch = mock.patch.object(services, "STATE_DIR", self.state_dir)
         state_patch.start()
         self.addCleanup(state_patch.stop)
-        self.addCleanup(services._dispatch_notice.update, proc=None, started=None)
-        services._dispatch_notice.update(proc=None, started=None)
+        self._daemon_sock, self.daemon_port, self._daemon_stop = start_loopback_listener()
+        self.addCleanup(self._stop_daemon_listener)
+        self.configure_paseo_daemon()
+        self.addCleanup(self.reset_notice_state)
+        self.reset_notice_state()
+
+    def _stop_daemon_listener(self) -> None:
+        self._daemon_stop.set()
+        try:
+            self._daemon_sock.close()
+        except OSError:
+            pass
+
+    def reset_notice_state(self) -> None:
+        if hasattr(services, "_reset_dispatch_notice"):
+            services._reset_dispatch_notice()
+        else:
+            services._dispatch_notice.update(proc=None, started=None)
 
     def child(self, running: bool):
         proc = mock.Mock(pid=5150)
         proc.poll.return_value = None if running else 0
         return proc
 
-    def configure_paseo_daemon(self) -> None:
+    def configure_paseo_daemon(self, port: int | None = None) -> None:
+        listen_port = self.daemon_port if port is None else port
         self.paseo_home.mkdir(parents=True, exist_ok=True)
         (self.paseo_home / "config.json").write_text(
-            json.dumps({"daemon": {"listen": "127.0.0.1:6767"}}),
+            json.dumps({"daemon": {"listen": f"127.0.0.1:{listen_port}"}}),
             encoding="utf-8",
         )
 
@@ -299,6 +349,8 @@ class DispatchNoticeUnitTests(unittest.TestCase):
         status: str = "watching",
         pid: int = 999999,
         *,
+        record_dispatch_id: str | None = None,
+        parent_id: object = "parent-1",
         fallback: dict | None = None,
         pending: dict | None = None,
         mtime_age_s: float = 0.0,
@@ -308,8 +360,8 @@ class DispatchNoticeUnitTests(unittest.TestCase):
         path = notif_dir / f"{dispatch_id}.json"
         now_ms = int(time.time() * 1000)
         record = {
-            "dispatch_id": dispatch_id,
-            "parent_id": "parent-1",
+            "dispatch_id": dispatch_id if record_dispatch_id is None else record_dispatch_id,
+            "parent_id": parent_id,
             "agent_id": "worker-1",
             "pid": pid,
             "status": status,
@@ -361,6 +413,7 @@ class DispatchNoticeUnitTests(unittest.TestCase):
                 end_notice={"state": "due", "message_id": "m2"},
             ),
         )
+        (self.paseo_home / "config.json").unlink(missing_ok=True)
         self.write_receipt("d-due-no-daemon", status="delivery_failed")
 
         self.assertFalse(services.dispatch_notice_needed())
@@ -378,19 +431,23 @@ class DispatchNoticeUnitTests(unittest.TestCase):
         for state in ("launching", "launched", "started"):
             with self.subTest(state=state):
                 db = self.root / f"open-{state}.sqlite3"
-                row = base_paseo_row(f"d-{state}", state=state, now=now)
+                did = f"d-{state}"
+                row = base_paseo_row(did, state=state, now=now)
                 if state == "launching":
                     row["launched_at"] = (now - timedelta(seconds=registry.CREATE_SEND_WINDOW + 5)).isoformat()
+                self.write_receipt(did, status="watching", pid=999999)
                 with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db)}):
                     seed_dispatch_row(db, row)
                     self.assertTrue(services.dispatch_notice_needed(now=now))
 
         db_exp = self.root / "expired-live.sqlite3"
+        self.write_receipt("d-exp", status="watching", pid=999999)
         with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_exp)}):
             seed_dispatch_row(db_exp, base_paseo_row("d-exp", state="expired", now=now))
             self.assertTrue(services.dispatch_notice_needed(now=now))
 
         db_fb = self.root / "fallback.sqlite3"
+        self.write_receipt("d-fb", status="watching", pid=999999)
         with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_fb)}):
             fb_row = base_paseo_row("d-fb", state="failed", now=now)
             fb_row["observed_at"] = fb_row["launched_at"]
@@ -543,9 +600,10 @@ class DispatchNoticeUnitTests(unittest.TestCase):
             with mock.patch.object(services.psutil, "Process", return_value=dead_sched_proc):
                 self.assertFalse(registry.needs_reader(path=db_sched, now=now)["needed"])
                 self.assertTrue(services.dispatch_notice_needed(now=now))
+            # A finished (`delivery_failed`) receipt cannot be restarted by `ensureNotification`, and `needs_reader`
+            # holds the due notice until `guard_until`; past `guard_until`, `needs_reader` releases it for `notify_end`.
             self.write_receipt("d-sched-2", status="delivery_failed", pid=2222)
-            self.assertTrue(services.dispatch_notice_needed(now=now))
-            # Past `guard_until`, `needs_reader` releases the due notice too.
+            self.assertFalse(services.dispatch_notice_needed(now=now))
             self.assertTrue(services.dispatch_notice_needed(now=registry.parse(guard_until)))
 
         # 2. A completed attempt whose worker has an in-flight `resume` of the same parent waits (`_later_turn` pending),
@@ -569,21 +627,24 @@ class DispatchNoticeUnitTests(unittest.TestCase):
             self.assertFalse(services.dispatch_notice_needed(now=now))
 
         # 3. An unhandled covered failure settled by a non-reconcile reader (`_awaits_fallback` -> `needs_reader['observe']`)
-        #    starts a pass even without `end_notice` / daemon config when its watcher is dead, and does not when its
-        #    `--watch` process is already healthy.
+        #    starts a pass even without `end_notice` when its watcher receipt is restartable, and does not when its
+        #    receipt is missing or its `--watch` process is already healthy.
         db_await = self.root / "await.sqlite3"
         await_row = base_paseo_row("d-await", state="failed", agent_id="w-await", now=now)
         await_row["observed_at"] = await_row["launched_at"]
         seed_dispatch_row(db_await, await_row)
-        (self.paseo_home / "config.json").unlink(missing_ok=True)
         bridge = str(services.ROOT / "setup" / "paseo_dispatch_bridge.mjs")
         live_proc = mock.Mock()
         live_proc.is_running.return_value = True
         live_proc.cmdline.return_value = ["node", bridge, "--watch", "d-await", "parent-1", "w-await", ""]
+        dead_proc = mock.Mock()
+        dead_proc.is_running.return_value = False
         with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_await)}):
             self.assertEqual(registry.needs_reader(path=db_await, now=now)["observe"], ["d-await"])
-            self.assertTrue(services.dispatch_notice_needed(now=now))
+            self.assertFalse(services.dispatch_notice_needed(now=now))
             self.write_receipt("d-await", status="watching", pid=4242)
+            with mock.patch.object(services.psutil, "Process", return_value=dead_proc):
+                self.assertTrue(services.dispatch_notice_needed(now=now))
             with mock.patch.object(services.psutil, "Process", return_value=live_proc):
                 self.assertFalse(services.dispatch_notice_needed(now=now))
 
@@ -653,9 +714,87 @@ class DispatchNoticeUnitTests(unittest.TestCase):
                     after_window = datetime.fromisoformat(row["launched_at"]) + timedelta(seconds=registry.CREATE_SEND_WINDOW)
                     self.assertTrue(services.dispatch_notice_needed(now=after_window))
 
-    def test_receipt_gate_skips_healthy_and_scheduled_watchers_and_catches_pid_reuse_and_stale_receipts(self):
-        now = datetime.now(timezone.utc)
-        seed_dispatch_row(self.db_path, base_paseo_row("d-gate", state="started", now=now))
+    def assert_zero_processes_over_ticks(self, now: datetime, ticks: int = 4) -> None:
+        mono = [1000.0]
+        with mock.patch.object(services.time, "monotonic", side_effect=lambda: mono[0]), \
+                mock.patch.object(registry, "utcnow", return_value=now), \
+                mock.patch.object(services, "hidden_popen", return_value=self.child(False)) as popen:
+            for _ in range(ticks):
+                mono[0] += services.DISPATCH_NOTICE_INTERVAL + 5.0
+                self.assertFalse(services.dispatch_notice_needed(now=now))
+                self.assertFalse(services.dispatch_notice_tick())
+            popen.assert_not_called()
+
+    def test_rule1_watcher_restart_only_where_bridge_restarts_one(self):
+        now = datetime(2026, 11, 21, 12, 0, 0, tzinfo=timezone.utc)
+        done_statuses = bridge_done_statuses()
+
+        # Stuck state 1: Parent closed while worker still runs (`started` row with `status="parent_unavailable"`),
+        # plus every other finished status in the bridge's `DONE` set.
+        for done_status in sorted(done_statuses):
+            with self.subTest(done_status=done_status):
+                db_done = self.root / f"rule1-done-{done_status}.sqlite3"
+                did = f"d-done-{done_status}"
+                seed_dispatch_row(db_done, base_paseo_row(did, state="started", now=now))
+                self.write_receipt(did, status=done_status, pid=999999)
+                with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_done)}):
+                    self.assert_zero_processes_over_ticks(now)
+        self.assertEqual(getattr(services, "_WATCHER_DONE_STATUSES", None), done_statuses)
+
+        # Stuck state 2: Expired row after a refused resume (`status="creation_failed"` + `.creation-failed` marker),
+        # and an open row carrying `.creation-failed` even while its receipt still says `watching`.
+        db_exp = self.root / "rule1-expired-refused-resume.sqlite3"
+        exp_row = base_paseo_row("d-exp-nb", state="expired", agent_id="w-prev", now=now)
+        exp_row["operation"] = "resume"
+        exp_row["launched_at"] = (now - timedelta(minutes=15)).isoformat()
+        exp_row["lease_until"] = (now - timedelta(minutes=5)).isoformat()
+        exp_row["hard_until"] = (now + timedelta(hours=23)).isoformat()
+        seed_dispatch_row(db_exp, exp_row)
+        self.write_receipt("d-exp-nb", status="creation_failed", pid=999999)
+        marker_exp = self.state_dir / "paseo-notifications" / "d-exp-nb.json.creation-failed"
+        marker_exp.write_text("host_resume_failed", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_exp)}):
+            self.assert_zero_processes_over_ticks(now)
+
+        db_marker = self.root / "rule1-watching-marker.sqlite3"
+        seed_dispatch_row(db_marker, base_paseo_row("d-watch-marker", state="started", now=now))
+        self.write_receipt("d-watch-marker", status="watching", pid=999999)
+        (self.state_dir / "paseo-notifications" / "d-watch-marker.json.creation-failed").write_text(
+            "released", encoding="utf-8"
+        )
+        with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_marker)}):
+            self.assert_zero_processes_over_ticks(now)
+
+        # Stuck state 3: Open `started` row with missing, unreadable, non-dict, or another dispatch's receipt.
+        notif_dir = self.state_dir / "paseo-notifications"
+        notif_dir.mkdir(parents=True, exist_ok=True)
+        for case, raw in (
+            ("missing", None),
+            ("corrupt", "{not valid json"),
+            ("list", "[1, 2, 3]"),
+            ("other_dispatch", json.dumps({"dispatch_id": "d-other", "parent_id": "parent-1", "status": "watching", "pid": 999999})),
+            ("missing_parent", json.dumps({"dispatch_id": "d-open-bad", "parent_id": "", "status": "watching", "pid": 999999})),
+        ):
+            with self.subTest(receipt_case=case):
+                db_bad = self.root / f"rule1-{case}.sqlite3"
+                seed_dispatch_row(db_bad, base_paseo_row("d-open-bad", state="started", now=now))
+                r_file = notif_dir / "d-open-bad.json"
+                if raw is None:
+                    r_file.unlink(missing_ok=True)
+                else:
+                    r_file.write_text(raw, encoding="utf-8")
+                with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_bad)}):
+                    self.assert_zero_processes_over_ticks(now)
+
+        # Positive control: readable `watching` receipt of this dispatch with no marker and dead PID asks for a pass.
+        db_ok = self.root / "rule1-ok.sqlite3"
+        seed_dispatch_row(db_ok, base_paseo_row("d-open-ok", state="started", now=now))
+        self.write_receipt("d-open-ok", status="watching", pid=999999)
+        with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_ok)}):
+            self.assertTrue(services.dispatch_notice_needed(now=now))
+
+    def test_rule2_live_watcher_is_healthy_regardless_of_receipt_age_including_resend_wait(self):
+        now = datetime(2026, 11, 21, 12, 0, 0, tzinfo=timezone.utc)
         bridge = str(services.ROOT / "setup" / "paseo_dispatch_bridge.mjs")
 
         def fake_proc(cmdline, running=True):
@@ -664,67 +803,265 @@ class DispatchNoticeUnitTests(unittest.TestCase):
             proc.cmdline.return_value = cmdline
             return proc
 
-        # 1. Healthy live watcher (`--watch d-gate`) writing recently -> no pass needed.
-        self.write_receipt("d-gate", status="watching", pid=7777)
-        with mock.patch.object(services.psutil, "Process", return_value=fake_proc(["node", bridge, "--watch", "d-gate", "parent-1", "worker-1", ""])):
-            self.assertFalse(services.dispatch_notice_needed(now=now))
+        # Stuck state: Live watcher waiting on a 15-minute `agent_request_outcome_unknown` resend interval for a permission notice.
+        db_perm = self.root / "rule2-perm-wait.sqlite3"
+        seed_dispatch_row(db_perm, base_paseo_row("d-perm-wait", state="started", now=now))
+        self.write_receipt(
+            "d-perm-wait",
+            status="watching",
+            pid=7777,
+            pending={
+                "key": "permission:perm-1",
+                "text": "Permission waiting",
+                "saved_at": (now - timedelta(minutes=10)).isoformat(),
+                "sent_at": (now - timedelta(minutes=10)).isoformat(),
+                "unknown": True,
+            },
+            mtime_age_s=600.0,
+        )
+        with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_perm)}), \
+                mock.patch.object(services.psutil, "Process", return_value=fake_proc(["node", bridge, "--watch", "d-perm-wait", "parent-1", "worker-1", ""])):
+            self.assert_zero_processes_over_ticks(now)
+        self.assertFalse(hasattr(services, "WATCHER_RECEIPT_STALE_SECONDS"))
 
-        # 2. PID reused by an unrelated process, a non-watch bridge call, or another dispatch's watcher -> pass needed.
+        # Live watcher with an aged/stalled receipt (no pending notice, or past `retry_at`) still starts zero passes.
+        db_aged = self.root / "rule2-aged.sqlite3"
+        seed_dispatch_row(db_aged, base_paseo_row("d-aged", state="started", now=now))
+        self.write_receipt("d-aged", status="watching", pid=7777, mtime_age_s=900.0)
+        with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_aged)}), \
+                mock.patch.object(services.psutil, "Process", return_value=fake_proc(["node", bridge, "--watch", "d-aged", "parent-1", "worker-1", ""])):
+            self.assert_zero_processes_over_ticks(now)
+
+        # PID reuse check is preserved: PID must actually be `paseo_dispatch_bridge.mjs --watch <dispatch_id>`.
         for bad_cmd in (
             ["python.exe", "-c", "print(1)"],
             ["node", bridge],
             ["node", bridge, "--watch", "d-other", "parent-1", "worker-1", ""],
         ):
-            with self.subTest(cmdline=bad_cmd), mock.patch.object(services.psutil, "Process", return_value=fake_proc(bad_cmd)):
+            with self.subTest(cmdline=bad_cmd), \
+                    mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_aged)}), \
+                    mock.patch.object(services.psutil, "Process", return_value=fake_proc(bad_cmd)):
                 self.assertTrue(services.dispatch_notice_needed(now=now))
 
-        # 3. Live `--watch d-gate` process whose receipt stopped updating beyond WATCHER_RECEIPT_STALE_SECONDS -> pass needed.
-        stale_age = services.WATCHER_RECEIPT_STALE_SECONDS + 10.0
-        self.write_receipt("d-gate", status="watching", pid=7777, mtime_age_s=stale_age)
-        with mock.patch.object(services.psutil, "Process", return_value=fake_proc(["node", bridge, "--watch", "d-gate", "parent-1", "worker-1", ""])):
-            self.assertTrue(services.dispatch_notice_needed(now=now))
-
-        # 4. Watcher waiting on a scheduled retry (`paseo_dispatch_bridge.mjs` stops `persist()` until `retry_at`):
-        #    old receipt mtime is allowed before `retry_at` (+ grace), and flagged once `retry_at` + grace has elapsed.
-        retry_at = (now + timedelta(seconds=180)).isoformat()
-        self.write_receipt(
-            "d-gate",
-            status="watching",
-            pid=7777,
-            fallback={"status": "scheduled", "at": (now - timedelta(seconds=120)).isoformat(), "retry_at": retry_at},
-            mtime_age_s=120.0,
-        )
-        with mock.patch.object(services.psutil, "Process", return_value=fake_proc(["node", bridge, "--watch", "d-gate", "parent-1", "worker-1", ""])):
-            self.assertFalse(services.dispatch_notice_needed(now=now))
-            overdue = datetime.fromisoformat(retry_at) + timedelta(seconds=services.WATCHER_RECEIPT_STALE_SECONDS + 5.0)
-            self.assertTrue(services.dispatch_notice_needed(now=overdue))
-
-        # 5. Non-watching status or `.creation-failed` marker -> pass needed even if PID is alive and mtime is fresh.
-        self.write_receipt("d-gate", status="delivery_failed", pid=7777)
-        with mock.patch.object(services.psutil, "Process", return_value=fake_proc(["node", bridge, "--watch", "d-gate", "parent-1", "worker-1", ""])):
-            self.assertTrue(services.dispatch_notice_needed(now=now))
-
-        self.write_receipt("d-gate", status="watching", pid=7777)
-        marker = self.state_dir / "paseo-notifications" / "d-gate.json.creation-failed"
-        marker.write_text("stop", encoding="utf-8")
-        try:
-            with mock.patch.object(services.psutil, "Process", return_value=fake_proc(["node", bridge, "--watch", "d-gate", "parent-1", "worker-1", ""])):
-                self.assertTrue(services.dispatch_notice_needed(now=now))
-        finally:
-            marker.unlink(missing_ok=True)
-
-        # 6. Even when every open dispatch's watcher is healthy, a terminal due end notice still starts a pass.
-        self.configure_paseo_daemon()
+        # Even when every open dispatch's watcher is healthy, a terminal due end notice still starts a pass.
         seed_dispatch_row(
-            self.db_path,
+            db_aged,
             base_paseo_row("d-due-still", state="completed", now=now, end_notice={"state": "due", "message_id": "m-due"}),
         )
         self.write_receipt("d-due-still", status="delivery_failed", pid=8888)
-        with mock.patch.object(services.psutil, "Process", return_value=fake_proc(["node", bridge, "--watch", "d-gate", "parent-1", "worker-1", ""])):
+        with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_aged)}), \
+                mock.patch.object(services.psutil, "Process", return_value=fake_proc(["node", bridge, "--watch", "d-aged", "parent-1", "worker-1", ""])):
             self.assertTrue(services.dispatch_notice_needed(now=now))
+
+    def test_rule3_due_notice_requires_readable_matching_receipt_for_notify_end(self):
+        now = datetime(2026, 11, 21, 12, 0, 0, tzinfo=timezone.utc)
+        seed_dispatch_row(
+            self.db_path,
+            base_paseo_row(
+                "d-due-bad",
+                state="completed",
+                parent_id="parent-1",
+                now=now,
+                end_notice={"state": "due", "message_id": registry.end_notice_message_id("d-due-bad")},
+            ),
+        )
+        self.assertEqual(registry.needs_reader(path=self.db_path, now=now)["due"], ["d-due-bad"])
+        notif_file = self.state_dir / "paseo-notifications" / "d-due-bad.json"
+        notif_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Stuck state: corrupt, non-dict, mismatched-dispatch, or mismatched-parent receipt on a due notice.
+        for case, raw in (
+            ("corrupt_json", "{corrupt json"),
+            ("json_array", "[1, 2]"),
+            ("wrong_dispatch", json.dumps({"dispatch_id": "d-other", "parent_id": "parent-1", "status": "delivery_failed"})),
+            ("wrong_parent", json.dumps({"dispatch_id": "d-due-bad", "parent_id": "parent-other", "status": "delivery_failed"})),
+            ("empty_parent", json.dumps({"dispatch_id": "d-due-bad", "parent_id": "", "status": "delivery_failed"})),
+        ):
+            with self.subTest(case=case):
+                notif_file.write_text(raw, encoding="utf-8")
+                self.assert_zero_processes_over_ticks(now)
+
+        # Once the receipt is a readable record of `d-due-bad` matching `parent-1`, `notify_end` can act.
+        self.write_receipt("d-due-bad", status="delivery_failed", parent_id="parent-1")
+        self.assertTrue(services.dispatch_notice_needed(now=now))
+
+    def test_rule4_guard_active_chain_checks_launched_attempt_never_prepared_attempt(self):
+        now = datetime(2026, 11, 21, 12, 0, 0, tzinfo=timezone.utc)
+        bridge = str(services.ROOT / "setup" / "paseo_dispatch_bridge.mjs")
+        guard_until = (now + timedelta(seconds=600)).isoformat()
+        root_row = base_paseo_row(
+            "d-chain-root",
+            state="failed",
+            agent_id="w-chain-root",
+            now=now - timedelta(seconds=20),
+            end_notice={"state": "due", "message_id": registry.end_notice_message_id("d-chain-root")},
+        )
+        root_row["observed_at"] = root_row["launched_at"]
+        root_row["fallback"] = {
+            "state": "relaunching",
+            "current": "d-chain-2",
+            "until": guard_until,
+            "attempts": [
+                {"attempt": 1, "dispatch_id": "d-chain-root", "bundle_id": "codex:gpt-6.1-sol:medium"},
+                {"attempt": 2, "dispatch_id": "d-chain-2", "bundle_id": "codex:gpt-6.1-sol:medium"},
+            ],
+            "handled": {
+                "d-chain-root": {"action": "pending", "at": now.isoformat(), "until": guard_until},
+            },
+        }
+        attempt2 = base_paseo_row("d-chain-2", state="prepared", agent_id=None, now=now, launched=False)
+        attempt2["attempt_of"] = "d-chain-root"
+        attempt2["attempt"] = 2
+        seed_dispatch_row(self.db_path, root_row)
+        seed_dispatch_row(self.db_path, attempt2)
+
+        live_root_proc = mock.Mock()
+        live_root_proc.is_running.return_value = True
+        live_root_proc.cmdline.return_value = ["node", bridge, "--watch", "d-chain-root", "parent-1", "w-chain-root", ""]
+        dead_proc = mock.Mock()
+        dead_proc.is_running.return_value = False
+
+        # Stuck state: `d-chain-2` is `prepared` (missing receipt `d-chain-2.json`), while `d-chain-root` has a live watcher
+        # (or no receipt at all). Zero processes start across ticks.
+        self.assert_zero_processes_over_ticks(now)
+        self.write_receipt("d-chain-root", status="watching", pid=3131)
+        with mock.patch.object(services.psutil, "Process", return_value=live_root_proc):
+            self.assert_zero_processes_over_ticks(now)
+
+        # Even if a stray dead `watching` receipt exists for the unlaunched `prepared` attempt `d-chain-2`,
+        # a `prepared` current attempt has no watcher for `reconcile` to restart (`never_launched`).
+        self.write_receipt("d-chain-2", status="watching", pid=999999)
+        with mock.patch.object(
+            services.psutil,
+            "Process",
+            side_effect=lambda pid: live_root_proc if pid == 3131 else dead_proc,
+        ):
+            self.assert_zero_processes_over_ticks(now)
+
+        # When the launched failed attempt `d-chain-root`'s watcher died, the chain check catches `d-chain-root`.
+        (self.state_dir / "paseo-notifications" / "d-chain-2.json").unlink(missing_ok=True)
+        with mock.patch.object(services.psutil, "Process", return_value=dead_proc):
+            self.assertTrue(services.dispatch_notice_needed(now=now))
+
+    def test_rule5_stopped_paseo_daemon_starts_zero_passes_for_due_notices_and_watchers(self):
+        now = datetime(2026, 11, 21, 12, 0, 0, tzinfo=timezone.utc)
+        bridge = str(services.ROOT / "setup" / "paseo_dispatch_bridge.mjs")
+
+        # When nothing locally needs a pass, the gate does not even probe `dispatch_flow.paseo_reachable`.
+        with mock.patch.object(dispatch_flow, "paseo_reachable") as probe:
+            self.assertFalse(services.dispatch_notice_needed(now=now))
+            probe.assert_not_called()
+
+        closed_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        closed_sock.bind(("127.0.0.1", 0))
+        closed_port = closed_sock.getsockname()[1]
+        closed_sock.close()
+        self.configure_paseo_daemon(port=closed_port)
+        self.assertFalse(dispatch_flow.paseo_reachable(timeout=0.2))
+
+        # Stuck state 1: Daemon down with a due notice.
+        db_due = self.root / "rule5-due.sqlite3"
+        seed_dispatch_row(
+            db_due,
+            base_paseo_row(
+                "d-down-due",
+                state="completed",
+                now=now,
+                end_notice={"state": "due", "message_id": registry.end_notice_message_id("d-down-due")},
+            ),
+        )
+        self.write_receipt("d-down-due", status="delivery_failed")
+        with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_due)}):
+            self.assert_zero_processes_over_ticks(now)
+
+        # Stuck state 2: Daemon down with a live watcher (aged receipt) AND with a dead watcher.
+        db_open = self.root / "rule5-open.sqlite3"
+        seed_dispatch_row(db_open, base_paseo_row("d-down-open", state="started", now=now))
+        self.write_receipt("d-down-open", status="watching", pid=6161, mtime_age_s=120.0)
+        live_proc = mock.Mock()
+        live_proc.is_running.return_value = True
+        live_proc.cmdline.return_value = ["node", bridge, "--watch", "d-down-open", "parent-1", "worker-1", ""]
+        dead_proc = mock.Mock()
+        dead_proc.is_running.return_value = False
+        with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_open)}):
+            with mock.patch.object(services.psutil, "Process", return_value=live_proc):
+                self.assert_zero_processes_over_ticks(now)
+            with mock.patch.object(services.psutil, "Process", return_value=dead_proc):
+                self.assert_zero_processes_over_ticks(now)
+
+        # Once the local Paseo daemon answers again, both the due notice and the dead watcher start a pass.
+        self.configure_paseo_daemon(port=self.daemon_port)
+        self.assertTrue(dispatch_flow.paseo_reachable(timeout=0.2))
+        with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_due)}):
+            self.assertTrue(services.dispatch_notice_needed(now=now))
+        with mock.patch.dict(os.environ, {"ROUTER_DISPATCH_DB": str(db_open)}), \
+                mock.patch.object(services.psutil, "Process", return_value=dead_proc):
+            self.assertTrue(services.dispatch_notice_needed(now=now))
+
+    def test_rule6_unchanged_reason_set_doubles_wait_up_to_ten_minutes_and_resets_on_change_or_restart(self):
+        now = datetime(2026, 11, 21, 12, 0, 0, tzinfo=timezone.utc)
+        # Unseen no-op state not covered by Rules 1-5: a valid due notice with a readable receipt and a reachable daemon,
+        # where the pass exits 0 without modifying the registry or receipts (e.g. `timeline_unavailable` in `composeNotice`).
+        seed_dispatch_row(
+            self.db_path,
+            base_paseo_row(
+                "d-noop",
+                state="completed",
+                now=now,
+                end_notice={"state": "due", "message_id": registry.end_notice_message_id("d-noop")},
+            ),
+        )
+        self.write_receipt("d-noop", status="delivery_failed")
+
+        mono = [1000.0]
+        started_times: list[float] = []
+
+        def spawn_noop(*_args, **_kwargs):
+            started_times.append(mono[0] - 1000.0)
+            return self.child(False)
+
+        with mock.patch.object(services.time, "monotonic", side_effect=lambda: mono[0]), \
+                mock.patch.object(registry, "utcnow", return_value=now), \
+                mock.patch.object(services, "hidden_popen", side_effect=spawn_noop):
+            # Pass 1 at t=0.
+            self.assertTrue(services.dispatch_notice_tick())
+            self.assertEqual(started_times, [0.0])
+
+            # Unchanged set: waits double 30 -> 60 -> 120 -> 240 -> 480 -> 600 -> 600 (10 min cap), never repeating at 30 s.
+            expected_waits = (60, 120, 240, 480, 600, 600)
+            cursor = 0.0
+            for wait_s in expected_waits:
+                for probe_offset in (10, 30, wait_s - 1):
+                    mono[0] = 1000.0 + cursor + probe_offset
+                    self.assertFalse(
+                        services.dispatch_notice_tick(),
+                        f"unexpected pass at +{probe_offset}s during {wait_s}s backoff",
+                    )
+                cursor += wait_s
+                mono[0] = 1000.0 + cursor
+                self.assertTrue(services.dispatch_notice_tick(), f"expected pass at +{wait_s}s")
+            self.assertEqual(started_times, [0.0, 60.0, 180.0, 420.0, 900.0, 1500.0, 2100.0])
+
+            # Any change of the set (a second dispatch `d-new` needing watcher restart) returns the wait to 30 s immediately.
+            seed_dispatch_row(self.db_path, base_paseo_row("d-new", state="started", now=now))
+            self.write_receipt("d-new", status="watching", pid=999999)
+            mono[0] = 1000.0 + cursor + 35.0
+            self.assertTrue(services.dispatch_notice_tick())
+            self.assertEqual(started_times[-1], 2135.0)
+
+            # With the new 2-dispatch set also unchanged after Pass 8 finishes, +30 s is blocked again (doubled to 60 s).
+            mono[0] = 1000.0 + 2135.0 + 30.0
+            self.assertFalse(services.dispatch_notice_tick())
+
+            # A tray restart (fresh in-memory gate state) returns to 30 s / immediate start.
+            self.reset_notice_state()
+            mono[0] = 1000.0 + 2166.0
+            self.assertTrue(services.dispatch_notice_tick())
+            self.assertEqual(started_times[-1], 2166.0)
 
     def test_dispatch_notice_log_rotates_above_size_bound(self):
         seed_dispatch_row(self.db_path, base_paseo_row("d-log", state="started"))
+        self.write_receipt("d-log", status="watching", pid=999999)
         log_path = self.state_dir / "dispatch-notice.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         oversized = b"L" * (services.DISPATCH_NOTICE_LOG_MAX_BYTES + 64)
@@ -763,6 +1100,7 @@ class DispatchNoticeUnitTests(unittest.TestCase):
 
     def test_missing_cli_and_popen_oserror_are_quiet_and_throttled_to_interval(self):
         seed_dispatch_row(self.db_path, base_paseo_row("d-nocli", state="started"))
+        self.write_receipt("d-nocli", status="watching", pid=999999)
         needed_calls = 0
         orig_needed = services.dispatch_notice_needed
 
@@ -827,6 +1165,7 @@ class DispatchNoticeUnitTests(unittest.TestCase):
         tray_exe.write_bytes(b"tray")
         cli_exe.write_bytes(b"cli")
         seed_dispatch_row(self.db_path, base_paseo_row("d-frozen", state="started"))
+        self.write_receipt("d-frozen", status="watching", pid=999999)
         with mock.patch.object(services.component_launch, "frozen", return_value=True), \
                 mock.patch.object(services.sys, "executable", str(tray_exe)), \
                 mock.patch.object(services, "hidden_popen", return_value=self.child(True)) as popen:
@@ -839,16 +1178,20 @@ class DispatchNoticeUnitTests(unittest.TestCase):
 
     def test_interval_single_flight_and_non_tree_stop(self):
         seed_dispatch_row(self.db_path, base_paseo_row("d-flight", state="started"))
+        self.write_receipt("d-flight", status="watching", pid=999999)
         with mock.patch.object(services, "hidden_popen", return_value=self.child(True)) as popen:
             self.assertTrue(services.dispatch_notice_tick())
             self.assertFalse(services.dispatch_notice_tick(force=True))
             self.assertEqual(popen.call_count, 1)
 
-        services._dispatch_notice.update(proc=None, started=None)
+        self.reset_notice_state()
         with mock.patch.object(services, "hidden_popen", return_value=self.child(False)) as popen:
             self.assertTrue(services.dispatch_notice_tick())
             self.assertFalse(services.dispatch_notice_tick())
             self.assertTrue(services.dispatch_notice_tick(force=True))
+            # A changed reason set returns the interval to 30 s.
+            seed_dispatch_row(self.db_path, base_paseo_row("d-flight-2", state="started"))
+            self.write_receipt("d-flight-2", status="watching", pid=999999)
             services._dispatch_notice["started"] -= services.DISPATCH_NOTICE_INTERVAL + 1
             self.assertTrue(services.dispatch_notice_tick())
             self.assertEqual(popen.call_count, 3)
@@ -909,8 +1252,10 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.paseo_home = self.root / ".paseo"
         self.paseo_home.mkdir(parents=True, exist_ok=True)
+        self._daemon_sock, self.daemon_port, self._daemon_stop = start_loopback_listener()
+        self.addCleanup(self._stop_daemon_listener)
         (self.paseo_home / "config.json").write_text(
-            json.dumps({"daemon": {"listen": "127.0.0.1:6767"}}),
+            json.dumps({"daemon": {"listen": f"127.0.0.1:{self.daemon_port}"}}),
             encoding="utf-8",
         )
         (self.paseo_home / "local-credential").write_text("fixture-token\n", encoding="utf-8")
@@ -977,7 +1322,17 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
         state_patch.start()
         self.addCleanup(state_patch.stop)
         self.addCleanup(self._cleanup_processes)
-        services._dispatch_notice.update(proc=None, started=None)
+        if hasattr(services, "_reset_dispatch_notice"):
+            services._reset_dispatch_notice()
+        else:
+            services._dispatch_notice.update(proc=None, started=None)
+
+    def _stop_daemon_listener(self) -> None:
+        self._daemon_stop.set()
+        try:
+            self._daemon_sock.close()
+        except OSError:
+            pass
 
     def _cleanup_processes(self) -> None:
         proc = services._dispatch_notice.get("proc")
@@ -987,7 +1342,10 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
-        services._dispatch_notice.update(proc=None, started=None)
+        if hasattr(services, "_reset_dispatch_notice"):
+            services._reset_dispatch_notice()
+        else:
+            services._dispatch_notice.update(proc=None, started=None)
         notif_dir = self.state_dir / "paseo-notifications"
         if notif_dir.is_dir():
             for item in notif_dir.glob("*.json"):
@@ -1615,8 +1973,18 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
         watcher_pid = json.loads(receipt_path.read_text(encoding="utf-8"))["pid"]
         self.assertTrue(psutil.pid_exists(watcher_pid))
 
-        # Flip worker to finished while immediately forcing a reconcile pass to race the live watcher.
+        # Flip worker to finished while another dispatch (`d-other-due`) legitimately starts a reconcile pass,
+        # racing `d-race`'s live watcher.
         done_at = datetime.now(timezone.utc).isoformat()
+        trigger_row = base_paseo_row(
+            "d-other-due",
+            state="completed",
+            agent_id="w-trigger",
+            now=now,
+            end_notice={"state": "due", "message_id": registry.end_notice_message_id("d-other-due")},
+        )
+        seed_dispatch_row(self.db_path, trigger_row)
+        self.write_dead_watcher_receipt("d-other-due", agent_id="w-trigger", status="delivery_failed")
         self.write_host_state(
             {
                 "parent_id": "parent-1",
@@ -1626,39 +1994,48 @@ class DispatchNoticeIntegrationTests(unittest.TestCase):
                         status="idle",
                         attentionReason="finished",
                         updatedAt=done_at,
-                    )
+                    ),
+                    "w-trigger": {
+                        "id": "w-trigger",
+                        "status": "idle",
+                        "attentionReason": "finished",
+                        "provider": "codex",
+                        "model": "gpt-6.1-sol",
+                        "labels": trigger_row["request"]["labels"],
+                    },
                 },
                 "timelines": {
                     "w-race": [
                         {"timestamp": now.isoformat(), "item": {"type": "user_message", "text": "Run task"}},
                         {"timestamp": done_at, "item": {"type": "assistant_message", "text": "Race reply."}},
-                    ]
+                    ],
+                    "w-trigger": [
+                        {"timestamp": done_at, "item": {"type": "assistant_message", "text": "Trigger reply."}}
+                    ],
                 },
             }
         )
-        # Age the receipt mtime past WATCHER_RECEIPT_STALE_SECONDS so the pass runs simultaneously with the live watcher.
-        stale_ts = time.time() - (services.WATCHER_RECEIPT_STALE_SECONDS + 10.0)
-        os.utime(receipt_path, (stale_ts, stale_ts))
         self.run_pass_and_wait(force=True)
         self.wait_until(
             lambda: (
                 registry.inspect("d-race", self.db_path)["state"] == "completed"
                 and (registry.inspect("d-race", self.db_path).get("end_notice") or {}).get("state") == "sent"
+                and (registry.inspect("d-other-due", self.db_path).get("end_notice") or {}).get("state") == "sent"
                 and not psutil.pid_exists(watcher_pid)
             )
         )
 
-        msgs = [m for m in self.read_jsonl("messages.jsonl") if "Dispatch: d-race" in m["text"]]
+        msgs = [m for m in self.read_jsonl("messages.jsonl") if "Dispatch: d-race\n" in m["text"]]
         self.assertEqual(len(msgs), 1)
         self.assertIn("Race reply.", msgs[0]["text"])
-        raw = [m["options"]["messageId"] for m in self.read_jsonl("raw_sends.jsonl") if "Dispatch: d-race" in m["text"]]
+        raw = [m["options"]["messageId"] for m in self.read_jsonl("raw_sends.jsonl") if "Dispatch: d-race\n" in m["text"]]
         self.assertTrue(raw)
         self.assertEqual(set(raw), {expected_id})
         raw_count = len(raw)
         self.assertFalse(services.dispatch_notice_needed())
         self.assertFalse(services.dispatch_notice_tick(force=True))
         self.assertEqual(
-            len([m for m in self.read_jsonl("raw_sends.jsonl") if "Dispatch: d-race" in m["text"]]),
+            len([m for m in self.read_jsonl("raw_sends.jsonl") if "Dispatch: d-race\n" in m["text"]]),
             raw_count,
         )
 

@@ -37,6 +37,7 @@ if str(ROOT) not in sys.path:
 _SKILL_SCRIPTS = ROOT / "skills" / "agent-compass" / "scripts"
 if str(_SKILL_SCRIPTS) not in sys.path:
     sys.path.append(str(_SKILL_SCRIPTS))
+import dispatch_flow  # noqa: E402
 import dispatch_registry  # noqa: E402
 DOT_ROOT = plugins.plugin_root("dot2api")
 CHATGPT_ROOT = plugins.plugin_root("chatgpt-web")
@@ -931,10 +932,52 @@ def stop_usage_collect() -> None:
 
 # Dispatch notice recovery: restarts killed Paseo watchers (e.g. Antigravity's Windows job object) and sends due end notices.
 DISPATCH_NOTICE_INTERVAL = 30
+DISPATCH_NOTICE_MAX_INTERVAL = 600
 DISPATCH_NOTICE_LOG_MAX_BYTES = 1_000_000
-WATCHER_RECEIPT_STALE_SECONDS = 45.0
+PASEO_REACHABLE_TIMEOUT = 0.2
 _DISPATCH_NOTICE_ACTIVE = ("launching", "launched", "started")
-_dispatch_notice: dict = {"proc": None, "started": None}
+_WATCHER_DONE_STATUSES = frozenset(
+    {
+        "delivered",
+        "parent_unavailable",
+        "delivery_failed",
+        "creation_failed",
+        "relaunched",
+        "canceled",
+        "resumed",
+        "continued",
+        "undelivered",
+    }
+)
+_dispatch_notice: dict = {
+    "proc": None,
+    "started": None,
+    "last_reasons": None,
+    "interval": DISPATCH_NOTICE_INTERVAL,
+    "doubled": False,
+    "local_reasons": None,
+    "evaluated_reasons": None,
+}
+
+
+def _reset_dispatch_notice() -> None:
+    _dispatch_notice.update(
+        proc=None,
+        started=None,
+        last_reasons=None,
+        interval=DISPATCH_NOTICE_INTERVAL,
+        doubled=False,
+        local_reasons=None,
+        evaluated_reasons=None,
+    )
+
+
+def _reset_dispatch_notice_backoff() -> None:
+    _dispatch_notice.update(
+        last_reasons=None,
+        interval=DISPATCH_NOTICE_INTERVAL,
+        doubled=False,
+    )
 
 
 def _dispatch_state_dir() -> Path:
@@ -970,12 +1013,7 @@ def _sqlite_locked(exc: sqlite3.Error) -> bool:
 
 
 def _paseo_daemon_configured() -> bool:
-    paseo_home = Path(os.environ["PASEO_HOME"]) if os.environ.get("PASEO_HOME") else Path.home() / ".paseo"
-    try:
-        cfg = json.loads((paseo_home / "config.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return False
-    return isinstance(cfg, dict) and "daemon" in cfg
+    return "daemon" in dispatch_flow.paseo_config()
 
 
 def _safe_dispatch_id(value: object) -> bool:
@@ -1012,46 +1050,49 @@ def _watcher_process_alive(pid: object, dispatch_id: str) -> bool:
     return _is_bridge_watcher_cmdline(cmdline, dispatch_id)
 
 
-def _watcher_healthy(dispatch_id: str, state_dir: Path, now: datetime) -> bool:
-    """True only when `dispatch_id`'s receipt names a live `--watch <id>` process that is actively writing (or sleeping on a scheduled retry)."""
-    notif_dir = state_dir / "paseo-notifications"
-    receipt_path = notif_dir / f"{dispatch_id}.json"
-    if (notif_dir / f"{dispatch_id}.json.creation-failed").exists():
-        return False
+def _readable_receipt(dispatch_id: object, state_dir: Path, *, parent_id: object = None) -> dict | None:
+    """Readable watcher receipt dict of `dispatch_id` (and matching `parent_id` when given), or None."""
+    if not _safe_dispatch_id(dispatch_id):
+        return None
+    receipt_path = state_dir / "paseo-notifications" / f"{dispatch_id}.json"
     try:
-        st = receipt_path.stat()
         record = json.loads(receipt_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return False
+        return None
     if not isinstance(record, dict) or record.get("dispatch_id") != dispatch_id:
-        return False
-    if record.get("status") != "watching":
-        return False
-    if not _watcher_process_alive(record.get("pid"), dispatch_id):
-        return False
-    if now.timestamp() - st.st_mtime <= WATCHER_RECEIPT_STALE_SECONDS:
-        return True
-    # `paseo_dispatch_bridge.mjs` skips `persist()` on polls before `fallback.retry_at` while `fallback.status == "scheduled"`.
-    fb = record.get("fallback")
-    if not record.get("pending") and isinstance(fb, dict) and fb.get("status") == "scheduled":
-        retry_at = _parse_iso(fb.get("retry_at"))
-        if retry_at is not None and now < retry_at + timedelta(seconds=WATCHER_RECEIPT_STALE_SECONDS):
-            return True
-    return False
+        return None
+    rec_parent = record.get("parent_id")
+    if not isinstance(rec_parent, str) or not rec_parent:
+        return None
+    if isinstance(parent_id, str) and parent_id and rec_parent != parent_id:
+        return None
+    return record
 
 
-def dispatch_notice_needed(now: datetime | None = None) -> bool:
-    """True only when dispatch.sqlite3 has an open Paseo dispatch with an unhealthy watcher or `needs_reader` has actionable work."""
+def _watcher_restartable(dispatch_id: object, state_dir: Path) -> bool:
+    """True only where `observe` -> `ensureNotification` in `paseo_dispatch_bridge.mjs` would restart `--watch <id>`."""
+    record = _readable_receipt(dispatch_id, state_dir)
+    if record is None:
+        return False
+    if record.get("status") in _WATCHER_DONE_STATUSES:
+        return False
+    if (state_dir / "paseo-notifications" / f"{dispatch_id}.json.creation-failed").exists():
+        return False
+    return not _watcher_process_alive(record.get("pid"), str(dispatch_id))
+
+
+def _local_dispatch_notice_reasons(now: datetime | None = None) -> frozenset[tuple[str, str]]:
+    """Dispatches and reasons for which a reconcile pass can change something now, before probing the local daemon."""
     db = _dispatch_db_path()
     if not db.is_file():
-        return False
+        return frozenset()
     current = now or dispatch_registry.utcnow()
     try:
         stored = dispatch_registry.read_dispatches(path=db, timeout=0.5)
     except sqlite3.Error as exc:
-        return _sqlite_locked(exc)
+        return frozenset({("*", "sqlite_locked")}) if _sqlite_locked(exc) else frozenset()
     except (OSError, ValueError):
-        return False
+        return frozenset()
 
     state_dir = _dispatch_state_dir()
     by_id = {
@@ -1059,50 +1100,93 @@ def dispatch_notice_needed(now: datetime | None = None) -> bool:
         for r in stored
         if isinstance(r, dict) and isinstance(r.get("dispatch_id"), str)
     }
+    reasons: set[tuple[str, str]] = set()
     for row in stored:
-        if not isinstance(row, dict) or row.get("dispatch_mode", "paseo") != "paseo" or not row.get("launched_at"):
+        if not isinstance(row, dict) or row.get("dispatch_mode", "paseo") != "paseo":
             continue
         state = row.get("state")
+        dispatch_id = row.get("dispatch_id")
         if state in _DISPATCH_NOTICE_ACTIVE:
-            if _in_create_send_window(row, current):
+            if not row.get("launched_at") or _in_create_send_window(row, current):
                 continue
-            dispatch_id = row.get("dispatch_id")
-            if _safe_dispatch_id(dispatch_id) and not _watcher_healthy(dispatch_id, state_dir, current):
-                return True
-        elif state == "expired" and dispatch_registry.later(row.get("hard_until"), current):
-            dispatch_id = row.get("dispatch_id")
-            if _safe_dispatch_id(dispatch_id) and not _watcher_healthy(dispatch_id, state_dir, current):
-                return True
+            if _watcher_restartable(dispatch_id, state_dir):
+                reasons.add((str(dispatch_id), f"watcher:{state}"))
+        elif state == "expired" and row.get("launched_at") and dispatch_registry.later(row.get("hard_until"), current):
+            if _watcher_restartable(dispatch_id, state_dir):
+                reasons.add((str(dispatch_id), "watcher:expired"))
         elif dispatch_registry.fallback_guard(row, current):
-            dispatch_id = row.get("dispatch_id")
             if not _safe_dispatch_id(dispatch_id):
                 continue
             try:
                 watch_id = dispatch_registry.current_attempt(dispatch_id, path=db)
             except sqlite3.Error as exc:
-                return _sqlite_locked(exc)
+                if _sqlite_locked(exc):
+                    reasons.add(("*", "sqlite_locked"))
+                continue
             except (OSError, ValueError):
                 continue
-            if _in_create_send_window(by_id.get(watch_id), current):
-                continue
-            if _safe_dispatch_id(watch_id) and not _watcher_healthy(watch_id, state_dir, current):
-                return True
+            cur = by_id.get(watch_id)
+            if isinstance(cur, dict) and cur.get("launched_at"):
+                if _in_create_send_window(cur, current):
+                    continue
+                cur_state = cur.get("state")
+                if cur_state in _DISPATCH_NOTICE_ACTIVE or (
+                    cur_state == "expired" and dispatch_registry.later(cur.get("hard_until"), current)
+                ):
+                    if _watcher_restartable(watch_id, state_dir):
+                        reasons.add((str(watch_id), f"watcher:{cur_state}"))
+                elif cur_state == "failed" and cur.get("agent_id") and _watcher_restartable(watch_id, state_dir):
+                    reasons.add((str(watch_id), "chain_watcher"))
+            else:
+                for cand in stored:
+                    if (
+                        isinstance(cand, dict)
+                        and dispatch_registry.chain_root(cand) == dispatch_id
+                        and cand.get("state") == "failed"
+                        and cand.get("launched_at")
+                        and cand.get("agent_id")
+                        and _watcher_restartable(cand.get("dispatch_id"), state_dir)
+                    ):
+                        reasons.add((str(cand["dispatch_id"]), "chain_watcher"))
 
     try:
         needs = dispatch_registry.needs_reader(path=db, timeout=0.5, now=current)
     except sqlite3.Error as exc:
-        return _sqlite_locked(exc)
+        if _sqlite_locked(exc):
+            reasons.add(("*", "sqlite_locked"))
+        return frozenset(reasons)
     except (OSError, ValueError):
-        return False
-    if not needs["needed"]:
-        return False
-    if any(_safe_dispatch_id(did) and not _watcher_healthy(did, state_dir, current) for did in needs["observe"]):
-        return True
-    if needs["due"] and _paseo_daemon_configured():
-        notif_dir = state_dir / "paseo-notifications"
-        if any(_safe_dispatch_id(did) and (notif_dir / f"{did}.json").is_file() for did in needs["due"]):
-            return True
-    return False
+        return frozenset(reasons)
+
+    if needs["needed"]:
+        for did in needs["observe"]:
+            if _watcher_restartable(did, state_dir):
+                reasons.add((str(did), "awaiting_fallback"))
+        if needs["due"] and _paseo_daemon_configured():
+            for did in needs["due"]:
+                parent_id = (by_id.get(did) or {}).get("parent_id")
+                if _readable_receipt(did, state_dir, parent_id=parent_id) is not None:
+                    reasons.add((str(did), "due_notice"))
+
+    return frozenset(reasons)
+
+
+def dispatch_notice_reasons(now: datetime | None = None) -> frozenset[tuple[str, str]]:
+    """Dispatches and reasons for which a reconcile pass can make progress right now."""
+    local = _local_dispatch_notice_reasons(now=now)
+    _dispatch_notice["local_reasons"] = local
+    if not local:
+        return frozenset()
+    if not dispatch_flow.paseo_reachable(timeout=PASEO_REACHABLE_TIMEOUT):
+        return frozenset()
+    return local
+
+
+def dispatch_notice_needed(now: datetime | None = None) -> bool:
+    """True only when a reconcile pass can change something now and the local Paseo daemon answers."""
+    reasons = dispatch_notice_reasons(now=now)
+    _dispatch_notice["evaluated_reasons"] = reasons
+    return bool(reasons)
 
 
 def dispatch_reconcile_command() -> list[str] | None:
@@ -1147,16 +1231,38 @@ def _bound_dispatch_notice_log(log_path: Path) -> None:
 
 
 def dispatch_notice_tick(force: bool = False) -> bool:
-    """Run one low-priority reconcile pass when an open Paseo dispatch needs watcher recovery or a due end notice exists."""
+    """Run one low-priority reconcile pass only when a pass can change something now."""
     proc = _dispatch_notice["proc"]
     if proc is not None and proc.poll() is None:
         return False
     started = _dispatch_notice["started"]
-    if not force and started is not None and time.monotonic() - started < DISPATCH_NOTICE_INTERVAL:
+    if started is None:
+        _reset_dispatch_notice_backoff()
+    now_mono = time.monotonic()
+    if not force and started is not None and now_mono - started < DISPATCH_NOTICE_INTERVAL:
         return False
+    _dispatch_notice["local_reasons"] = None
+    _dispatch_notice["evaluated_reasons"] = None
     if not dispatch_notice_needed():
+        if _dispatch_notice["local_reasons"] == frozenset():
+            _reset_dispatch_notice_backoff()
         return False
-    _dispatch_notice["started"] = time.monotonic()
+    reasons = _dispatch_notice["evaluated_reasons"] or frozenset({("*", "needed")})
+    last_reasons = _dispatch_notice["last_reasons"]
+    if last_reasons is not None:
+        if reasons == last_reasons:
+            if not _dispatch_notice["doubled"]:
+                _dispatch_notice["interval"] = min(
+                    _dispatch_notice["interval"] * 2,
+                    DISPATCH_NOTICE_MAX_INTERVAL,
+                )
+                _dispatch_notice["doubled"] = True
+            if not force and started is not None and now_mono - started < _dispatch_notice["interval"]:
+                return False
+        else:
+            _dispatch_notice["interval"] = DISPATCH_NOTICE_INTERVAL
+            _dispatch_notice["doubled"] = False
+    _dispatch_notice["started"] = now_mono
     cmd = dispatch_reconcile_command()
     if cmd is None:
         return False
@@ -1180,6 +1286,8 @@ def dispatch_notice_tick(force: bool = False) -> bool:
     except OSError:
         _dispatch_notice["proc"] = None
         return False
+    _dispatch_notice["last_reasons"] = reasons
+    _dispatch_notice["doubled"] = False
     return True
 
 
