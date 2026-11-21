@@ -468,10 +468,18 @@ def named_route_given(args):
 def named_route_refusal(args, require=False):
     """The one owner of what a named route needs (`route_judge.record_constraint` reads it). Why the flags the caller gave
     do not make one, in one answer: what it needs, which of those were given and which are missing, and the other way out;
-    None when they do make one. With no route flag given it is None, unless `require`: the caller is recording a route."""
+    None when they do make one. With no route flag given it is None, unless `require`: the caller is recording a route.
+    A route named to `roll` is the user's own naming and nothing else: beside route flags, a `--constraint` other than
+    `user_override` (a project rule) is refused, since only `record` reads one and holds it to this machine's switches."""
     given = named_route_given(args)
     if not given and not require:
         return None
+    constraint = getattr(args, 'constraint', None)
+    if given and not require and constraint not in (None, 'user_override'):
+        return (f"A route named to roll is the user's own naming, with their words in --basis; --constraint {constraint} "
+                f'is not that. Record a project rule with `record --constraint {constraint}` (held to this machine\'s '
+                'automatic-routing switches: host policy, the model checkbox and the dispatch cadence), or drop '
+                '--constraint when the user named this route in this request.')
     basis = bool((getattr(args, 'basis', None) or '').strip())
     missing = [f'--{flag}' for flag in ('provider', 'account', 'model') if flag not in given]
     if not basis:
@@ -705,11 +713,28 @@ def dot_failure_next(code):
             'accepted, then roll the brief again.')
 
 
-def consult(args, out, prompt_file):
+def consult(args, out, prompt_file, *, task=None, decision=None):
     base = args.brief if args.brief is not None else prompt_file
     target = base.with_name(f'{base.stem}-consult-{time.strftime("%Y%m%d-%H%M%S")}')
     given = ['--prompt', str(prompt_file), '--out', str(target)]
     command = entry.argv('chatgpt-web', *given)
+    if isinstance(decision, dict) and decision.get('decision_id'):
+        # The one command that sends this consultation is handed over here and roll sees no later step, so the registry
+        # records the launch now: the account's dispatch cadence counts it (dispatch_registry.launch_record).
+        try:
+            registry.record_external_launch(
+                'chatgpt-web',
+                decision['decision_id'],
+                decision['decision_id'],
+                decision.get('selected_bundle') or {},
+                parent_id=out.get('parent_id'),
+                task_id=(task or {}).get('task_id'),
+                profile=decision.get('task_profile') or (task or {}).get('profile'),
+                brief_path=(task or {}).get('brief_path'),
+                cwd=None,
+            )
+        except OSError:
+            pass
     # A browser consultation blocks for up to 30 minutes; hand over the one command instead of backgrounding it.
     return dict(out, launched=False, dispatch_mode='chatgpt-web', caller_action='run_next_argv', next_argv=command,
                 next='Run next_argv (blocks until the answer is in <out>/response.md).'), 0
@@ -753,6 +778,15 @@ def grok_bot(args, out, prompt_file, task, bundle, *, decision=None):
         result['continuation_argv'] = entry.argv('grok-bot', 'status', '--task-id', receipt['task_id'], '--wait', '30')
         result['next'] = 'Read continuation_argv; never repeat an uncertain send. Relay needs_input to the parent; resolve cards in the official app.'
     return result, 1 if receipt['state'] == 'failed' else 0
+
+
+def settle_claim(claim_row, res, refusal):
+    """A host claim after its start: stamped launched when the worker started, or may have (Herdr's uncertain send,
+    `launched` None); canceled with `refusal` when nothing started (`launched` False)."""
+    if res.get('launched') is False:
+        registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', refusal)
+    else:
+        registry.host_claim_launched(claim_row['dispatch_id'])
 
 
 def task_access(args, read_only_review=None):
@@ -980,7 +1014,7 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
             claim_row = registry.record_host_claim(
                 'cli', decision, task, decision['selected_bundle'],
                 label=args.title or title_of(text),
-                usage=usage, access=access, workspace=workspace, cwd=landing, launched=True,
+                usage=usage, access=access, workspace=workspace, cwd=landing,
             )
         except registry.WorkspaceBusy as busy:
             return workspace_blocked(out, busy.workspace, busy.holders, dispatch_mode='cli')
@@ -989,8 +1023,7 @@ def paseo(args, out, decision, task, text, parent, usage, judge=None):
         out['worker_prompt_file'] = str(prompt_file)
         res, code = cli(args, without_paseo(out, 'Paseo does not know the parent agent (parent_agent_not_found)'),
                         decision['selected_bundle'], text)
-        if not res.get('launched'):
-            registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', 'cli_not_launched')
+        settle_claim(claim_row, res, 'cli_not_launched')
         return res, code
     failed = receipt.get('state') in ('failed', 'create_failed')
     # launched_at records the single-use claim, before create is sent. Only a
@@ -1682,7 +1715,7 @@ def _run(args, judge):
     if provider == 'dot':
         return dot(args, out, prompt_file, task=task, decision=decision)
     if provider == 'chatgpt-web':
-        return consult(args, out, prompt_file)
+        return consult(args, out, prompt_file, task=task, decision=decision)
     if provider == 'grok-bot':
         return grok_bot(args, out, prompt_file, task, bundle, decision=decision)
     decision_profile = (
@@ -1708,7 +1741,6 @@ def _run(args, judge):
             label=getattr(args, 'title', None) or title_of(text),
             usage=usage, access=access,
             workspace=canonical_ws, cwd=landing,
-            launched=surface in ('herdr', 'cli'),
         )
     except registry.WorkspaceBusy as busy:
         return workspace_blocked(out, busy.workspace, busy.holders,
@@ -1717,14 +1749,12 @@ def _run(args, judge):
         import host_herdr
         res, code = host_herdr.launch(out, bundle, prompt_file, task['task_id'],
                                       cwd=landing, dispatch_id=claim_row['dispatch_id'])
-        if code != 0 and res.get('launched') is False:
-            registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', 'herdr_preflight_failed')
+        settle_claim(claim_row, res, 'herdr_preflight_failed')
         return res, code
     if surface in NATIVE_HOSTS:
         return dict(out, launched=False, dispatch_mode='native', caller_action='launch_with_native_host_tool',
                     **({'dispatch_id': claim_row['dispatch_id']} if canonical_ws else {}),
                     next=placed['next']), 0
     res, code = cli(args, without_paseo(out, no_paseo_because) if no_paseo_because else out, bundle, text)
-    if not res.get('launched'):
-        registry.settle_host_claim(claim_row['dispatch_id'], 'canceled', 'cli_not_launched')
+    settle_claim(claim_row, res, 'cli_not_launched')
     return res, code

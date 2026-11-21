@@ -40,6 +40,16 @@ UNCHECKED = 'unchecked in model management'
 # model-management checkbox, and the account's cwd_regex. Only the first two are lifted by a route the user names
 # (route_judge.record_constraint refuses a named route outside cwd_regex).
 LIFTED_BY_NAMING = ('allowed_accounts', 'checkbox')
+# A declared dispatch cadence (quota_pools.cadence_window_state) is a pace of automatic routing, counted from this
+# machine's launches, not a fact of the account: at its limit it excludes a candidate (OVER_CADENCE) or, when a seat frees
+# soon, defers it on the window CADENCE.
+OVER_CADENCE = 'over the dispatch cadence of automatic routing'
+CADENCE = 'cadence'
+# What only automatic routing is held to. A route the user names, and an explicit resume, reach past each:
+# dispatch_registry.prepare lifts these exclusions by value and does not wait for these windows (router-internals.md,
+# Pins). The account and model switches are lifted earlier too, for a named bundle (evaluate_bundle `user_named`).
+AUTOMATIC_ROUTING_EXCLUSIONS = (OUT_OF_AUTOMATIC_ROUTING, UNCHECKED, OVER_CADENCE)
+AUTOMATIC_ROUTING_WAITS = (CADENCE,)
 
 
 def said_exclusions(candidate):
@@ -63,9 +73,11 @@ def local_settings(candidate):
     return kinds if kinds and len(kinds) == len(candidate.get('excluded') or ()) else None
 
 
-def binding_wait(available_at, waiting_on, hours, window):
+def binding_wait(available_at, waiting_on, hours, window, waits):
     """`(available_at, waiting_on)` once `window` also holds the candidate back for `hours`: a candidate held by several
-    windows can start when the last of them returns, so the later reset sets the wait and its window is the one named."""
+    windows can start when the last of them returns, so the later reset sets the wait and its window is the one named.
+    `waits` (window -> hours) keeps every window that holds it back, for what reaches past some of them."""
+    waits[window] = hours
     return (hours, window) if hours >= (available_at or 0) else (available_at, waiting_on)
 
 
@@ -452,6 +464,7 @@ def evaluate_bundle(bundle, task, ctx):
     chain_usd = quota_economy.bundle_task_usd(spec, model, econ_chain_hours, info, context_burn)
     available_at = None
     waiting_on = None               # the window whose reset sets available_at
+    waits = {}                      # every window that holds the candidate back (binding_wait)
     five_window_states = {}
     long_applicable = False         # the bundle draws at least one long reset-period window (read or not)
     if spec.get('unlimited'):
@@ -548,7 +561,7 @@ def evaluate_bundle(bundle, task, ctx):
                         short_exclude(f'{wid} full capacity (100%) is short of the ~{post_period:.1f}% the work needs plus {margin_pct}% margin')
                     elif (not small_short and not state['stale'] and 0 < wait <= policy['defer_if_reset_within_hours']
                           and wait >= state.get('natural_reset_hours', wait)):
-                        available_at, waiting_on = binding_wait(available_at, waiting_on, wait, wid)
+                        available_at, waiting_on = binding_wait(available_at, waiting_on, wait, wid, waits)
                         result['notes'].append(f'{wid} {what} for {wait:.1f}h; start after its reset')
                         renewed = quota_pools.after_reset(state, w_len)
                         if renewed is not None:
@@ -576,7 +589,8 @@ def evaluate_bundle(bundle, task, ctx):
                     renewed = None
                 if renewed is not None and 100.0 - min(req_hours, float(w_len)) * unit * context_burn >= policy['safety_margin_pct']:
                     state = renewed
-                    available_at, waiting_on = binding_wait(available_at, waiting_on, renewed['deferred_hours'], wid)
+                    available_at, waiting_on = binding_wait(available_at, waiting_on, renewed['deferred_hours'], wid,
+                                                            waits)
                     result['_five_long_wait'] = True        # a long window must renew first: no absorber of other work now
                     need = min(req_hours, float(w_len)) * unit * context_burn
                     result['notes'].append(f'{wid} renews in {renewed["deferred_hours"]:.1f}h; start then (assumes a full renewal)')
@@ -640,26 +654,31 @@ def evaluate_bundle(bundle, task, ctx):
         result['_five_context_burn'] = context_burn
         if not five_window_states and not result['excluded'] and not result.get('data_errors'):
             result['notes'].append('no current capacity observation; unknown is not exhausted')
-    elif not spec.get('unlimited'):
-        acct_usage = ctx['usage'].get('accounts', {}).get(bundle['account']) or {}
-        cad_got = quota_pools.cadence_window_state(bundle['account'], spec, acct_usage, ctx.get('records'), now)
-        if cad_got is not None:
-            wspec, state, cap_count = cad_got
+    # A declared dispatch cadence holds every account to it. It is priced only where it is the account's whole quota (an
+    # unmetered account); beside quota windows it is a gate, and those windows price the task as they do without it.
+    cad_got = quota_pools.cadence_window_state(bundle['account'], spec, ctx.get('records'), now)
+    if cad_got is not None:
+        wspec, state, cap_count = cad_got
+        need_pct = 100.0 / cap_count
+        if not pool and state['remaining'] + 1e-9 < need_pct:
+            if state['reset_hours'] <= policy['defer_if_reset_within_hours']:
+                renewed = quota_pools.after_reset(state, wspec['hours'])
+                if renewed is not None:
+                    state = renewed
+                    available_at, waiting_on = binding_wait(available_at, waiting_on, renewed['deferred_hours'], CADENCE,
+                                                           waits)
+                    result['_five_long_wait'] = True
+                    result['notes'].append(
+                        f'cadence frees {renewed["remaining"] * cap_count / 100.0:g} of {cap_count:g} dispatches in '
+                        f'{renewed["deferred_hours"]:.1f}h; start then'
+                    )
+            if state['remaining'] + 1e-9 < need_pct:
+                task_exclude(OVER_CADENCE)
+                result['notes'].append(f'cadence has 0 of {cap_count:g} dispatches left; one frees in '
+                                       f'{state["reset_hours"]:.1f}h')
+                result['wait_until_hours'] = max(result.get('wait_until_hours', 0), state['reset_hours'])
+        if spec.get('unmetered') and not spec.get('unlimited'):
             result.setdefault('_five_axis_windows', []).append('cadence')
-            need_pct = 100.0 / cap_count
-            if not pool and state['remaining'] + 1e-9 < need_pct:
-                if state['reset_hours'] <= policy['defer_if_reset_within_hours']:
-                    renewed = quota_pools.after_reset(state, wspec['hours'])
-                    if renewed is not None:
-                        state = renewed
-                        available_at, waiting_on = binding_wait(available_at, waiting_on, renewed['deferred_hours'], 'cadence')
-                        result['_five_long_wait'] = True
-                        result['notes'].append(
-                            f'cadence renews in {renewed["deferred_hours"]:.1f}h; start then (assumes a full renewal)'
-                        )
-                if state['remaining'] + 1e-9 < need_pct:
-                    task_exclude(f'cadence has 0 of {cap_count:g} dispatches left and resets in {state["reset_hours"]:.1f}h')
-                    result['wait_until_hours'] = max(result.get('wait_until_hours', 0), state['reset_hours'])
             five_window_states['cadence'] = (wspec, state, cap_count, None)
             result['_five_window_states'] = five_window_states
             result['_five_window_spend'] = 1.0
@@ -759,6 +778,8 @@ def evaluate_bundle(bundle, task, ctx):
     result['chain_usd'] = None if billing == 'unknown' else round(chain_usd, 2)
     result['available_in_hours'] = available_at
     result['waiting_on'] = waiting_on if available_at else None
+    if waits:
+        result['waits'] = waits     # what dispatch_registry.prepare reaches past for a named route (AUTOMATIC_ROUTING_WAITS)
     action = 'start'
     if worker:
         if worn:

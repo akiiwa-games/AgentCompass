@@ -329,7 +329,10 @@ def plan_task(task: dict) -> dict:
     try:
         import dispatch_flow
 
-        records = records + dispatch_flow.reservation_records(read_only=True)
+        import dispatch_registry
+
+        records = (records + dispatch_flow.reservation_records(read_only=True)
+                   + dispatch_registry.launch_records(_cached_accounts(), now))
     except Exception:
         pass
     accounts = _cached_accounts()
@@ -515,7 +518,9 @@ def live_economy_windows() -> list[dict]:
         records = decision_ledger.read_ledger()
         try:
             import dispatch_flow
-            records = records + dispatch_flow.reservation_records(read_only=True)
+            import dispatch_registry
+            records = (records + dispatch_flow.reservation_records(read_only=True)
+                       + dispatch_registry.launch_records(_cached_accounts(), now))
         except Exception:
             pass
         probe = {

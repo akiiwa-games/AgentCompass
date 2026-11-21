@@ -128,6 +128,25 @@ class DispatchTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'requires a new route'):
                 self.prepare(refused, task=dict(self.task, task_id='project-rule'))
 
+    def test_the_re_plan_counts_the_cadence_from_the_records_the_plan_read(self):
+        # Rule (quota_pools.cadence_dispatches): a `record` row with no registry row is a launch outside roll and counts;
+        # the re-plan in prepare reads the ledger as the plan does, without counting the decision it prepares. The
+        # decision is a project rule, held to the cadence (a route the user names reaches past it and proves nothing).
+        self.accounts['accounts']['claude-lab']['cadence'] = {'window_seconds': 43200, 'limit': 1}
+        outside = {'v': 1, 'at': (self.now - timedelta(hours=1)).isoformat(), 'stage': 'record', 'choice': 'constraint',
+                   'decision_id': 'launched-outside-roll', 'bundle': dict(self.bundle)}
+        ledger = self.root / 'ledger.jsonl'
+        held = self.issue(stage='record', choice='constraint', constraint='hard_constraint', basis='Project rule')
+        own = dict(outside, at=self.now.isoformat(), decision_id=held['decision_id'])
+        ledger.write_text(json.dumps(own) + '\n', encoding='utf-8')
+        prepared = self.prepare(held)                   # its own record is not a launch before it
+        self.assertEqual(prepared['bundle']['account'], 'claude-lab')
+        registry.release(prepared['dispatch_id'], 'parent-a', 'fixture: never launched', now=self.now)
+        ledger.write_text(json.dumps(outside) + '\n', encoding='utf-8')
+        automatic = dict(self.task, task_id='after-the-named-launch')
+        with self.assertRaisesRegex(registry.CapacityChanged, 'over the dispatch cadence of automatic routing'):
+            self.prepare(self.issue(task=automatic), task=automatic)
+
     def test_pi_request_omits_unsupported_mode_including_saved_legacy_value(self):
         for legacy_mode in (None, 'full-access'):
             bundle = {'provider': 'pi', 'model': 'gpt-6-astra',
@@ -2108,6 +2127,11 @@ class RollTests(unittest.TestCase):
         self.assertEqual(command[command.index('--prompt') + 1], result['worker_prompt_file'])
         self.assertEqual(command[4], 'chatgpt-web')
         self.assert_worker_prompt(result, parent='parent-a')
+        # The handover is the launch roll sees: the registry holds it, so the account's dispatch cadence counts it.
+        stored = [r for r in registry.read_dispatches() if r.get('dispatch_mode') == 'chatgpt-web']
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(stored[0]['bundle']['account'], 'codex')
+        self.assertIsNotNone(registry.launch_record(stored[0], registry.utcnow())['at'])
 
     def test_named_model_without_user_quote_is_refused(self):
         with self.assertRaisesRegex(ValueError, '--basis'):

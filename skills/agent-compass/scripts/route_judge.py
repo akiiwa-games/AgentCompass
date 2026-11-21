@@ -118,6 +118,29 @@ def match_bundle(accounts, args, include_disabled=False):
 NAMED_ROW_FIELDS = ('modeId', 'draws', 'launch_model', 'harness', 'billing')
 
 
+def cadence_reading(account, accounts, now):
+    """`(records, alert)`: the rows `account`'s dispatch cadence is counted from (decision_ledger.cadence_records) and
+    its advisor_cadence alert at the limit (None below it). A record passes both to decision_ledger.finalize, so the
+    warning it says and the alert the ledger keeps are one sentence from one count."""
+    spec = (accounts.get('accounts') or {}).get(account) or {}
+    records = decision_ledger.cadence_records(account, spec, now)
+    return records, decision_ledger.account_cadence_alert(records, now, account, spec)
+
+
+def automatic_routing_texts(bundle, accounts, cadence):
+    """What only automatic routing is held to that a launch on `bundle` reaches past (router-internals.md, Pins), one
+    sentence each: host policy's switches (host_policy.exclusion_texts) and the account's dispatch cadence at its limit
+    (`cadence`, the advisor_cadence alert of cadence_reading). The caller says why the launch goes all the same."""
+    return [*host_policy.exclusion_texts(bundle, accounts, host_policy.load_policy()),
+            *([cadence['message']] if cadence else [])]
+
+
+def _cadence_refusal(args, cadence):
+    return (f"{cadence['message']}; a {args.constraint} record does not reach past a pace of automatic routing, only a "
+            'route the user named in this request does: wait for the seat, or record it with --constraint user_override '
+            "with the user's words in --basis when the user named this route in this request")
+
+
 def record_constraint(args, task=None, classified=None):
     """Log a route the caller is forcing. The allocator is run on the same task so the
     ledger shows whether the router would have chosen it and, if not, what the override cost.
@@ -211,6 +234,11 @@ def record_constraint(args, task=None, classified=None):
             and all(b.get('disabled') and not b.get('disabled_by_default') for b in own_rows)):
         # Every level unchecked is the model unchecked, also at a level with no row of its own.
         raise ValueError(_unchecked_refusal(args, pin.model))
+    # The dispatch cadence is a pace of automatic routing, like the two switches: a project rule does not reach past it
+    # either, and is refused here, before anything is written (a consult has no `prepare` to refuse it later).
+    cadence_records, cadence = cadence_reading(args.account, accounts, now)
+    if cadence and args.constraint != 'user_override':
+        raise ValueError(_cadence_refusal(args, cadence))
     discovered = account_fleet.bundles(accounts).get(chosen) or {}
     if discovered.get('discovery_unavailable'):
         raise ValueError(discovered['discovery_unavailable'])
@@ -282,14 +310,15 @@ def record_constraint(args, task=None, classified=None):
     if retrying:
         warnings = [f"{args.account}/{pin.model}: {retrying}; dispatched anyway because the user named it: a turn "
                     "that ends on the model's reply lifts the hold (a cancel or stop does not)", *warnings]
-    # Host policy says which accounts the router chooses by itself, the model-management checkbox which models. Only
-    # the user's own naming reaches past them; a project rule (hard_constraint) is shared between machines and does
-    # not override one machine's switch. Account loading may enroll a newly discovered account; check the resulting
+    # Host policy says which accounts the router chooses by itself, the model-management checkbox which models, the
+    # dispatch cadence how often. Only the user's own naming reaches past them; a project rule (hard_constraint) is
+    # shared between machines and does not override one machine's switch: on an unchecked model or at the cadence's
+    # limit it was refused above, and outside allowed_accounts it is written blocked here. Account loading may enroll a newly discovered account; check the resulting
     # policy. The ledger marks the row (decision_ledger.automatic_routing_marker).
     policy = host_policy.load_policy()
     if args.constraint == 'user_override':
         warnings = [*(f'{text}; launched because the user named it in this request'
-                      for text in host_policy.exclusion_texts(bundle, accounts, policy)), *warnings]
+                      for text in automatic_routing_texts(bundle, accounts, cadence)), *warnings]
     elif not host_policy.account_allowed(policy, args.account):
         outside = host_policy.outside_routing(args.account)
         result['host_policy_violation'] = {
@@ -336,7 +365,8 @@ def record_constraint(args, task=None, classified=None):
         result.setdefault('warnings', []).append(
             f'data error: {listed_gap}; launched because the user named it and provider {args.provider} lists it')
     _compare_with_router(result, task, usage, now, chosen, fast_requested, classified)
-    return decision_ledger.finalize(result, started, reviewed_task if classified else task)
+    return decision_ledger.finalize(result, started, reviewed_task if classified else task, records=cadence_records,
+                                    now=now)
 
 
 def record_resume(args, task, classified, bundle, agent_id):
@@ -366,15 +396,16 @@ def record_resume(args, task, classified, bundle, agent_id):
         result['hours_estimate'] = classified['hours_estimate']
     if classified.get('alerts'):
         result['alerts'] = list(classified['alerts'])
+    cadence_records, cadence = cadence_reading(bundle['account'], accounts, now)
     warnings = [f'{text}; the turn goes to worker {agent_id!r} because --resume named it'
-                for text in host_policy.exclusion_texts(bundle, accounts, host_policy.load_policy())]
+                for text in automatic_routing_texts(bundle, accounts, cadence)]
     _compare_with_router(result, plan_task, usage, now, chosen, bool(bundle.get('fast')), classified)
     if result.get('agrees') is False and result.get('router_choice') not in (None, 'none'):
         warnings.append(f"The turn goes to worker {agent_id!r} on its existing bundle {chosen!r} as requested "
                         f"(--resume); the router would otherwise have chosen {result['router_choice']!r}.")
     if warnings:
         result['warnings'] = warnings
-    return decision_ledger.finalize(result, started, task)
+    return decision_ledger.finalize(result, started, task, records=cadence_records, now=now)
 
 
 def unclassified_data_error(result, reason, hours):
@@ -505,13 +536,14 @@ def _compare_with_router(result, task, usage, now, chosen, fast_requested, class
         result.update({'router_choice': None, 'agrees': None, 'classifier_skipped': True})
     elif task:
         try:
+            loaded_accounts = account_fleet.load_accounts()
             has_cadence = any(
                 isinstance((spec or {}).get('cadence'), dict)
-                for spec in (account_fleet.load_accounts().get('accounts') or {}).values()
+                for spec in (loaded_accounts.get('accounts') or {}).values()
             )
-            plan_records = (dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES)
-                            if not ((task.get('chain') or {}).get('id') or has_cadence) else
-                            decision_ledger.read_ledger() + dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES))
+            plan_records = ((decision_ledger.read_ledger() if (task.get('chain') or {}).get('id') or has_cadence else [])
+                            + dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES)
+                            + dispatch_registry.launch_records(loaded_accounts, now))
             plan = allocator.plan(task, usage, now, records=plan_records,
                                   route={'force_fast': True} if fast_requested else None)
         except (ValueError, KeyError, TypeError) as exc:
@@ -804,7 +836,8 @@ def plan_stage(document, args):
                    or bool(guard_cfg.get('enabled') is True and isinstance(guard_cfg.get('bundle_id'), str)
                            and guard_cfg.get('bundle_id') in unavailable))
     records = ((decision_ledger.read_ledger() if need_ledger else [])
-               + dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES))
+               + dispatch_flow.reservation_records(read_only=not decision_ledger.LEDGER_WRITES)
+               + dispatch_registry.launch_records(loaded_accounts, now))
     extra_alerts, scorer = [], None
     hours_estimate = None
     fatal_gap = bool((readiness_gap(loaded_accounts, usage) or {}).get('fatal'))

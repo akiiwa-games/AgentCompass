@@ -35,17 +35,26 @@ LAUNCH_STAGES = ('plan', 'record')
 BASIS_LIMIT = 400      # characters of a record's --basis a row keeps; `record` refuses a longer quote instead of cutting it
 
 
+# The constraints of a row the user named: a named route (`record`/`roll`) and an explicit `--resume`.
+NAMED_CONSTRAINTS = ('user_override', 'explicit_resume')
+
+
 def automatic_routing_marker(entry):
-    """`outside_automatic_routing` of a ledger row: the switches (`host_policy.automatic_routing_exclusions`, the switches
-    in effect now) its launch reaches past. Only a row that carries a launch has one: a plan/record row with a
-    chosen bundle that its writer did not refuse (`host_policy_violation`)."""
+    """`outside_automatic_routing` of a ledger row: what only automatic routing is held to that its launch reaches past,
+    in a fixed order: the switches in effect now (`host_policy.automatic_routing_exclusions`: `account`, `model`) and
+    `cadence` on a row the user named (NAMED_CONSTRAINTS) whose own answer carries the advisor_cadence alert `finalize`
+    computed for it (launched at or over the limit), never from a second reading. Only a row that carries a launch has
+    one: a plan/record row with a chosen bundle that its writer did not refuse (`host_policy_violation`)."""
     bundle = entry.get('bundle')
     if (entry.get('stage') not in LAUNCH_STAGES or entry.get('choice') in (None, 'none', 'self', 'split')
             or entry.get('host_policy_violation') or not isinstance(bundle, dict) or not bundle.get('account')):
         return None
     import account_fleet
     import host_policy
-    return host_policy.automatic_routing_exclusions(bundle, account_fleet.load_accounts(), host_policy.load_policy()) or None
+    marks = host_policy.automatic_routing_exclusions(bundle, account_fleet.load_accounts(), host_policy.load_policy())
+    if entry.get('constraint') in NAMED_CONSTRAINTS and 'advisor_cadence' in (entry.get('alerts') or ()):
+        marks.append('cadence')
+    return marks or None
 
 
 def append_ledger(entry):
@@ -198,20 +207,28 @@ def capacity_alerts(usage, carrying, records, now, model='', account_specs=None)
     return alerts
 
 
+def cadence_records(account, spec, now):
+    """The rows an account's dispatch cadence is counted from: the ledger and the registry's launches."""
+    return read_ledger() + dispatch_registry.launch_records({'accounts': {account: spec}}, now)
+
+
 def account_cadence_alert(records, now, account, spec):
-    """Optional account-configured dispatch cadence; no implied quota knowledge."""
-    cadence = spec.get('cadence') or {}
-    seconds, limit = cadence.get('window_seconds'), cadence.get('limit')
-    if not usage_reading.finite_number(seconds, 1, 365 * 86400) or not usage_reading.finite_number(limit, 1, 1000000):
+    """Optional account-declared dispatch cadence, at its limit: the same count and wait the plan's cadence window
+    reads (quota_pools.cadence_window_state). No implied quota knowledge. Its sentence is also the one warning of a
+    named route that reaches past the cadence (route_judge.automatic_routing_texts)."""
+    import quota_pools
+    limits = quota_pools.cadence_limits(spec)
+    if limits is None:
         return None
-    recent = [r for r in records if (r.get('bundle') or {}).get('account') == account
-              and r.get('stage') == 'record' and r.get('choice') not in (None, 'none')
-              and (t := usage_reading.timestamp(r.get('at'))) and 0 <= (now - t).total_seconds() <= seconds]
-    if len(recent) < limit:
+    seconds, limit = limits
+    count = len(quota_pools.cadence_dispatches(account, records, now, seconds))
+    if count < limit:
         return None
+    _, state, _ = quota_pools.cadence_window_state(account, spec, records, now)
     return {'code': 'advisor_cadence', 'severity': 'info', 'account': account,
-            'message': f'{len(recent)} dispatches in the configured {seconds / 3600:g}h cadence window; '
-                       'dispatch frequency does not measure remaining quota.'}
+            'message': f"{account}: {count} of {limit:g} dispatches in the {seconds / 3600:g}h cadence window, a pace "
+                       "declared for automatic routing and counted from this machine's launches (it does not measure "
+                       f"remaining quota); a seat frees in {state['reset_hours']:.1f}h"}
 
 
 def decision_snapshot(result, task=None):
@@ -225,10 +242,10 @@ def decision_snapshot(result, task=None):
         return None
 
 
-def finalize(result, started, task=None, records=None):
-    """Attach capacity alerts and write the ledger record. Returns the result unchanged otherwise."""
-    now = datetime.now(timezone.utc)
-    records = read_ledger() if records is None else records
+def finalize(result, started, task=None, records=None, now=None):
+    """Attach capacity alerts and write the ledger record. Returns the result unchanged otherwise. `records` and `now`
+    are the reading the caller already made (route_judge.cadence_reading), so its alerts are the ones it said."""
+    now = now or datetime.now(timezone.utc)
     usage = result.get('usage') or {}
     alerts = list(result.get('alerts') or [])
     bundle = result.get('selected_bundle') or {}
@@ -238,6 +255,8 @@ def finalize(result, started, task=None, records=None):
             spec = account_fleet.load_accounts().get('accounts', {}).get(bundle['account']) or {}
         except (OSError, ValueError):
             spec = {}
+        if records is None:
+            records = cadence_records(bundle['account'], spec, now)
         alerts += capacity_alerts(usage, [bundle['account']], records, now, bundle.get('model', ''),
                                   {bundle['account']: spec})
         cadence = account_cadence_alert(records, now, bundle['account'], spec)

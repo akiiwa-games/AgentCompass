@@ -429,6 +429,75 @@ def reservations(now=None, path=None, read_only=False):
     return active
 
 
+def _stored_time(row, key):
+    """`row[key]` read as a time, or None when the row has no such text or holds something that is not a time."""
+    value = row.get(key)
+    if not isinstance(value, str):
+        return None
+    try:
+        return parse(value)
+    except ValueError:
+        return None
+
+
+def launch_record(row, now, since=None):
+    """One stored dispatch as the cadence count reads it (quota_pools.cadence_dispatches), whatever its surface or state:
+    `at` is when it was launched, or None when it never was. A dispatch is launched from `launched_at` (the Paseo claim,
+    a started host CLI, an external runner's launch) unless the host refused its create (`create_failed`: the prompt
+    never left); a reservation still holding its lease before launch counts from its creation, as it holds the account's
+    other windows. The registry is derived state: a row the count cannot place (no object, no `dispatch_id`, a `bundle`
+    that is not an object, a launch time that is not a time, or neither time at all) is no launch in any window, read
+    without a default time and without an exception. None when `since` is given and the row was launched, or else
+    created, before it."""
+    row = row if isinstance(row, dict) else {}
+    launched, created = _stored_time(row, 'launched_at'), _stored_time(row, 'created_at')
+    seen = launched or created
+    if since is not None and seen is not None and seen < since:
+        return None
+    bundle = row.get('bundle') if isinstance(row.get('bundle'), dict) else None
+    lease = _stored_time(row, 'lease_until')
+    if not row.get('dispatch_id') or bundle is None or (row.get('launched_at') and launched is None):
+        at = None
+    elif launched and row.get('state') != 'create_failed':
+        at = row['launched_at']
+    elif row.get('state') in ACTIVE and created and lease is not None and lease > now:
+        at = row['created_at']
+    else:
+        at = None
+    return {'stage': 'launch', 'dispatch_id': row.get('dispatch_id'), 'decision_id': row.get('decision_id'),
+            'bundle': bundle or {}, 'at': at}
+
+
+def launches(stored, accounts, now):
+    """The stored dispatches a declared cadence window can still hold (launch_record each): those launched or created
+    since the longest cadence window of `accounts` began, and those carrying no readable time (read as no launch, so
+    their decision is still known to the count). [] when no account declares one."""
+    import quota_pools
+    horizon = quota_pools.cadence_horizon(accounts)
+    if horizon is None:
+        return []
+    since = now - timedelta(seconds=horizon)
+    return [record for r in stored if (record := launch_record(r, now, since)) is not None]
+
+
+def launch_records(accounts, now=None, path=None):
+    """launches() of the registry, read without writing or creating the file."""
+    import quota_pools
+    target = Path(path or db_path())
+    if quota_pools.cadence_horizon(accounts) is None or not target.exists():
+        return []
+    connection = _read_only(target)
+    try:
+        stored = rows(connection, 'dispatches')
+    except sqlite3.OperationalError as exc:
+        if 'no such table' in str(exc):
+            return []
+        raise
+    finally:
+        connection.close()
+    return launches(stored, accounts, now or utcnow())
+
+
 def paseo_agent_record(agent_id, paseo_home=None):
     """Read local Paseo agent JSON for agent_id if present on disk; None when absent."""
     if not isinstance(agent_id, str) or not agent_id.strip():
@@ -1323,6 +1392,7 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
     import account_fleet
     import candidate_ranking
     import dispatch_ground_truth
+    import quota_pools
     import task_intake
     now = now or utcnow()
     accounts = accounts or account_fleet.load_accounts()
@@ -1418,7 +1488,13 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
             route['user_named_bundle'] = bundle['bundle_id']
         if decision.get('constraint') == 'user_override' and resume_bundle is None:
             route['pinned_bundle'] = bundle['bundle_id']
-        plan = allocator.plan(alloc_task, usage, now, records=active_records(connection, now), accounts=accounts,
+        # The records the plan read (route_judge.plan_stage): the ledger when a cadence or a chain needs it, without this
+        # decision's own row, which is the launch being prepared and not one before it.
+        records = active_records(connection, now) + launches(rows(connection, 'dispatches'), accounts, now)
+        if quota_pools.cadence_horizon(accounts) is not None or (alloc_task.get('chain') or {}).get('id'):
+            import decision_ledger
+            records += [r for r in decision_ledger.read_ledger() if r.get('decision_id') != decision_id]
+        plan = allocator.plan(alloc_task, usage, now, records=records, accounts=accounts,
                               named_accounts={bundle['account']} if named else (), route=route)
         # A fast route with no fast variant in the ranking is answered by its plain row: its exclusions (the fast-mode
         # refusal among them) say why, not "no longer matches".
@@ -1428,19 +1504,22 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         if candidate is None or any(candidate['bundle'].get(k) != bundle.get(k) for k in ('provider', 'account', 'model', 'effort')):
             raise CapacityChanged('Decision bundle no longer matches installed account configuration')
         exclusions = list(candidate['excluded'])
+        waits = [w for w, hours in (candidate.get('waits') or {}).items() if hours]
         if named:
             import candidate_eval
             import provider_retry
             # A named model on a held account or model is the probe that can lift the hold (provider_retry);
             # an explicit --resume continues the worker's own bundle regardless of ability/model-latch exclusions.
-            # Neither is the router's choice, so an account out of automatic routing does not stop them, and an
-            # explicit resume continues a worker whose model was unchecked after its launch.
-            lifted = {candidate_eval.OUT_OF_AUTOMATIC_ROUTING, candidate_eval.UNCHECKED}
-            exclusions = [e for e in exclusions if e not in lifted and not e.startswith((
-                'ability ', 'explicit model constraint', 'explicit effort constraint', provider_retry.EXCLUSION_PREFIX))]
+            # Neither is the router's choice, so what only automatic routing is held to does not stop them: an account
+            # out of automatic routing, a model unchecked (an explicit resume continues a worker whose model was
+            # unchecked after its launch), and the account's dispatch cadence, at its limit or freeing a seat soon.
+            exclusions = [e for e in exclusions if e not in candidate_eval.AUTOMATIC_ROUTING_EXCLUSIONS
+                          and not e.startswith(('ability ', 'explicit model constraint', 'explicit effort constraint',
+                                                provider_retry.EXCLUSION_PREFIX))]
+            waits = [w for w in waits if w not in candidate_eval.AUTOMATIC_ROUTING_WAITS]
         if bundle.get('fast') and not candidate['bundle'].get('fast') and not exclusions:
             exclusions.append('fast mode quota is no longer sufficient')
-        if exclusions or (resume_bundle is None and candidate.get('available_in_hours')):
+        if exclusions or (resume_bundle is None and waits):
             raise CapacityChanged('Capacity/availability changed; replan: ' + '; '.join(exclusions or ['reset not yet observed']))
         if resume_agent_id is None and candidate.get('action') == 'resume':
             chain_worker = ((alloc_task.get('chain') or {}).get('worker')
@@ -2006,9 +2085,10 @@ def open_host_claims(now=None, path=None):
 
 
 def record_host_claim(surface, decision, task, bundle, *, label=None, usage=None, access='write',
-                      workspace=None, cwd=None, launched=False, now=None, path=None):
+                      workspace=None, cwd=None, now=None, path=None):
     """Record a non-Paseo host dispatch (`orca`, `t3`, `native`, `herdr`, `cli`) in `dispatches` under the same
-    canonical-directory writer rule and SQLite BEGIN IMMEDIATE transaction as Paseo."""
+    canonical-directory writer rule and SQLite BEGIN IMMEDIATE transaction as Paseo. The claim is `prepared`: it holds the
+    workspace before the worker starts, and carries a launch time only once host_claim_launched says it started."""
     parent_id = task.get('parent_agent_id')
     require_parent_id(parent_id)
     now = now or utcnow()
@@ -2020,8 +2100,6 @@ def record_host_claim(surface, decision, task, bundle, *, label=None, usage=None
     raw_usd = (decision.get('expected_usd') if isinstance(decision.get('expected_usd'), (int, float))
                else bundle_copy.get('expected_usd'))
     expected_usd = float(raw_usd) if isinstance(raw_usd, (int, float)) and not isinstance(raw_usd, bool) else None
-    lease_secs = RUN_LEASE if launched else PREPARE_LEASE
-    state = 'launched' if launched else 'prepared'
     with transaction(path) as connection:
         expire(connection, now)
         by_dec = connection.execute('SELECT data FROM dispatches WHERE decision_id=?', (decision_id,)).fetchone()
@@ -2046,8 +2124,7 @@ def record_host_claim(surface, decision, task, bundle, *, label=None, usage=None
             'expected_usd': expected_usd,
             'usage': (usage or {}).get('accounts', {}),
             'created_at': stamp(now),
-            **({'launched_at': stamp(now)} if launched else {}),
-            'lease_until': stamp(now + timedelta(seconds=lease_secs)),
+            'lease_until': stamp(now + timedelta(seconds=PREPARE_LEASE)),
             'hard_until': stamp(now + timedelta(seconds=MAX_LIFETIME)),
             'operation': 'create',
             'agent_id': None,
@@ -2057,8 +2134,21 @@ def record_host_claim(surface, decision, task, bundle, *, label=None, usage=None
             **({'profile': task['profile']} if isinstance(task.get('profile'), dict) else {}),
             **({'brief_path': task['brief_path']} if task.get('brief_path') else {}),
         }
-        event(row, state, now)
+        event(row, 'prepared', now)
         save(connection, row)
+        return row
+
+
+def host_claim_launched(dispatch_id, *, now=None, path=None):
+    """Stamp a host claim (record_host_claim) launched once its worker started: its launch time, and the run lease."""
+    now = now or utcnow()
+    with transaction(path) as connection:
+        row = get(connection, 'dispatches', dispatch_id)
+        if row['state'] in ('prepared', 'expired'):
+            row.update(launched_at=stamp(now),
+                       lease_until=stamp(min(now + timedelta(seconds=RUN_LEASE), parse(row['hard_until']))))
+            event(row, 'launched', now)
+            save(connection, row)
         return row
 
 
