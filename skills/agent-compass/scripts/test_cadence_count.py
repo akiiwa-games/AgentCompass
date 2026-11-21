@@ -408,6 +408,92 @@ class NamedRoutesReachPastTheCadence(unittest.TestCase):
                     self.assertIn('--constraint user_override', said)
                     self.assertEqual(ledger.read_ledger(), rows)      # no row written
 
+    def between(self, n):
+        """record at `n` of the limit with a launch written after its reading of the cadence, before finalize (in
+        `_compare_with_router`): the answer and the ledger row of that record."""
+        import decision_ledger as ledger
+        self.fill('chatgpt-web', n)
+        compare = self.router._compare_with_router
+
+        def compare_then_launch(*a, **k):
+            out = compare(*a, **k)
+            registry.record_external_launch('chatgpt-web', 'between', 'between', dict(BUNDLE, account='chatgpt-web'),
+                                            parent_id='parent-a', now=registry.utcnow())
+            return out
+        with patch.object(self.router, '_compare_with_router', side_effect=compare_then_launch):
+            result, _ = self.record('chatgpt-web', f'between-{n}')
+        return result, ledger.read_ledger()[-1]
+
+    def test_the_warning_and_the_alert_are_one_reading(self):
+        # Rule (route_judge.cadence_reading): record reads the cadence once and finalize alerts from that reading, so a
+        # launch written in between changes neither: the warning is the alert's sentence plus the named-route ending.
+        result, _ = self.between(LIMIT)
+        alert = [a['message'] for a in result['alerts'] if a['code'] == 'advisor_cadence']
+        self.assertEqual(len(alert), 1, result['alerts'])
+        self.assertIn(f'{LIMIT} of {LIMIT} dispatches', alert[0])
+        self.assertEqual(self.cadence_warnings(result),
+                         [f'{alert[0]}; launched because the user named it in this request'])
+
+    def test_the_marker_is_the_answers_alert_not_a_second_reading(self):
+        # Rule (decision_ledger.automatic_routing_marker): `cadence` comes from the advisor_cadence alert of the row's
+        # own answer. Below the limit at the reading, a launch written before the row is not a reach-past.
+        result, row = self.between(LIMIT - 1)
+        self.assertEqual(self.cadence_warnings(result), [])
+        self.assertNotIn('advisor_cadence', {a['code'] for a in result['alerts']})
+        self.assertEqual((row['decision_id'], row.get('outside_automatic_routing')), (result['decision_id'], None))
+
+    def test_an_automatic_plan_is_never_marked_cadence(self):
+        # Rule (decision_ledger.automatic_routing_marker): only a row the user named carries `cadence`. An automatic plan
+        # on a cadence account at its limit, deferred until a seat frees, launches nothing past the cadence.
+        import contextlib
+        import io
+        import caller_input
+        import decision_ledger as ledger
+        import host_policy
+        import scorer_client
+        import usage_reading
+        self.fill('claude', age_h=11.95)                     # 5 of 5, a seat frees in ~0.05 h
+        path = self.root / 'automatic.json'
+        path.write_text(self.json.dumps({'task': self.task('automatic')}), encoding='utf-8')
+        args = self.router.build_parser().parse_args(['plan', '--input', str(path)])
+        scored = (self.profile(work_kind='architecture_reasoning', expected_hours=0.5), {'source': 'system_one', 'model': 'm'})
+        out = io.StringIO()
+        with patch.object(host_policy, 'load_policy', return_value={'allowed_accounts': ['claude']}), \
+                patch.object(scorer_client, 'score_task', return_value=scored), \
+                patch.object(usage_reading, 'usage_snapshot', return_value=self.usage), contextlib.redirect_stdout(out):
+            self.router._run_stage(caller_input.attach(args, caller_input.capture(args)))
+        answer = self.json.loads(out.getvalue()[out.getvalue().index('{'):])
+        row = ledger.read_ledger()[-1]
+        self.assertEqual((answer['decision']['action'], (answer.get('selected_bundle') or {}).get('account')),
+                         ('defer', 'claude'))
+        self.assertEqual((row['stage'], row.get('outside_automatic_routing')), ('plan', None))
+
+    def test_a_route_named_to_roll_is_the_users_naming_and_nothing_else(self):
+        # Rule (roll.named_route_refusal): beside route flags, --constraint can only say what the named route already is
+        # (user_override); a project rule is recorded with `record`, which holds it to this machine's switches. Without
+        # route flags --constraint is a flag roll does not read (route_judge.unread_flags), not a refusal.
+        import argparse
+        import roll
+        flags = vars(self.args('chatgpt-web'))
+        for constraint in ('hard_constraint', 'dot_closed_loop', 'user_override', None):
+            named = argparse.Namespace(**dict(flags, constraint=constraint))
+            unnamed = argparse.Namespace(**dict(flags, constraint=constraint, provider=None, account=None, model=None,
+                                                effort=None))
+            with self.subTest(constraint=constraint):
+                refusal = roll.named_route_refusal(named)
+                self.assertIsNone(roll.named_route_refusal(unnamed))
+                if constraint in (None, 'user_override'):
+                    self.assertIsNone(refusal)
+                else:
+                    self.assertIn(f'--constraint {constraint}', refusal)
+                    self.assertIn("the user's own naming", refusal)
+                    self.assertIn(f'record --constraint {constraint}', refusal)
+                # `record` itself reads the project rule (it is held to the switches there, not refused here).
+                self.assertIsNone(roll.named_route_refusal(named, require=True))
+        parsed = self.router.build_parser().parse_args(['roll', '--task', 'Advise', '--constraint', 'hard_constraint'])
+        parsed.stage = 'roll'
+        self.assertEqual(self.router.unread_flags(parsed), ['--constraint'])
+
     def test_roll_named_to_a_consult_hands_it_over_with_the_warning_once(self):
         import argparse
         import roll

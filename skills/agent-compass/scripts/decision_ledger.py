@@ -35,26 +35,25 @@ LAUNCH_STAGES = ('plan', 'record')
 BASIS_LIMIT = 400      # characters of a record's --basis a row keeps; `record` refuses a longer quote instead of cutting it
 
 
+# The constraints of a row the user named: a named route (`record`/`roll`) and an explicit `--resume`.
+NAMED_CONSTRAINTS = ('user_override', 'explicit_resume')
+
+
 def automatic_routing_marker(entry):
     """`outside_automatic_routing` of a ledger row: what only automatic routing is held to that its launch reaches past,
     in a fixed order: the switches in effect now (`host_policy.automatic_routing_exclusions`: `account`, `model`) and
-    `cadence` when the account is at its dispatch cadence's limit at the row's time, by the count its advisor_cadence
-    alert reads (the row itself not yet written). Only a row that carries a launch has one: a plan/record row with a
-    chosen bundle that its writer did not refuse (`host_policy_violation`)."""
+    `cadence` on a row the user named (NAMED_CONSTRAINTS) whose own answer carries the advisor_cadence alert `finalize`
+    computed for it (launched at or over the limit), never from a second reading. Only a row that carries a launch has
+    one: a plan/record row with a chosen bundle that its writer did not refuse (`host_policy_violation`)."""
     bundle = entry.get('bundle')
     if (entry.get('stage') not in LAUNCH_STAGES or entry.get('choice') in (None, 'none', 'self', 'split')
             or entry.get('host_policy_violation') or not isinstance(bundle, dict) or not bundle.get('account')):
         return None
     import account_fleet
     import host_policy
-    import quota_pools
-    accounts = account_fleet.load_accounts()
-    marks = host_policy.automatic_routing_exclusions(bundle, accounts, host_policy.load_policy())
-    spec = (accounts.get('accounts') or {}).get(bundle['account']) or {}
-    if quota_pools.cadence_limits(spec) is not None:
-        now = quota_pools.parse_time(entry.get('at')) or datetime.now(timezone.utc)
-        if account_cadence_alert(cadence_records(bundle['account'], spec, now), now, bundle['account'], spec):
-            marks.append('cadence')
+    marks = host_policy.automatic_routing_exclusions(bundle, account_fleet.load_accounts(), host_policy.load_policy())
+    if entry.get('constraint') in NAMED_CONSTRAINTS and 'advisor_cadence' in (entry.get('alerts') or ()):
+        marks.append('cadence')
     return marks or None
 
 

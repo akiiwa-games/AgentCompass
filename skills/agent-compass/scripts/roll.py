@@ -468,10 +468,18 @@ def named_route_given(args):
 def named_route_refusal(args, require=False):
     """The one owner of what a named route needs (`route_judge.record_constraint` reads it). Why the flags the caller gave
     do not make one, in one answer: what it needs, which of those were given and which are missing, and the other way out;
-    None when they do make one. With no route flag given it is None, unless `require`: the caller is recording a route."""
+    None when they do make one. With no route flag given it is None, unless `require`: the caller is recording a route.
+    A route named to `roll` is the user's own naming and nothing else: beside route flags, a `--constraint` other than
+    `user_override` (a project rule) is refused, since only `record` reads one and holds it to this machine's switches."""
     given = named_route_given(args)
     if not given and not require:
         return None
+    constraint = getattr(args, 'constraint', None)
+    if given and not require and constraint not in (None, 'user_override'):
+        return (f"A route named to roll is the user's own naming, with their words in --basis; --constraint {constraint} "
+                f'is not that. Record a project rule with `record --constraint {constraint}` (held to this machine\'s '
+                'automatic-routing switches: host policy, the model checkbox and the dispatch cadence), or drop '
+                '--constraint when the user named this route in this request.')
     basis = bool((getattr(args, 'basis', None) or '').strip())
     missing = [f'--{flag}' for flag in ('provider', 'account', 'model') if flag not in given]
     if not basis:
