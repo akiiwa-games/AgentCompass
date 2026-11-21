@@ -18,4 +18,4 @@ The reference for these rules is [`docs/technical-reference.md`](docs/technical-
 
 ## Reporting a vulnerability
 
-Use GitHub's private vulnerability reporting: open the repository's **Security** tab, choose **Report a vulnerability**, or go to <https://github.com/akiiwa-games/AgentCompass/security/advisories/new>. Describe the affected version, what an attacker needs, and how to reproduce it. Please do not open a public issue for a vulnerability and do not include real credentials in a report.
+Use GitHub's private vulnerability reporting: open the repository's **Security** tab, choose **Report a vulnerability**, or go to <https://github.com/akiiwa-games/AgentCompass-Router/security/advisories/new>. Describe the affected version, what an attacker needs, and how to reproduce it. Please do not open a public issue for a vulnerability and do not include real credentials in a report.

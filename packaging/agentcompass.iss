@@ -21,7 +21,7 @@
 
 #define MyAppName "AgentCompass"
 #define MyAppPublisher "akiiwa-games"
-#define MyAppURL "https://github.com/akiiwa-games/AgentCompass"
+#define MyAppURL "https://github.com/akiiwa-games/AgentCompass-Router"
 #define MyAppExeName "AgentCompass.exe"
 
 [Setup]

@@ -654,7 +654,7 @@ class IntegrationsPageEndToEndRegressionTests(unittest.TestCase):
             payload = json.dumps(
                 {
                     "tag_name": tag_name,
-                    "html_url": f"https://github.com/akiiwa-games/AgentCompass/releases/tag/{tag_name}",
+                    "html_url": f"https://github.com/akiiwa-games/AgentCompass-Router/releases/tag/{tag_name}",
                 }
             ).encode("utf-8")
             return lambda request, timeout=20: _FakeGithubResponse(payload)

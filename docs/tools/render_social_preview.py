@@ -53,7 +53,7 @@ def main() -> None:
         ink(draw, 49, 207 + top, number, font("segoeuib.ttf", 17), ACCENT)
         ink(draw, 88, 202 + top, heading, font("segoeuib.ttf", 25), HEAD)
         ink(draw, 89, 237 + top, sub, font("segoeui.ttf", 18), SUB)
-    ink(draw, 50, 602, "github.com/akiiwa-games/AgentCompass", font("segoeui.ttf", 17), MUTED)
+    ink(draw, 50, 602, "github.com/akiiwa-games/AgentCompass-Router", font("segoeui.ttf", 17), MUTED)
     ink(draw, 1195, 602, "MIT / OPEN SOURCE", font("seguisb.ttf", 16), ACCENT, right=True)
 
     width = 652

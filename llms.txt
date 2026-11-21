@@ -23,7 +23,7 @@
 
 ## First-time setup
 
-1. Install Python 3.11+ (`uv tool install "git+https://github.com/akiiwa-games/AgentCompass"`), then run `agentcompass setup` and `agentcompass doctor` (or run `AgentCompass-tray-setup.exe` on Windows).
+1. Install Python 3.11+ (`uv tool install "git+https://github.com/akiiwa-games/AgentCompass-Router"`), then run `agentcompass setup` and `agentcompass doctor` (or run `AgentCompass-tray-setup.exe` on Windows).
 2. Only for Paseo worker dispatch from a source checkout: install Node.js with npm and run `npm --prefix setup/paseo-bridge ci` (`agentcompass setup` / `setup/sync_host_globals.py` runs this automatically when Paseo is detected).
 
 ## System-Level Skill & Host Rollout (Mandatory on Every Host)

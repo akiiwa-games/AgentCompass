@@ -6,7 +6,7 @@ import os
 import re
 
 DEFAULT_ORG = "akiiwa-games"
-PRODUCT_REPO = "AgentCompass"
+PRODUCT_REPO = "AgentCompass-Router"
 RELEASES_API = f"https://api.github.com/repos/{DEFAULT_ORG}/{PRODUCT_REPO}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{DEFAULT_ORG}/{PRODUCT_REPO}/releases/latest"
 # The published reference sets on `main` (skills/agent-compass/scripts/public_data.py): an install reads

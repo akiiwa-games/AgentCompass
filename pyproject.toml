@@ -27,9 +27,9 @@ dev = ["pytest>=8", "pytest-xdist>=3.5", "psutil"]
 calibration = ["numpy", "pandas", "pyarrow"]
 
 [project.urls]
-Homepage = "https://github.com/akiiwa-games/AgentCompass"
-Repository = "https://github.com/akiiwa-games/AgentCompass"
-Releases = "https://github.com/akiiwa-games/AgentCompass/releases"
+Homepage = "https://github.com/akiiwa-games/AgentCompass-Router"
+Repository = "https://github.com/akiiwa-games/AgentCompass-Router"
+Releases = "https://github.com/akiiwa-games/AgentCompass-Router/releases"
 
 [project.scripts]
 agentcompass = "agentcompass.cli:main"

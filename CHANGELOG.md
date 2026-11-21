@@ -1,6 +1,6 @@
 # Changelog
 
-One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass/releases) page.
+One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass-Router/releases) page.
 
 ## v0.7.4 - 2026-11-21
 

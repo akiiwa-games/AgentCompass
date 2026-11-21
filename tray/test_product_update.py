@@ -89,11 +89,11 @@ class ProductNoticeTests(unittest.TestCase):
                 seen["agent"] = request.get_header("User-agent")
                 return _Body({
                     "tag_name": "v9.9.9",
-                    "html_url": "https://github.com/akiiwa-games/AgentCompass/releases/tag/v9.9.9",
+                    "html_url": "https://github.com/akiiwa-games/AgentCompass-Router/releases/tag/v9.9.9",
                 })
 
             text = updates.product_notice(root, opener=opener)
-            self.assertIn("akiiwa-games/AgentCompass", seen["url"])
+            self.assertIn("akiiwa-games/AgentCompass-Router", seen["url"])
             self.assertEqual(seen["agent"], "agentcompass")
             self.assertIn("uv tool upgrade agentcompass", text)
             self.assertIn("v9.9.9", text)
@@ -115,7 +115,7 @@ class ReleaseNoticeCacheTests(unittest.TestCase):
         state.mkdir(parents=True, exist_ok=True)
         (state / updates.RELEASE_CACHE_NAME).write_text(json.dumps({
             "checked_at": time.time() - age_seconds, "tag_name": tag, "version": tag.lstrip("v"),
-            "html_url": "https://github.com/akiiwa-games/AgentCompass/releases/tag/" + tag, "assets": [],
+            "html_url": "https://github.com/akiiwa-games/AgentCompass-Router/releases/tag/" + tag, "assets": [],
         }), encoding="utf-8")
 
     def test_a_fresh_cache_answers_without_calling_github(self):
@@ -256,7 +256,7 @@ class InstallShapeAndVersionDisplayTests(unittest.TestCase):
                 calls.append(request.full_url)
                 return _Body({
                     "tag_name": "v0.4.0",
-                    "html_url": "https://github.com/akiiwa-games/AgentCompass/releases/tag/v0.4.0",
+                    "html_url": "https://github.com/akiiwa-games/AgentCompass-Router/releases/tag/v0.4.0",
                     "assets": [
                         {
                             "name": "AgentCompass-tray-setup.exe",
@@ -404,7 +404,7 @@ class OneClickUpdateTests(unittest.TestCase):
             home = base / "home"
             home.mkdir()
 
-            wheel_url = "https://github.com/akiiwa-games/AgentCompass/releases/download/v0.3.8/agentcompass-0.3.8-py3-none-any.whl"
+            wheel_url = "https://github.com/akiiwa-games/AgentCompass-Router/releases/download/v0.3.8/agentcompass-0.3.8-py3-none-any.whl"
             release = {
                 "tag_name": "v0.3.8",
                 "assets": [{"name": "agentcompass-0.3.8-py3-none-any.whl", "url": wheel_url}],
@@ -778,7 +778,7 @@ class IncrementalCodePackageUpdateTests(unittest.TestCase):
             inst_root = _make_modular_installer_dir(base, version="0.3.18", runtime_fp="b" * 64, runtime_version="0.3.18")
             (state_dir / updates.RELEASE_CACHE_NAME).write_text(json.dumps({
                 "checked_at": time.time(), "tag_name": "v0.3.18", "version": "0.3.18",
-                "html_url": "https://github.com/akiiwa-games/AgentCompass/releases/tag/v0.3.18", "assets": [],
+                "html_url": "https://github.com/akiiwa-games/AgentCompass-Router/releases/tag/v0.3.18", "assets": [],
             }), encoding="utf-8")
             requested = []
 
@@ -1604,7 +1604,7 @@ class RateLimitAndFallbackTests(unittest.TestCase):
                 return _RespWithHeaders(
                     {
                         "tag_name": "v0.4.0",
-                        "html_url": "https://github.com/akiiwa-games/AgentCompass/releases/tag/v0.4.0",
+                        "html_url": "https://github.com/akiiwa-games/AgentCompass-Router/releases/tag/v0.4.0",
                         "assets": [],
                     },
                     '"etag-v040"',
@@ -1683,11 +1683,11 @@ class RateLimitAndFallbackTests(unittest.TestCase):
             expanded_html = f"""
             <ul>
               <li>
-                <a href="/akiiwa-games/AgentCompass/releases/download/v0.4.0/app-0.4.0.zip">app-0.4.0.zip</a>
+                <a href="/akiiwa-games/AgentCompass-Router/releases/download/v0.4.0/app-0.4.0.zip">app-0.4.0.zip</a>
                 <clipboard-copy aria-label="Copy to clipboard digest for app-0.4.0.zip" value="sha256:{zip_sha}"></clipboard-copy>
               </li>
               <li>
-                <a href="/akiiwa-games/AgentCompass/releases/download/v0.4.0/manifest.json">manifest.json</a>
+                <a href="/akiiwa-games/AgentCompass-Router/releases/download/v0.4.0/manifest.json">manifest.json</a>
                 <clipboard-copy aria-label="Copy to clipboard digest for manifest.json" value="sha256:{manifest_sha}"></clipboard-copy>
               </li>
             </ul>
@@ -1711,7 +1711,7 @@ class RateLimitAndFallbackTests(unittest.TestCase):
                     hdrs["X-RateLimit-Remaining"] = "0"
                     raise urllib.error.HTTPError(url, 403, "rate limit exceeded", hdrs, None)
                 if url.endswith("/releases/latest"):
-                    return _PageResp(b"<html></html>", "https://github.com/akiiwa-games/AgentCompass/releases/tag/v0.4.0")
+                    return _PageResp(b"<html></html>", "https://github.com/akiiwa-games/AgentCompass-Router/releases/tag/v0.4.0")
                 if "/releases/expanded_assets/v0.4.0" in url:
                     return _Body(expanded_html.encode("utf-8"))
                 if url.endswith("/releases/download/v0.4.0/manifest.json"):

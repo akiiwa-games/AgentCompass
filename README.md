@@ -4,7 +4,7 @@
 
 **Route sub-agent tasks across your coding subscriptions by what each task needs and what each quota window has left.**
 
-[English](#english) · [简体中文](#简体中文) · [Releases](https://github.com/akiiwa-games/AgentCompass/releases) · [Technical Reference](docs/technical-reference.md) · [`llms.txt`](llms.txt)
+[English](#english) · [简体中文](#简体中文) · [Releases](https://github.com/akiiwa-games/AgentCompass-Router/releases) · [Technical Reference](docs/technical-reference.md) · [`llms.txt`](llms.txt)
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![Router](https://img.shields.io/badge/router-Python%20%2B%20JSON-555)
@@ -80,7 +80,7 @@ Most open-source AI routers (such as `claude-code-router`, `9router`, or `LiteLL
 
 ### Quickstart
 
-**Windows (installer, no Python or admin rights needed):** download `AgentCompass-tray-setup.exe` from [Releases](https://github.com/akiiwa-games/AgentCompass/releases), or install silently:
+**Windows (installer, no Python or admin rights needed):** download `AgentCompass-tray-setup.exe` from [Releases](https://github.com/akiiwa-games/AgentCompass-Router/releases), or install silently:
 
 ```powershell
 AgentCompass-tray-setup.exe /VERYSILENT /SETUP=hooks      # /SETUP=nohooks to skip the spawn gate
@@ -89,7 +89,7 @@ AgentCompass-tray-setup.exe /VERYSILENT /SETUP=hooks      # /SETUP=nohooks to sk
 **macOS / Linux, or CLI-only (Python 3.11+):**
 
 ```bash
-uv tool install "git+https://github.com/akiiwa-games/AgentCompass"
+uv tool install "git+https://github.com/akiiwa-games/AgentCompass-Router"
 agentcompass plan --demo --dry-run                        # offline demo, no credentials needed
 agentcompass setup --dry-run                              # preview host wiring (omit --dry-run to apply; `agentcompass uninstall` undoes it)
 agentcompass doctor                                       # check active install and signed-in providers
@@ -158,7 +158,7 @@ agentcompass roll --task "<交给子 Agent 的完整任务>"
 
 ### 快速开始
 
-**Windows（独立安装包，无需预装 Python 或管理员权限）：** 从 [Releases](https://github.com/akiiwa-games/AgentCompass/releases) 下载运行 `AgentCompass-tray-setup.exe`，或静默安装：
+**Windows（独立安装包，无需预装 Python 或管理员权限）：** 从 [Releases](https://github.com/akiiwa-games/AgentCompass-Router/releases) 下载运行 `AgentCompass-tray-setup.exe`，或静默安装：
 
 ```powershell
 AgentCompass-tray-setup.exe /VERYSILENT /SETUP=hooks      # 不装门禁可用 /SETUP=nohooks
@@ -167,7 +167,7 @@ AgentCompass-tray-setup.exe /VERYSILENT /SETUP=hooks      # 不装门禁可用 /
 **macOS / Linux 或仅安装 CLI（Python 3.11+）：**
 
 ```bash
-uv tool install "git+https://github.com/akiiwa-games/AgentCompass"
+uv tool install "git+https://github.com/akiiwa-games/AgentCompass-Router"
 agentcompass plan --demo --dry-run                        # 离线演示，无需登录账号
 agentcompass setup --dry-run                              # 预览宿主配置改动（去掉 --dry-run 执行；agentcompass uninstall 可回滚）
 agentcompass doctor                                       # 查看安装状态与已识别账号
