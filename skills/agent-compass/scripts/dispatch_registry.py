@@ -795,6 +795,11 @@ _SKIP_CATCHUP_STATUS = frozenset({
 })
 
 
+# How a send whose earlier attempt Paseo answered `agent_request_outcome_unknown` ended: the notice was in the parent's
+# timeline, or it was sent once under the next derived id (paseo_dispatch_bridge.mjs deliverNotice).
+_UNKNOWN_OUTCOME_ENDINGS = ('found', 'resent')
+
+
 def end_notice_message_id(dispatch_id):
     """The same id the watcher uses for its terminal message, so a race is one message."""
     return hashlib.sha256(f'router-finish:{dispatch_id}:terminal'.encode()).hexdigest()
@@ -826,7 +831,11 @@ def _note_end_notice(row, receipt):
     delivered = receipt.get('delivered')
     status = receipt.get('status')
     if status == 'delivered' or (isinstance(delivered, list) and 'terminal' in delivered):
-        row['end_notice'] = {'state': 'sent', 'message_id': message_id, 'source': 'watcher'}
+        # After Paseo answered that a send's outcome is unknown, the watcher found the notice in the parent's
+        # timeline or sent it once under a new id (paseo_dispatch_bridge.mjs deliverNotice).
+        outcome = receipt.get('delivery_outcome')
+        source = 'watcher_' + outcome if outcome in _UNKNOWN_OUTCOME_ENDINGS else 'watcher'
+        row['end_notice'] = {'state': 'sent', 'message_id': message_id, 'source': source}
         return True
     if status in _SKIP_CATCHUP_STATUS:
         row['end_notice'] = {'state': 'sent', 'message_id': message_id, 'source': status}
@@ -835,16 +844,45 @@ def _note_end_notice(row, receipt):
     return True
 
 
+def _continued_by(all_rows, row):
+    """The dispatch id of a later turn this row's parent gave this row's worker, or None.
+
+    A resume carries the worker's agent id and the parent that asked (the bridge refuses a resume from any other
+    parent), and it counts once the host showed the worker on that turn (`observed_at`): a resume that was refused or
+    never landed did not continue anything, and an end notice recorded `sent` is never sent later."""
+    agent_id, parent = row.get('agent_id'), row.get('parent_id')
+    if not agent_id or not parent:
+        return None
+    ref = row.get('launched_at') or row.get('created_at')
+    for other in all_rows:
+        if (other['dispatch_id'] == row['dispatch_id'] or other.get('operation') != 'resume'
+                or other.get('agent_id') != agent_id or other.get('parent_id') != parent or not other.get('observed_at')):
+            continue
+        if ref and later(other.get('launched_at') or other.get('created_at'), ref):
+            return other['dispatch_id']
+    return None
+
+
 def due_end_notices(path=None):
-    """Terminal rows whose one end notice has not been sent. An open row is not due, even if an older flag remains."""
+    """Terminal rows whose one end notice has not been sent. An open row is not due, even if an older flag remains.
+
+    A due row whose parent has since given the same worker a later turn (`_continued_by`) is recorded here as `sent`
+    with source `continued`, the rule of a parent continuation: that parent owns the end message, and the later
+    dispatch's own notice reports the worker. It is not returned."""
     target = Path(path or db_path())
     if not target.exists():
         return []
     with transaction(path, upkeep=True) as connection:
         found = []
-        for row in rows(connection, 'dispatches'):
+        all_rows = rows(connection, 'dispatches')
+        for row in all_rows:
             notice = row.get('end_notice')
             if row.get('state') not in _END_NOTICE_STATES or not isinstance(notice, dict) or notice.get('state') != 'due':
+                continue
+            later_id = _continued_by(all_rows, row)
+            if later_id:
+                row['end_notice'] = dict(notice, state='sent', source='continued', continued_by=later_id)
+                save(connection, row)
                 continue
             found.append({'dispatch_id': row['dispatch_id'], 'parent_id': row.get('parent_id'),
                           'agent_id': row.get('agent_id'), 'message_id': notice.get('message_id'),

@@ -6,7 +6,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import net from 'node:net';
-import {randomUUID} from 'node:crypto';
+import {randomUUID, createHash} from 'node:crypto';
 import {setTimeout as pause} from 'node:timers/promises';
 import {execute, project, normalizeProviderModels, notificationStep, notificationEvents, ensureNotification, notificationReceipt,
   creationFailureClass, creationFailureCode, creationRecord, resolvePaseoPlacement, subscriptionLapsed, providerRetry, retryStreak, retryIsStuck,
@@ -926,6 +926,8 @@ test('detached notifier has one owner, recovers a killed owner, and exits after 
     const recovered = await ensureNotification(input);
     pids.add(recovered.pid);
     assert.notEqual(recovered.pid, first.pid);
+    // The reclaimed lock holds the new owner's pid once, so the next observer reads a live owner.
+    assert.equal(fs.readFileSync(recordFile + '.lock', 'utf8'), String(recovered.pid));
     fs.writeFileSync(path.join(root, 'agent.json'), JSON.stringify({status: 'idle', attentionReason: 'finished'}));
     await until(() => JSON.parse(fs.readFileSync(recordFile, 'utf8')).status === 'delivered');
     await until(() => !running(recovered.pid));
@@ -2082,4 +2084,245 @@ test('a host failure\'s condition is a token of its code\'s vocabulary, and the 
     }
   for (const code of Object.keys(produced)) assert.deepEqual([...produced[code]].sort(), [...CONDITIONS[code]].sort());
   assert.deepEqual(CONDITIONS.host_resume_failed, CONDITIONS.host_request_failed);
+});
+
+// --- A send whose outcome Paseo does not know, a later dispatch of the same parent, a late close after the reply ---
+
+const UNKNOWN = 'agent_request_outcome_unknown';
+const idOf = (dispatchId, attempt = 0) => createHash('sha256')
+  .update(`router-finish:${dispatchId}:terminal${attempt ? `:after-unknown:${attempt}` : ''}`).digest('hex');
+
+// A parent timeline read back in pages of two from the newest, as the daemon's `before` cursor does.
+function pagedTimeline(entries, reads = []) {
+  return async (agentId, options) => {
+    reads.push({agentId, direction: options.direction, cursor: options.cursor ?? null});
+    const end = options.cursor ? Number(options.cursor) : entries.length;
+    const start = Math.max(0, end - 2);
+    return {entries: entries.slice(start, end).map(item => ({item})), hasOlder: start > 0,
+      startCursor: start > 0 ? String(start) : null};
+  };
+}
+
+async function withNoticeState(run) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'router-unknown-'));
+  const old = process.env.ROUTER_STATE_DIR;
+  process.env.ROUTER_STATE_DIR = root;
+  try { return await run(); }
+  finally {
+    if (old === undefined) delete process.env.ROUTER_STATE_DIR; else process.env.ROUTER_STATE_DIR = old;
+    fs.rmSync(root, {recursive: true, force: true});
+  }
+}
+
+function writeRecord(dispatchId, record) {
+  const file = notificationFile(dispatchId);
+  fs.mkdirSync(path.dirname(file), {recursive: true});
+  fs.writeFileSync(file, JSON.stringify(record));
+  return file;
+}
+
+const pendingRecord = (extra = {}) => ({dispatch_id: 'child', parent_id: 'parent', status: 'watching', delivered: [],
+  seen: true, pending: {key: 'terminal', messageId: idOf('child'), text: 'THE NOTICE'},
+  terminal: {reason: 'finished'}, ...extra});
+
+test('an unknown send outcome whose notice is in the parent timeline is delivered and is not sent again', async () => {
+  await withNoticeState(async () => {
+    const file = writeRecord('child', pendingRecord());
+    const sends = [], reads = [];
+    const parentTimeline = [
+      {type: 'user_message', text: 'x', clientMessageId: idOf('child'), messageId: idOf('child')},
+      {type: 'assistant_message', text: 'y'}, {type: 'user_message', text: 'z', clientMessageId: 'other'},
+      {type: 'assistant_message', text: 'w'}, {type: 'tool_call', callId: 'c'},
+    ];
+    const client = {
+      fetchAgent: async id => ({agent: {id, status: 'running', labels: {'router.dispatch_id': 'child', 'router.parent_id': 'parent'}}}),
+      fetchAgentTimeline: pagedTimeline(parentTimeline, reads),
+      sendMessage: async (...args) => {sends.push(args); throw new Error(UNKNOWN);},
+    };
+    const answer = await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'});
+    assert.deepEqual(answer, {ok: true, sent: false, already: true, evidence: 'delivered', outcome: 'found'});
+    assert.equal(sends.length, 1);
+    assert.equal(sends[0][2].messageId, idOf('child'));
+    // the parent's timeline is the one read, back to the page that holds the notice
+    assert.ok(reads.length >= 3 && reads.every(read => read.agentId === 'parent'));
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.equal(saved.status, 'delivered');
+    assert.equal(saved.delivery_outcome, 'found');
+    assert.equal(saved.pending, null);
+    assert.equal(JSON.stringify(saved).includes('THE NOTICE'), false);
+    assert.equal((await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'})).evidence, 'delivered');
+    assert.equal(sends.length, 1);
+  });
+});
+
+test('an unknown send outcome whose notice is not in the parent timeline is sent once under the next derived id', async () => {
+  await withNoticeState(async () => {
+    const file = writeRecord('child', pendingRecord());
+    const sends = [];
+    // another dispatch's notice and this dispatch's own resume prompt are not this notice
+    const parentTimeline = [
+      {type: 'user_message', text: 'x', clientMessageId: idOf('other-dispatch')},
+      {type: 'user_message', text: 'y', clientMessageId: 'child'},
+      {type: 'assistant_message', text: 'z', messageId: idOf('child')},
+    ];
+    let savedBeforeResend = null;
+    const client = {
+      fetchAgent: async id => ({agent: {id, status: 'running'}}),
+      fetchAgentTimeline: pagedTimeline(parentTimeline),
+      sendMessage: async (...args) => {
+        sends.push(args);
+        if (args[2].messageId === idOf('child')) throw new Error(UNKNOWN);
+        savedBeforeResend = JSON.parse(fs.readFileSync(file, 'utf8'));
+      },
+    };
+    const answer = await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'});
+    assert.deepEqual(answer, {ok: true, sent: true, message_id: idOf('child', 1), outcome: 'resent'});
+    assert.deepEqual(sends.map(call => call[2].messageId), [idOf('child'), idOf('child', 1)]);
+    assert.deepEqual(sends.map(call => call[1]), ['THE NOTICE', 'THE NOTICE']);
+    assert.equal(savedBeforeResend.pending.attempt, 1);
+    assert.equal(savedBeforeResend.pending.messageId, idOf('child', 1));
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.equal(saved.status, 'delivered');
+    assert.equal(saved.delivery_outcome, 'resent');
+  });
+});
+
+test('two observers of one unknown outcome send under one derived id, and a resend whose outcome is unknown looks for both ids', async () => {
+  await withNoticeState(async () => {
+    writeRecord('child', pendingRecord());
+    const resent = [];
+    const client = {
+      fetchAgent: async id => ({agent: {id, status: 'running'}}),
+      fetchAgentTimeline: pagedTimeline([]),
+      sendMessage: async (to, text, options) => {
+        if (options.messageId === idOf('child')) throw new Error(UNKNOWN);
+        resent.push(options.messageId);
+      },
+    };
+    await Promise.all([notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'}),
+      notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'})]);
+    assert.deepEqual(resent, [idOf('child', 1), idOf('child', 1)]);
+  });
+  await withNoticeState(async () => {
+    const file = writeRecord('child', pendingRecord({pending: {key: 'terminal', text: 'THE NOTICE', attempt: 1}}));
+    const sends = [];
+    const client = {
+      fetchAgent: async id => ({agent: {id, status: 'running'}}),
+      // the first send landed after all: its row carries the attempt-0 id
+      fetchAgentTimeline: pagedTimeline([{type: 'user_message', text: 'x', clientMessageId: idOf('child')}]),
+      sendMessage: async (...args) => {sends.push(args[2].messageId); throw new Error(UNKNOWN);},
+    };
+    const answer = await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'});
+    assert.equal(answer.outcome, 'found');
+    assert.deepEqual(sends, [idOf('child', 1)]);
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).status, 'delivered');
+  });
+});
+
+test('an unknown outcome with a parent timeline that cannot be read decides nothing and keeps the notice pending', async () => {
+  await withNoticeState(async () => {
+    const file = writeRecord('child', pendingRecord());
+    const sends = [];
+    const client = {
+      fetchAgent: async id => ({agent: {id, status: 'running'}}),
+      fetchAgentTimeline: async () => { throw new Error('daemon busy'); },
+      sendMessage: async (...args) => {sends.push(args); throw new Error(UNKNOWN);},
+    };
+    await assert.rejects(notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'}));
+    assert.equal(sends.length, 1);
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.equal(saved.status, 'watching');
+    assert.equal(saved.pending.text, 'THE NOTICE');
+    assert.equal(saved.pending.attempt ?? 0, 0);
+  });
+});
+
+test("the watcher's send follows the same rule: an unknown outcome found in the parent timeline is delivered", async () => {
+  const f = watchFixture();
+  f.client.fetchAgentTimeline = async id => id === 'parent'
+    ? {entries: [{item: {type: 'user_message', text: 'x', clientMessageId: idOf('child')}}], hasOlder: false}
+    : {entries: [{item: {type: 'assistant_message', text: 'the report'}}]};
+  f.client.sendMessage = async (...args) => {f.calls.push(args); throw new Error(UNKNOWN);};
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.record.status, 'delivered');
+  assert.equal(f.record.delivery_outcome, 'found');
+  assert.deepEqual(f.record.delivered, ['terminal']);
+});
+
+test('a due notice whose worker the same parent continued under a later dispatch is not sent', async () => {
+  // The late observer's first sighting of a user message is the parent's later turn: that is not this turn's prompt.
+  const later = {status: 'running', lastUserMessageAt: '2026-11-21T08:34:05.000Z',
+    labels: {'router.dispatch_id': 'later-dispatch', 'router.parent_id': 'parent'}};
+  await withNoticeState(async () => {
+    const file = writeRecord('child', pendingRecord({created_at: 0}));
+    const sends = [];
+    const client = {
+      fetchAgent: async id => ({agent: id === 'parent' ? {status: 'running'} : later}),
+      fetchAgentTimeline: async () => ({entries: []}),
+      sendMessage: async (...args) => sends.push(args),
+    };
+    const answer = await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'});
+    assert.deepEqual(answer, {ok: true, sent: false, already: true, evidence: 'skipped', skipped: 'continued'});
+    assert.equal(sends.length, 0);
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.equal(saved.status, 'continued');
+    assert.equal(saved.continued_by, 'later-dispatch');
+    assert.equal(saved.pending, null);
+  });
+  // another owner's labels, and a resume never seen bound (its other label is the previous dispatch's), are not that
+  for (const [record, labels] of [
+    [pendingRecord({created_at: 0}), {'router.dispatch_id': 'later-dispatch', 'router.parent_id': 'another-parent'}],
+    [pendingRecord({created_at: 0, agent_id: 'worker', seen: false}), {'router.dispatch_id': 'previous', 'router.parent_id': 'parent'}],
+  ]) {
+    await withNoticeState(async () => {
+      writeRecord('child', record);
+      const sends = [];
+      const client = {
+        fetchAgent: async id => ({agent: id === 'parent' ? {status: 'running'} : {status: 'idle', labels}}),
+        sendMessage: async (...args) => sends.push(args),
+      };
+      assert.equal((await notifyEnd(client, {dispatch_id: 'child', parent_id: 'parent'})).sent, true, JSON.stringify(labels));
+      assert.equal(sends.length, 1);
+    });
+  }
+});
+
+test("the watcher drops a terminal notice once the worker carries the same parent's later dispatch", async () => {
+  const resume = resumeFixture();
+  resume.record.seen = true;
+  resume.target = async () => ({agent: {status: 'idle', labels: {'router.dispatch_id': 'later-dispatch', 'router.parent_id': 'parent'}}});
+  assert.equal(await notificationStep(resume.client, resume.record, resume.persist, 300000), true);
+  assert.equal(resume.calls.length, 0);
+  assert.equal(resume.record.status, 'continued');
+  assert.equal(resume.record.continued_by, 'later-dispatch');
+  assert.equal(resume.record.terminal.reason, 'superseded by a later dispatch');
+});
+
+test('a reply followed only by the late close of a call the turn started before it is a reply', () => {
+  const user = {item: {type: 'user_message', text: 'brief'}};
+  const reply = {item: {type: 'assistant_message', text: 'report'}};
+  const call = (id, status) => ({item: {type: 'tool_call', callId: id, status}});
+  assert.equal(endedOnReply([user, call('bg', 'running'), reply, call('bg', 'canceled')]), true);
+  assert.equal(endedOnReply([user, reply, call('new', 'canceled')]), false, 'a call started after the reply');
+  assert.equal(endedOnReply([user, call('bg', 'running'), reply, call('bg', 'canceled'), call('new', 'running')]), false);
+  assert.equal(endedOnReply([user, call('bg', 'running'), {item: {type: 'error', message: 'x'}}, reply, call('bg', 'canceled')]), false);
+  assert.equal(endedOnReply([call('bg', 'running'), user, reply, call('bg', 'canceled')]), false, 'started in an earlier turn');
+});
+
+test("a worker observed late whose turn ended on its reply records replied, reading back to the closed call's start", async () => {
+  const f = watchFixture();
+  const turn = [
+    {type: 'user_message', text: 'brief'}, {type: 'tool_call', callId: 'bg', status: 'running'},
+    {type: 'reasoning', text: 'r'}, {type: 'tool_call', callId: 'other', status: 'completed'},
+    {type: 'assistant_message', text: 'the report'}, {type: 'tool_call', callId: 'bg', status: 'canceled'},
+  ];
+  f.client.fetchAgentTimeline = async (id, options) => {
+    if (options.direction === 'tail' && options.limit === 0) return {entries: turn.map(item => ({item}))};
+    return pagedTimeline(turn)(id, options);
+  };
+  assert.equal(await notificationStep(f.client, f.record, f.persist, 10), true);
+  assert.equal(f.record.terminal.reason, 'finished');
+  assert.equal(f.record.terminal.replied, true);
+  assert.match(f.calls[0][1], /Final reply:\nthe report/);
 });

@@ -590,7 +590,10 @@ def deliver_end_notices(now=None, path=None, host=None):
     one the watcher uses, so a race with a late watcher is one message. A send, a receipt that already shows the
     terminal was delivered (`evidence` `delivered`), an intentional skip (`evidence` `skipped`), and a parent that
     can no longer be reached are recorded. `already` without that evidence is not a delivery: the notice stays due.
-    A second call sends nothing."""
+    When Paseo answered that an earlier send's outcome is unknown, the bridge looks for the notice in the parent's
+    timeline: found is recorded `catchup_found`, not found and sent once under the next derived id `catchup_resent`.
+    A notice whose worker the same parent continued under a later dispatch is not offered here
+    (`dispatch_registry.due_end_notices`). A second call sends nothing."""
     del now
     if host is None and 'daemon' not in paseo_config():
         return []
@@ -604,13 +607,16 @@ def deliver_end_notices(now=None, path=None, host=None):
             continue
         if not isinstance(response, dict) or not response.get('ok'):
             continue
+        outcome = response.get('outcome')
         if response.get('error') == 'parent_unavailable':
             registry.mark_end_notice_sent(notice['dispatch_id'], 'parent_unavailable', path=path)
         elif response.get('sent'):
-            registry.mark_end_notice_sent(notice['dispatch_id'], 'catchup', path=path)
+            source = 'catchup_resent' if outcome == 'resent' else 'catchup'
+            registry.mark_end_notice_sent(notice['dispatch_id'], source, path=path)
             sent.append(notice['dispatch_id'])
         elif response.get('already') and response.get('evidence') == 'delivered':
-            registry.mark_end_notice_sent(notice['dispatch_id'], 'watcher', path=path)
+            source = 'catchup_found' if outcome == 'found' else 'watcher'
+            registry.mark_end_notice_sent(notice['dispatch_id'], source, path=path)
         elif response.get('already') and response.get('evidence') == 'skipped':
             source = response.get('skipped')
             if not isinstance(source, str) or not source.isidentifier() or len(source) > 64:
