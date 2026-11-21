@@ -335,6 +335,51 @@ class SkillUpgradeTests(HomeCase):
         self.assertNotIn(str(antigravity / "skills" / name), sg.MANIFEST["materialized"])
         self.assertTrue(sg.is_reparse_point(hub / "mine"))
 
+    def test_retiring_a_copy_or_link_puts_back_only_what_still_exists(self):
+        # Found on a real machine (2026-11-22): the Antigravity copy of a skill an earlier version shipped under another
+        # name, whose backup is the folder that was there before, with directory links into a checkout that is gone;
+        # and a hub link whose earlier target was in that checkout too.
+        antigravity = self.home / ".gemini"
+        antigravity.mkdir()
+        hub = self.home / ".codex/skills"
+        kept = self.write("install/skills/agent-compass/SKILL.md", "router").parent
+        dropped = self.write("install/skills/dropped/SKILL.md", "dropped").parent
+        copy = self.write(".gemini/skills/old-name/SKILL.md", "ours").parent
+        backup = self.write(".agent-compass/backups/host-setup-1/skills/gemini-old-name/SKILL.md", "before").parent
+        live = self.write("elsewhere/references/a.md", "a").parent
+        sg.make_link(backup / "references", live)
+        sg.make_link(backup / "scripts", self.home / "old-checkout/skills/old-name/scripts")
+        sg.begin_run(False)
+        sg.create_junction(hub / "agent-compass", kept)
+        sg.create_junction(hub / "dropped", dropped)
+        sg.MANIFEST["junctions"][str(hub / "dropped")]["previous_target"] = str(self.home / "old-checkout/skills/dropped")
+        sg.MANIFEST["materialized"][str(copy)] = {"backup": str(backup)}
+        sg.shutil.rmtree(dropped)
+
+        self.quiet(sg.deduplicate_and_link_skills, [("antigravity", antigravity)])
+        self.assertEqual((copy / "SKILL.md").read_text(), "before")
+        self.assertEqual(Path(sg.junction_target(copy / "references")), live.resolve())
+        self.assertFalse((copy / "scripts").exists() or sg.is_reparse_point(copy / "scripts"))
+        self.assertNotIn(str(copy), sg.MANIFEST["materialized"])
+        self.assertFalse((hub / "dropped").exists() or sg.is_reparse_point(hub / "dropped"))
+        self.assertTrue((antigravity / "skills/agent-compass/SKILL.md").is_file())
+
+    def test_a_removal_that_fails_is_reported_and_kept_and_the_setup_goes_on(self):
+        hub = self.home / ".codex/skills"
+        kept = self.write("install/skills/agent-compass/SKILL.md", "router").parent
+        dropped = self.write("install/skills/dropped/SKILL.md", "dropped").parent
+        sg.begin_run(False)
+        sg.create_junction(hub / "agent-compass", kept)
+        sg.create_junction(hub / "dropped", dropped)
+        sg.shutil.rmtree(dropped)
+        with patch.object(sg, "_uninstall_one_junction", side_effect=PermissionError("in use")):
+            self.quiet(sg.deduplicate_and_link_skills, [])
+        self.assertIn(str(hub / "dropped"), sg.MANIFEST["junctions"])  # tried again by the next run
+        self.assertTrue(any("could not be removed" in line and "in use" in line for line in sg.ACTIONS))
+        self.quiet(sg.deduplicate_and_link_skills, [])
+        self.assertNotIn(str(hub / "dropped"), sg.MANIFEST["junctions"])
+        self.assertFalse(sg.is_reparse_point(hub / "dropped"))
+
     def test_links_into_another_install_are_taken_over_and_restored_on_uninstall(self):
         # A checkout-era hub: links made by hand (no manifest) into the checkout's skills/.
         self.write("checkout/setup/sync_host_globals.py", "")

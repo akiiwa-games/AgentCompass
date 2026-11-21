@@ -2,6 +2,13 @@
 
 One entry per released tag, newest first. The full notes of each release are on the [Releases](https://github.com/akiiwa-games/AgentCompass-Router/releases) page.
 
+## v0.7.6 - 2026-11-22
+
+- `sync_host_globals`: the setup of v0.7.5 stopped with `shutil.Error` when the backup of an Antigravity skill copy it was retiring held a directory link to a folder that no longer exists (found on a machine that had used a checkout). A backup's links are restored as links (`_restore_materialized_skill`) and a link to nothing is left out.
+- A retired link is re-created at its earlier target only while that target exists.
+- An Antigravity copy is kept only while this version makes it (`SKILLS_TO_CODEX` and a hub skill of that name).
+- A removal that fails in `_retire_links_to_nothing` is reported and its entry kept; the setup goes on to the hooks and the manifest.
+
 ## v0.7.5 - 2026-11-22
 
 - The GitHub repository is `akiiwa-games/AgentCompass-Router`. Only the repository name and its URLs change (`origin.PRODUCT_REPO`, the project URLs, the installer's product URL, the documents); GitHub redirects the old address, so earlier installs keep finding updates and published data.

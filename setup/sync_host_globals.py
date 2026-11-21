@@ -984,24 +984,36 @@ def _retire_stale_skill_links(active_homes: list[tuple[str, Path]]) -> None:
 def _retire_links_to_nothing() -> None:
     """Remove the links this install made whose target no longer exists: a skill a later version does not ship.
 
-    A link is ours while it still points where the manifest says. What it replaced is put back, as on uninstall. The
-    Antigravity copy of a skill goes with the hub link it was made from."""
+    A link is ours while it still points where the manifest says. What it replaced is put back, as on uninstall. An
+    Antigravity copy goes when this version no longer makes it: the skill is not one it copies, or the hub has none.
+
+    A removal that fails is reported and its entry kept for the next run. It does not end the setup: the hooks and
+    the manifest come after it, and a leftover link costs less than those left undone."""
+    failures = (OSError, RuntimeError, subprocess.SubprocessError)
     for key in sorted(list(MANIFEST["junctions"])):
         link, entry = Path(key), MANIFEST["junctions"][key]
         current = junction_target(link)
         if current is None or Path(current) != Path(entry["target"]).resolve() or Path(current).exists():
             continue
-        if _within_home(link):
-            _uninstall_one_junction(link, entry)
+        try:
+            if _within_home(link):
+                _uninstall_one_junction(link, entry)
+        except failures as exc:
+            report(f"[skills] {link} points at nothing and could not be removed ({exc}); left as is")
+            continue
         if not DRY_RUN:
             MANIFEST["junctions"].pop(key, None)
     hub = HOME / ".codex" / "skills"
     for key in sorted(list(MANIFEST["materialized"])):
         path = Path(key)
-        if (hub / path.name).is_dir() or is_reparse_point(hub / path.name):
+        if path.name in SKILLS_TO_CODEX and (hub / path.name).is_dir():
             continue
-        if _within_home(path):
-            _uninstall_one_materialized(path, MANIFEST["materialized"][key])
+        try:
+            if _within_home(path):
+                _uninstall_one_materialized(path, MANIFEST["materialized"][key])
+        except failures as exc:
+            report(f"[skills] {path} is a copy this version no longer makes and could not be removed ({exc}); left as is")
+            continue
         if not DRY_RUN:
             MANIFEST["materialized"].pop(key, None)
 
@@ -1319,8 +1331,26 @@ def _uninstall_one_materialized(path: Path, entry: dict) -> None:
                 remove_dir_or_junction(child)
         remove_dir_or_junction(path)
     if entry.get("backup") and Path(entry["backup"]).exists() and not DRY_RUN:
-        shutil.copytree(entry["backup"], path)
+        _restore_materialized_skill(Path(entry["backup"]), path)
     report(f"[uninstall] {path}: materialized skill directory removed")
+
+
+def _restore_materialized_skill(backup: Path, dst: Path) -> None:
+    """Put a backup made by backup_materialized_skill back: its directory links come back as links, and a link whose
+    target no longer exists is left out (there is nothing behind it to restore)."""
+    if backup.is_file():
+        shutil.copy2(backup, dst)
+        return
+    dst.mkdir(parents=True)
+    for child in sorted(backup.iterdir()):
+        target = junction_target(child)
+        if target is not None:
+            if Path(target).is_dir():
+                make_link(dst / child.name, Path(target))
+        elif child.is_dir():
+            shutil.copytree(child, dst / child.name)
+        elif child.is_file():
+            shutil.copy2(child, dst / child.name)
 
 
 def _uninstall_one_junction(link: Path, entry: dict) -> None:
@@ -1333,7 +1363,7 @@ def _uninstall_one_junction(link: Path, entry: dict) -> None:
         if not DRY_RUN:
             shutil.copytree(entry["backup"], link)
         report(f"[uninstall] {link}: junction removed, original directory restored")
-    elif entry.get("previous_target"):
+    elif entry.get("previous_target") and Path(entry["previous_target"]).exists():
         if not DRY_RUN:
             make_link(link, Path(entry["previous_target"]))
         report(f"[uninstall] {link}: junction restored to {entry['previous_target']}")
