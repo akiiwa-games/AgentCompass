@@ -8,8 +8,8 @@
         "kind": "maintainer"
       },
       "coding.execution": {
-        "level": 3.2,
-        "as_of": "2026-11-11",
+        "level": 4.41,
+        "as_of": "2026-11-21",
         "kind": "maintainer"
       },
       "coding.faithfulness": {
@@ -28,8 +28,8 @@
         "kind": "maintainer"
       },
       "tool_operation.responsiveness": {
-        "level": 2.4,
-        "as_of": "2026-11-18",
+        "level": 1.9,
+        "as_of": "2026-11-21",
         "kind": "maintainer"
       }
     },
@@ -149,15 +149,15 @@
         "kind": "maintainer"
       },
       "coding.faithfulness": {
-        "level": 2.31,
-        "as_of": "2026-11-11",
+        "level": 2.98,
+        "as_of": "2026-11-21",
         "kind": "maintainer"
       }
     },
     "gpt-6-luna": {
       "coding.faithfulness": {
-        "level": 2.12,
-        "as_of": "2026-11-11",
+        "level": 2.98,
+        "as_of": "2026-11-21",
         "kind": "maintainer"
       },
       "tool_operation.responsiveness": {
@@ -200,30 +200,30 @@
         "kind": "maintainer"
       },
       "coding.faithfulness": {
-        "level": 2.24,
-        "as_of": "2026-11-11",
+        "level": 2.95,
+        "as_of": "2026-11-21",
         "kind": "maintainer"
       },
       "creativity": {
-        "level": 1.6,
-        "as_of": "2026-11-11",
+        "level": 1.07,
+        "as_of": "2026-11-21",
         "kind": "maintainer"
       },
       "tool_operation.image_recognition": {
-        "level": 2.0,
-        "as_of": "2026-11-11",
+        "level": 1.4,
+        "as_of": "2026-11-21",
         "kind": "maintainer"
       },
       "tool_operation.responsiveness": {
-        "level": 1.5,
-        "as_of": "2026-11-18",
+        "level": 3.0,
+        "as_of": "2026-11-21",
         "kind": "maintainer"
       }
     },
     "gpt-6.1-sol": {
       "coding.faithfulness": {
-        "level": 2.35,
-        "as_of": "2026-11-11",
+        "level": 3.0,
+        "as_of": "2026-11-21",
         "kind": "maintainer"
       }
     },

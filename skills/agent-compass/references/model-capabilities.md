@@ -11,7 +11,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `beam-free` | -0.59 | -3.61 | -3.35 | -3.85 | missing! | - | unknown |
 | `claude-fable-5` | -0.02 | -0.44 | -1.30~ | -1.25 | 0.05~ | 48.409 | yes |
 | `claude-fable-5-1` | -0.02 | -0.89 | -0.53 | -0.67 | -0.21 | 39.05 | yes |
-| `claude-fable-5-2` | 0.20 | 0.21u | 0.05u | 0.37u | -0.08u | 28.383 | yes |
+| `claude-fable-5-2` | 0.20 | 0.21u | 0.05u | 0.37u | -0.19u | 28.383 | yes |
 | `claude-haiku-4-5` | -0.76 | -3.64 | -3.51~ | -4.57 | -3.38~ | 30.0 | yes |
 | `claude-haiku-5-5` | -0.70 | -4.35 | -2.09~ | -1.96 | -3.12~ | 3.0 | yes |
 | `claude-opus-4-5` | -0.27 | -1.35 | -1.76~ | -2.74 | -3.31 | 25.245 | yes |
@@ -89,7 +89,7 @@ Route order and plan capacity ship as calibrated public defaults; plan capacity 
 | `gpt-6-astra` | 0.06 | -2.13 | 0.01u | -0.19u | -0.89 | 26.304 | yes |
 | `gpt-6-luna` | -0.64 | -3.45 | -2.27u | -2.17 | -2.85u | 0.774 | yes |
 | `gpt-6-pro` | 0.06 | 0.00u | 0.52f | 0.93f | -4.44u | - | yes |
-| `gpt-6-sol` | -0.29 | -2.66u | -0.53u | -1.30 | -1.16u | 20.036 | yes |
+| `gpt-6-sol` | -0.29 | -3.36u | -0.53u | -1.30 | -2.17u | 20.036 | yes |
 | `gpt-6.1-sol` | -0.01 | -2.13 | -0.21u | -0.34 | -0.74 | 7.546 | yes |
 | `gpt-6.1-terra` | -0.04 | -2.27~ | -0.47u | -1.25 | -0.57 | 5.412 | yes |
 | `gpt-6.2-astra` | 0.16 | -1.42~ | 0.81~ | -0.10~ | -0.10 | 16.145 | yes |
