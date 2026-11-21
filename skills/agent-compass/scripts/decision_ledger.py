@@ -198,9 +198,15 @@ def capacity_alerts(usage, carrying, records, now, model='', account_specs=None)
     return alerts
 
 
+def cadence_records(account, spec, now):
+    """The rows an account's dispatch cadence is counted from: the ledger and the registry's launches."""
+    return read_ledger() + dispatch_registry.launch_records({'accounts': {account: spec}}, now)
+
+
 def account_cadence_alert(records, now, account, spec):
-    """Optional account-declared dispatch cadence, at its limit: the same count the plan's cadence window reads
-    (quota_pools.cadence_dispatches). No implied quota knowledge."""
+    """Optional account-declared dispatch cadence, at its limit: the same count and wait the plan's cadence window
+    reads (quota_pools.cadence_window_state). No implied quota knowledge. Its sentence is also the one warning of a
+    named route that reaches past the cadence (route_judge.automatic_routing_texts)."""
     import quota_pools
     limits = quota_pools.cadence_limits(spec)
     if limits is None:
@@ -209,9 +215,11 @@ def account_cadence_alert(records, now, account, spec):
     count = len(quota_pools.cadence_dispatches(account, records, now, seconds))
     if count < limit:
         return None
+    _, state, _ = quota_pools.cadence_window_state(account, spec, records, now)
     return {'code': 'advisor_cadence', 'severity': 'info', 'account': account,
-            'message': f'{count} dispatches in the configured {seconds / 3600:g}h cadence window; '
-                       'dispatch frequency does not measure remaining quota.'}
+            'message': f"{account}: {count} of {limit:g} dispatches in the {seconds / 3600:g}h cadence window, a pace "
+                       "declared for automatic routing and counted from this machine's launches (it does not measure "
+                       f"remaining quota); a seat frees in {state['reset_hours']:.1f}h"}
 
 
 def decision_snapshot(result, task=None):
@@ -238,7 +246,7 @@ def finalize(result, started, task=None, records=None):
         except (OSError, ValueError):
             spec = {}
         if records is None:
-            records = read_ledger() + dispatch_registry.launch_records({'accounts': {bundle['account']: spec}}, now)
+            records = cadence_records(bundle['account'], spec, now)
         alerts += capacity_alerts(usage, [bundle['account']], records, now, bundle.get('model', ''),
                                   {bundle['account']: spec})
         cadence = account_cadence_alert(records, now, bundle['account'], spec)

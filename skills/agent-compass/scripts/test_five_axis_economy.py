@@ -1570,12 +1570,13 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
     def test_the_cadence_excludes_at_its_limit_and_not_below(self):
         # accounts.json: at most `limit` dispatches per window. One seat left starts now; none left waits for the oldest
         # dispatch to leave the window.
-        cadence_note = 'cadence has 0 of'
+        import candidate_eval
         for seats in range(7):
             d = self._plan(seats_used=seats, cadence_reset_h=9.0)
-            notes = ' '.join(next(c for c in d['ranking'] if c['id'] == 'pro_max' and not c['bundle'].get('fast'))['excluded'])
+            pro = next(c for c in d['ranking'] if c['id'] == 'pro_max' and not c['bundle'].get('fast'))
             with self.subTest(seats=seats):
-                self.assertEqual(cadence_note in notes, seats >= 5, notes)
+                self.assertEqual(candidate_eval.OVER_CADENCE in pro['excluded'], seats >= 5, pro['excluded'])
+                self.assertEqual(any(n.startswith('cadence has 0 of 5') for n in pro['notes']), seats >= 5, pro['notes'])
 
     def test_a_free_seat_of_a_rolling_limit_never_expires(self):
         # A rolling limit gives a seat back one window after its dispatch, whatever the others did: while a seat is free
@@ -1614,10 +1615,11 @@ class ChatGPTWebCadenceTests(unittest.TestCase):
             with self.subTest(bundle=bid):
                 self.assertEqual((held[bid]['excluded'], held[bid].get('score'), held[bid]['components'].get('quota_price')),
                                  (c['excluded'], c.get('score'), c['components'].get('quota_price')))
+        import candidate_eval
         full = codex_rows(self._plan(records=recs(5), cadence_on='codex'))
         for bid, c in full.items():
             with self.subTest(bundle=bid):
-                self.assertTrue(any(e.startswith('cadence has 0 of 5') for e in c['excluded']), c['excluded'])
+                self.assertIn(candidate_eval.OVER_CADENCE, c['excluded'])
 
 
 if __name__ == '__main__':

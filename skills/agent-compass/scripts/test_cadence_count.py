@@ -213,5 +213,145 @@ class RegistryLaunchRecords(unittest.TestCase):
         self.assertIn('advisor_cadence', {a['code'] for a in out['alerts']})
 
 
+class NamedRoutesReachPastTheCadence(unittest.TestCase):
+    """Rule (router-internals.md, Pins): a cadence is a pace declared for automatic routing. Automatic routing is held
+    to it; a route the user names reaches past it and launches, with the advisor_cadence sentence once in its warnings,
+    on every surface: `record`, `roll` named to a ChatGPT Web consult, a named Paseo route through `prepare`, and a
+    named `--resume`."""
+
+    def setUp(self):
+        import json
+        import route_judge
+        from router_test_support import isolated_router_state, profile
+        self.json, self.router, self.profile = json, route_judge, profile
+        self.root = isolated_router_state(self.addCleanup)
+        self.now = datetime.now(timezone.utc)
+        self.fleet = account_fleet.load_accounts()
+        # A Paseo account held to the same cadence as the fixture's ChatGPT Web seat.
+        self.fleet['accounts']['claude']['cadence'] = dict(SPEC['cadence'])
+        from router_test_support import usage_windows
+        self.usage = usage_windows(self.now, {'claude': [('five_hour', 90, 3), ('seven_day', 90, 100)]})
+        patcher = patch.object(account_fleet, 'load_accounts', return_value=self.fleet)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def fill(self, account, n=LIMIT, *, age_h=1.0):
+        """`n` named launches outside roll on `account` (ledger record rows): the count reads each."""
+        import decision_ledger as ledger
+        bundle = {'account': account, 'provider': 'chatgpt-web' if account == 'chatgpt-web' else 'claude',
+                  'model': 'gpt-6-pro' if account == 'chatgpt-web' else 'claude-opus-5-5'}
+        with open(ledger.ledger_path(), 'a', encoding='utf-8', newline='\n') as handle:
+            for i in range(n):
+                handle.write(self.json.dumps({'v': 1, 'stage': 'record', 'choice': 'constraint', 'bundle': bundle,
+                                              'decision_id': f'outside-{account}-{i}',
+                                              'at': (self.now - timedelta(hours=age_h + i * 0.01)).isoformat()}) + '\n')
+
+    def task(self, task_id):
+        return {'objective': 'Advise on the fixture plan', 'task_id': task_id, 'parent_agent_id': 'parent-a',
+                'work_kind': 'architecture_reasoning', 'expected_hours': 0.5,
+                'profile': self.profile(work_kind='architecture_reasoning', expected_hours=0.5)}
+
+    def args(self, account, **flags):
+        import argparse
+        web = account == 'chatgpt-web'
+        values = dict(basis='User: send this to Pro', provider='chatgpt-web' if web else 'claude', account=account,
+                      model='gpt-6-pro' if web else 'claude-opus-5-5', effort='max' if web else 'high',
+                      usage_cache=None, accounts=None, constraint='user_override', specialty=None)
+        values.update(flags)
+        return argparse.Namespace(**values)
+
+    def record(self, account, task_id='named'):
+        import usage_reading
+        task = self.task(task_id)
+        path = self.root / f'{task_id}.json'
+        path.write_text(self.json.dumps({'task': task}), encoding='utf-8')
+        with patch.object(usage_reading, 'usage_snapshot', return_value=self.usage):
+            return self.router.record_constraint(self.args(account, input=path)), task
+
+    def cadence_warnings(self, answer):
+        return [w for w in answer.get('warnings') or () if 'cadence window' in w]
+
+    def test_record_alone_launches_with_the_warning_once(self):
+        result, _ = self.record('chatgpt-web', 'under')
+        self.assertEqual(self.cadence_warnings(result), [])             # under the limit: nothing to reach past
+        self.fill('chatgpt-web')
+        result, _ = self.record('chatgpt-web', 'at-the-limit')
+        self.assertEqual(result['choice'], 'constraint')
+        self.assertNotIn('status', result)
+        said = self.cadence_warnings(result)
+        self.assertEqual(len(said), 1, result.get('warnings'))
+        self.assertIn(f'of {LIMIT} dispatches', said[0])
+        self.assertTrue(said[0].endswith('launched because the user named it in this request'), said[0])
+        self.assertTrue(registry.decision_record(result['decision_id'])['dispatchable'])
+        # The router by itself would not choose it: the automatic plan of the same task excludes the account.
+        import candidate_eval
+        self.assertIn(candidate_eval.OVER_CADENCE, result['override_cost']['excluded'])
+
+    def test_a_named_paseo_route_is_prepared_with_the_warning_and_an_automatic_one_is_not(self):
+        import candidate_eval
+        launch = {'title': 'Fixture', 'initialPrompt': 'Read the brief', 'cwd': str(self.root)}
+        for age_h, held in ((1.0, 'excluded'), (11.9, 'deferred')):     # a seat frees in ~11 h, or in ~0.1 h
+            with self.subTest(held=held):
+                (self.root / 'ledger.jsonl').unlink(missing_ok=True)
+                self.fill('claude', age_h=age_h)
+                result, task = self.record('claude', f'named-{held}')
+                self.assertEqual(len(self.cadence_warnings(result)), 1, result.get('warnings'))
+                row = registry.prepare(result['decision_id'], task, launch, self.usage, self.fleet)
+                self.assertEqual((row['state'], row['bundle']['account']), ('prepared', 'claude'))
+                registry.release(row['dispatch_id'], 'parent-a', 'fixture: never launched')
+                automatic = self.task(f'automatic-{held}')
+                planned = registry.issue({'stage': 'plan', 'choice': row['bundle']['bundle_id'],
+                                          'selected_bundle': dict(row['bundle'])}, automatic, self.now)
+                with self.assertRaises(registry.CapacityChanged) as refused:
+                    registry.prepare(planned['decision_id'], automatic, launch, self.usage, self.fleet)
+                self.assertRegex(str(refused.exception),
+                                 candidate_eval.OVER_CADENCE if held == 'excluded' else 'reset not yet observed')
+
+    def test_a_named_resume_takes_the_turn_with_the_warning(self):
+        import usage_reading
+        self.fill('claude')
+        task = self.task('resume')
+        bundle = dict(self.fleet['accounts']['claude']['bundles']['opus55_high'],
+                      account='claude', bundle_id='opus55_high', id='opus55_high')
+        classified = {'task': task, 'scorer': None, 'alerts': []}
+        with patch.object(usage_reading, 'usage_snapshot', return_value=self.usage):
+            result = self.router.record_resume(self.args('claude'), task, classified, bundle, 'worker-a')
+        said = self.cadence_warnings(result)
+        self.assertEqual(len(said), 1, result.get('warnings'))
+        self.assertTrue(said[0].endswith("the turn goes to worker 'worker-a' because --resume named it"), said[0])
+        launch = {'title': 'Fixture', 'initialPrompt': 'Read the brief', 'cwd': str(self.root)}
+        row = registry.prepare(result['decision_id'], task, launch, self.usage, self.fleet,
+                               resume_agent_id='worker-a', resume_bundle=bundle, explicit_resume=True)
+        self.assertEqual(row['bundle']['account'], 'claude')
+
+    def test_roll_named_to_a_consult_hands_it_over_with_the_warning_once(self):
+        import argparse
+        import roll
+        from router_test_support import profile_for
+        self.fill('chatgpt-web')
+        brief = self.root / 'brief.md'
+        brief.write_text('# Fixture\n\nAdvise on the plan.\n', encoding='utf-8', newline='\n')
+        args = argparse.Namespace(brief=brief, file=[], apply_to=None, local_only=None, hours=0.5, title=None,
+                                  workspace=None, task_id='consult', parent_id=None, parent_host=None,
+                                  parent_address=None, dry_run=False, verbose=True, task=None, new_worker=False,
+                                  resume=None, fast=False, keep_whole=None, access=None,
+                                  **vars(self.args('chatgpt-web')))
+
+        def classified(task, _args):
+            return {'task': {**task, 'work_kind': 'architecture_reasoning', 'profile': profile_for(
+                {'work_kind': 'architecture_reasoning', 'expected_hours': 0.5})}, 'scorer': None,
+                'hours_estimate': None, 'alerts': []}
+        import usage_reading
+        with patch.dict(registry.os.environ, {'PASEO_AGENT_ID': 'parent-a'}), \
+                patch.object(self.router, 'classify_pinned', side_effect=classified), \
+                patch.object(usage_reading, 'usage_snapshot', return_value=self.usage), \
+                patch.object(roll, 'WORKER_PROMPTS_DIR', self.root / 'worker-prompts'), \
+                patch.object(roll, 'RESULTS_DIR', self.root / 'roll-results'):
+            result, code = roll.run(args, self.router)
+        self.assertEqual((code, result['dispatch_mode']), (0, 'chatgpt-web'), result)
+        self.assertEqual(len(self.cadence_warnings(result['route'])), 1, result['route'].get('warnings'))
+        self.assertEqual(len([w for w in result.get('warnings') or () if 'cadence window' in w]), 0)
+
+
 if __name__ == '__main__':
     unittest.main()

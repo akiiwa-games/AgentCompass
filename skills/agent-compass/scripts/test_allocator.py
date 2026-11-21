@@ -728,17 +728,19 @@ class AllocatorTests(unittest.TestCase):
 
     def test_a_candidate_held_by_several_windows_waits_for_the_last_to_return(self):
         """Rule (`candidate_eval.binding_wait`): each window that holds a candidate back moves its wait to the later reset,
-        and the window named is the one that sets it, in whatever order the windows are met."""
+        and the window named is the one that sets it, in whatever order the windows are met; every window that holds it
+        back is kept with its own wait."""
         import candidate_eval
         for windows in ((('five_hour', 1.0), ('gemini-5h', 2.0), ('3p-5h', 1.5)), (('a', 3.0), ('b', 2.0), ('c', 1.0)),
                         (('x', 2.0), ('y', 2.0))):
             with self.subTest(windows=windows):
-                waiting = (None, None)
+                waiting, waits = (None, None), {}
                 for window, hours in windows:
-                    waiting = candidate_eval.binding_wait(*waiting, hours, window)
+                    waiting = candidate_eval.binding_wait(*waiting, hours, window, waits)
                 latest = max(hours for _, hours in windows)
                 self.assertEqual(waiting[0], latest)
                 self.assertEqual(dict(windows)[waiting[1]], latest)
+                self.assertEqual(waits, dict(windows))
 
     def test_the_wait_the_answer_advises_allowing_is_accepted_when_it_is_rolled_again(self):
         """Rule (`allocator.advised_hours`, `plan` check `available_in_hours > can_wait`): rolling again with the

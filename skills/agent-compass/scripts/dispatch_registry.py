@@ -1483,19 +1483,22 @@ def prepare(decision_id, task, launch, usage, accounts=None, now=None, path=None
         if candidate is None or any(candidate['bundle'].get(k) != bundle.get(k) for k in ('provider', 'account', 'model', 'effort')):
             raise CapacityChanged('Decision bundle no longer matches installed account configuration')
         exclusions = list(candidate['excluded'])
+        waits = [w for w, hours in (candidate.get('waits') or {}).items() if hours]
         if named:
             import candidate_eval
             import provider_retry
             # A named model on a held account or model is the probe that can lift the hold (provider_retry);
             # an explicit --resume continues the worker's own bundle regardless of ability/model-latch exclusions.
-            # Neither is the router's choice, so an account out of automatic routing does not stop them, and an
-            # explicit resume continues a worker whose model was unchecked after its launch.
-            lifted = {candidate_eval.OUT_OF_AUTOMATIC_ROUTING, candidate_eval.UNCHECKED}
-            exclusions = [e for e in exclusions if e not in lifted and not e.startswith((
-                'ability ', 'explicit model constraint', 'explicit effort constraint', provider_retry.EXCLUSION_PREFIX))]
+            # Neither is the router's choice, so what only automatic routing is held to does not stop them: an account
+            # out of automatic routing, a model unchecked (an explicit resume continues a worker whose model was
+            # unchecked after its launch), and the account's dispatch cadence, at its limit or freeing a seat soon.
+            exclusions = [e for e in exclusions if e not in candidate_eval.AUTOMATIC_ROUTING_EXCLUSIONS
+                          and not e.startswith(('ability ', 'explicit model constraint', 'explicit effort constraint',
+                                                provider_retry.EXCLUSION_PREFIX))]
+            waits = [w for w in waits if w not in candidate_eval.AUTOMATIC_ROUTING_WAITS]
         if bundle.get('fast') and not candidate['bundle'].get('fast') and not exclusions:
             exclusions.append('fast mode quota is no longer sufficient')
-        if exclusions or (resume_bundle is None and candidate.get('available_in_hours')):
+        if exclusions or (resume_bundle is None and waits):
             raise CapacityChanged('Capacity/availability changed; replan: ' + '; '.join(exclusions or ['reset not yet observed']))
         if resume_agent_id is None and candidate.get('action') == 'resume':
             chain_worker = ((alloc_task.get('chain') or {}).get('worker')

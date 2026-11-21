@@ -143,7 +143,7 @@ class DispatchTests(unittest.TestCase):
         registry.release(prepared['dispatch_id'], 'parent-a', 'fixture: never launched', now=self.now)
         ledger.write_text(json.dumps(outside) + '\n', encoding='utf-8')
         automatic = dict(self.task, task_id='after-the-named-launch')
-        with self.assertRaisesRegex(registry.CapacityChanged, 'cadence has 0 of 1'):
+        with self.assertRaisesRegex(registry.CapacityChanged, 'over the dispatch cadence of automatic routing'):
             self.prepare(self.issue(task=automatic), task=automatic)
 
     def test_pi_request_omits_unsupported_mode_including_saved_legacy_value(self):
